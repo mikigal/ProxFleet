@@ -26,6 +26,8 @@ public final class ServerConnection: Identifiable {
     /// Error of the most recent background refresh, while older data is still shown.
     public private(set) var refreshError: String?
     public private(set) var isRefreshing = false
+    /// Message for the sign-in screens, e.g. a rejected second-factor code.
+    public private(set) var signInError: String?
 
     public nonisolated let id: UUID
     private let environment: FleetEnvironment
@@ -63,18 +65,20 @@ public final class ServerConnection: Identifiable {
     /// Signs in with a password typed by the user.
     public func signIn(password: String, remember: Bool) async {
         state = .connecting
+        signInError = nil
         environment.credentials.setPassword(remember ? password : nil, for: profile.id)
         await login(password: password)
     }
 
     public func submitSecondFactor(_ challenge: SecondFactorChallenge, method: SecondFactorMethod, code: String) async {
         state = .connecting
+        signInError = nil
         do {
             let ticket = try await session.completeLogin(challenge, method: method, code: code)
             await didAuthenticate(ticket)
         } catch ProxmoxError.unauthorized {
             state = .needsSecondFactor(challenge)
-            refreshError = "The code was not accepted."
+            signInError = "The code was not accepted."
         } catch {
             handle(error)
         }
@@ -147,6 +151,7 @@ public final class ServerConnection: Identifiable {
     private func didAuthenticate(_ ticket: AuthTicket) async {
         environment.credentials.setTicket(ticket, for: profile.id)
         refreshError = nil
+        signInError = nil
         if let clusterName = ticket.clusterName, profile.clusterName != clusterName {
             profile.clusterName = clusterName
             onProfileChange(profile)

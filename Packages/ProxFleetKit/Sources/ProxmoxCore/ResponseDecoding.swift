@@ -49,8 +49,9 @@ enum ResponseDecoder {
     }
 
     private static func bodyText(_ data: Data) -> String? {
+        // Short plain-text bodies only; HTML error pages are not useful to show.
         guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty, text.count < 500
+              !text.isEmpty, text.count < 500, !text.hasPrefix("<")
         else { return nil }
         return text
     }

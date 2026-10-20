@@ -1,0 +1,375 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1F000000000000000000101 /* FleetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000201 /* FleetCore */; };
+		A1F000000000000000000102 /* PVEKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000202 /* PVEKit */; };
+		A1F000000000000000000103 /* ProxmoxCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000203 /* ProxmoxCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A1F000000000000000001101 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1F000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1F000000000000000000701;
+			remoteInfo = ProxFleet;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A1F000000000000000000301 /* ProxFleet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ProxFleet.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1F000000000000000000302 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		A1F000000000000000000303 /* ProxFleetUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ProxFleetUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A1F000000000000000000401 /* ProxFleet */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ProxFleet;
+			sourceTree = "<group>";
+		};
+		A1F000000000000000000402 /* ProxFleetUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ProxFleetUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A1F000000000000000000501 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1F000000000000000000101 /* FleetCore in Frameworks */,
+				A1F000000000000000000102 /* PVEKit in Frameworks */,
+				A1F000000000000000000103 /* ProxmoxCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1F000000000000000000502 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A1F000000000000000000601 = {
+			isa = PBXGroup;
+			children = (
+				A1F000000000000000000401 /* ProxFleet */,
+				A1F000000000000000000402 /* ProxFleetUITests */,
+				A1F000000000000000000602 /* Config */,
+				A1F000000000000000000603 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A1F000000000000000000602 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				A1F000000000000000000302 /* Base.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		A1F000000000000000000603 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1F000000000000000000301 /* ProxFleet.app */,
+				A1F000000000000000000303 /* ProxFleetUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A1F000000000000000000701 /* ProxFleet */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1F000000000000000000903 /* Build configuration list for PBXNativeTarget "ProxFleet" */;
+			buildPhases = (
+				A1F000000000000000000801 /* Sources */,
+				A1F000000000000000000501 /* Frameworks */,
+				A1F000000000000000000802 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A1F000000000000000000401 /* ProxFleet */,
+			);
+			name = ProxFleet;
+			packageProductDependencies = (
+				A1F000000000000000000201 /* FleetCore */,
+				A1F000000000000000000202 /* PVEKit */,
+				A1F000000000000000000203 /* ProxmoxCore */,
+			);
+			productName = ProxFleet;
+			productReference = A1F000000000000000000301 /* ProxFleet.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A1F000000000000000000702 /* ProxFleetUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1F000000000000000000904 /* Build configuration list for PBXNativeTarget "ProxFleetUITests" */;
+			buildPhases = (
+				A1F000000000000000000803 /* Sources */,
+				A1F000000000000000000502 /* Frameworks */,
+				A1F000000000000000000804 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1F000000000000000001102 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1F000000000000000000402 /* ProxFleetUITests */,
+			);
+			name = ProxFleetUITests;
+			productName = ProxFleetUITests;
+			productReference = A1F000000000000000000303 /* ProxFleetUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A1F000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2710;
+				LastUpgradeCheck = 2710;
+				TargetAttributes = {
+					A1F000000000000000000701 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					A1F000000000000000000702 = {
+						CreatedOnToolsVersion = 27.1;
+						TestTargetID = A1F000000000000000000701;
+					};
+				};
+			};
+			buildConfigurationList = A1F000000000000000000901 /* Build configuration list for PBXProject "ProxFleet" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A1F000000000000000000601;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A1F000000000000000001001 /* XCLocalSwiftPackageReference "Packages/ProxFleetKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A1F000000000000000000603 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A1F000000000000000000701 /* ProxFleet */,
+				A1F000000000000000000702 /* ProxFleetUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A1F000000000000000000802 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1F000000000000000000804 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A1F000000000000000000801 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1F000000000000000000803 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A1F000000000000000001102 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1F000000000000000000701 /* ProxFleet */;
+			targetProxy = A1F000000000000000001101 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A1F000000000000000000911 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A1F000000000000000000912 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A1F000000000000000000921 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1F000000000000000000302 /* Base.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		A1F000000000000000000922 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1F000000000000000000302 /* Base.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		A1F000000000000000000931 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.example.proxfleet.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ProxFleet;
+			};
+			name = Debug;
+		};
+		A1F000000000000000000932 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.example.proxfleet.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ProxFleet;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A1F000000000000000000901 /* Build configuration list for PBXProject "ProxFleet" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1F000000000000000000911 /* Debug */,
+				A1F000000000000000000912 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1F000000000000000000903 /* Build configuration list for PBXNativeTarget "ProxFleet" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1F000000000000000000921 /* Debug */,
+				A1F000000000000000000922 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1F000000000000000000904 /* Build configuration list for PBXNativeTarget "ProxFleetUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1F000000000000000000931 /* Debug */,
+				A1F000000000000000000932 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A1F000000000000000001001 /* XCLocalSwiftPackageReference "Packages/ProxFleetKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/ProxFleetKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1F000000000000000000201 /* FleetCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = FleetCore;
+		};
+		A1F000000000000000000202 /* PVEKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PVEKit;
+		};
+		A1F000000000000000000203 /* ProxmoxCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ProxmoxCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A1F000000000000000000001 /* Project object */;
+}

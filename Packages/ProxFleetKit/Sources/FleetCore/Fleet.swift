@@ -117,7 +117,13 @@ public final class Fleet {
             clusterName: "homelab",
             isDemo: true
         )
-        environment.credentials.setPassword("demo", for: profile.id)
+        return addSaved(profile, password: "demo")
+    }
+
+    /// Adds a server whose password is already known, e.g. from a development configuration.
+    @discardableResult
+    public func addSaved(_ profile: ServerProfile, password: String?) -> ServerProfile {
+        environment.credentials.setPassword(password, for: profile.id)
         add(profile, session: nil, transport: nil)
         return profile
     }

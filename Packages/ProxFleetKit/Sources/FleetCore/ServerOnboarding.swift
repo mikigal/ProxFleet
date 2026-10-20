@@ -137,6 +137,16 @@ public final class ServerOnboarding {
                 self.step = .credentials
             } catch ProxmoxError.untrustedCertificate(let details) {
                 self.step = .certificate(details)
+            } catch ProxmoxError.api(let status, _, _) where status == 404 || status == 501 {
+                self.step = .address
+                throw ProxmoxError.invalidResponse("no Proxmox VE API at this address, check the port")
+            } catch ProxmoxError.invalidResponse {
+                self.step = .address
+                throw ProxmoxError.invalidResponse("no Proxmox VE API at this address, check the port")
+            } catch {
+                // Errors are shown on the address step, where the user can correct the input.
+                self.step = .address
+                throw error
             }
         }
     }

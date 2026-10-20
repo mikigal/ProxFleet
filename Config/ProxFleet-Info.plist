@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	Proxmox servers usually have self-signed certificates and are reached by user-entered host names.
+	ATS only lets the app evaluate such certificates itself when arbitrary loads are allowed.
+	The app still connects over HTTPS only, and accepts a certificate only when the system trusts it
+	or the user confirmed its SHA-256 fingerprint (see URLSessionTransport).
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

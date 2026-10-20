@@ -1,0 +1,5 @@
+// Copy to Signing.local.xcconfig (ignored by git) and fill in your own values
+// to run on a device or archive. Not needed for the Simulator.
+
+DEVELOPMENT_TEAM = ABCDE12345
+BUNDLE_ID_PREFIX = com.yourname
