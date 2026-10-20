@@ -1,0 +1,32 @@
+{
+  "data": {
+    "cpu": 0,
+    "cpus": 1,
+    "disk": 12017664,
+    "diskread": 10190848,
+    "diskwrite": 32768,
+    "ha": {
+      "managed": 0
+    },
+    "maxdisk": 1020702720,
+    "maxmem": 268435456,
+    "maxswap": 536870912,
+    "mem": 1679360,
+    "name": "alpine-dns",
+    "netin": 337645,
+    "netout": 1778,
+    "pid": 9253,
+    "pressurecpufull": "0.00",
+    "pressurecpusome": "0.00",
+    "pressureiofull": "0.00",
+    "pressureiosome": "0.00",
+    "pressurememoryfull": "0.00",
+    "pressurememorysome": "0.00",
+    "status": "running",
+    "swap": 0,
+    "tags": "network",
+    "type": "lxc",
+    "uptime": 470,
+    "vmid": 200
+  }
+}

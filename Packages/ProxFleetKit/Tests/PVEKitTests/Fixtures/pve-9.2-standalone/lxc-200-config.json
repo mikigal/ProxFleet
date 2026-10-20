@@ -1,0 +1,15 @@
+{
+  "data": {
+    "arch": "amd64",
+    "cores": 1,
+    "digest": "61d9bbf23c6c3049bc853759eb42b367b389c6b7",
+    "hostname": "alpine-dns",
+    "memory": 256,
+    "net0": "name=eth0,bridge=vmbr0,hwaddr=BC:24:11:8F:45:9C,ip=dhcp,type=veth",
+    "ostype": "alpine",
+    "rootfs": "local-lvm:vm-200-disk-0,size=1G",
+    "swap": 512,
+    "tags": "network",
+    "unprivileged": 1
+  }
+}

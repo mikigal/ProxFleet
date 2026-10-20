@@ -1,0 +1,14 @@
+{
+  "data": {
+    "exitstatus": "OK",
+    "id": "102",
+    "node": "pve-claude",
+    "pid": 12008,
+    "pstart": 292234,
+    "starttime": 1792538608,
+    "status": "stopped",
+    "type": "qmpause",
+    "upid": "UPID:pve-claude:00002EE8:0004758A:6AD7F7F0:qmpause:102:root@pam:",
+    "user": "root@pam"
+  }
+}

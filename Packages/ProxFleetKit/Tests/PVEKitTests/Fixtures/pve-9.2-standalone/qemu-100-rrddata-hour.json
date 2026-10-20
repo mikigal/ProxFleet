@@ -1,0 +1,337 @@
+{
+  "data": [
+    {
+      "time": 1792535040
+    },
+    {
+      "time": 1792535100
+    },
+    {
+      "time": 1792535160
+    },
+    {
+      "time": 1792535220
+    },
+    {
+      "time": 1792535280
+    },
+    {
+      "time": 1792535340
+    },
+    {
+      "time": 1792535400
+    },
+    {
+      "time": 1792535460
+    },
+    {
+      "time": 1792535520
+    },
+    {
+      "time": 1792535580
+    },
+    {
+      "time": 1792535640
+    },
+    {
+      "time": 1792535700
+    },
+    {
+      "time": 1792535760
+    },
+    {
+      "time": 1792535820
+    },
+    {
+      "time": 1792535880
+    },
+    {
+      "time": 1792535940
+    },
+    {
+      "time": 1792536000
+    },
+    {
+      "time": 1792536060
+    },
+    {
+      "time": 1792536120
+    },
+    {
+      "time": 1792536180
+    },
+    {
+      "time": 1792536240
+    },
+    {
+      "time": 1792536300
+    },
+    {
+      "time": 1792536360
+    },
+    {
+      "time": 1792536420
+    },
+    {
+      "time": 1792536480
+    },
+    {
+      "time": 1792536540
+    },
+    {
+      "time": 1792536600
+    },
+    {
+      "time": 1792536660
+    },
+    {
+      "time": 1792536720
+    },
+    {
+      "time": 1792536780
+    },
+    {
+      "time": 1792536840
+    },
+    {
+      "time": 1792536900
+    },
+    {
+      "time": 1792536960
+    },
+    {
+      "time": 1792537020
+    },
+    {
+      "time": 1792537080
+    },
+    {
+      "time": 1792537140
+    },
+    {
+      "time": 1792537200
+    },
+    {
+      "time": 1792537260
+    },
+    {
+      "time": 1792537320
+    },
+    {
+      "time": 1792537380
+    },
+    {
+      "time": 1792537440
+    },
+    {
+      "time": 1792537500
+    },
+    {
+      "time": 1792537560
+    },
+    {
+      "time": 1792537620
+    },
+    {
+      "time": 1792537680
+    },
+    {
+      "time": 1792537740
+    },
+    {
+      "time": 1792537800
+    },
+    {
+      "time": 1792537860
+    },
+    {
+      "time": 1792537920
+    },
+    {
+      "time": 1792537980
+    },
+    {
+      "time": 1792538040
+    },
+    {
+      "cpu": 0.135540420639115,
+      "disk": 0,
+      "diskread": 40.96,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32628599.4666667,
+      "memhost": 32628599.4666667,
+      "netin": 642.426666666667,
+      "netout": 95.97,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538100
+    },
+    {
+      "cpu": 0.147815976888716,
+      "disk": 0,
+      "diskread": 35.84,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32497937.0666667,
+      "memhost": 32497937.0666667,
+      "netin": 1060.94666666667,
+      "netout": 109.68,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538160
+    },
+    {
+      "cpu": 0.136921659900176,
+      "disk": 0,
+      "diskread": 40.96,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32767180.8,
+      "memhost": 32767180.8,
+      "netin": 613.386666666667,
+      "netout": 101.823333333333,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538220
+    },
+    {
+      "cpu": 0.146338943612572,
+      "disk": 0,
+      "diskread": 34.1333333333333,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32627780.2666667,
+      "memhost": 32627780.2666667,
+      "netin": 780.073333333333,
+      "netout": 103.826666666667,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538280
+    },
+    {
+      "cpu": 0.135746742969268,
+      "disk": 0,
+      "diskread": 42.6666666666667,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32774963.2,
+      "memhost": 32774963.2,
+      "netin": 620.6,
+      "netout": 95.97,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538340
+    },
+    {
+      "cpu": 0.147266848769542,
+      "disk": 0,
+      "diskread": 34.1333333333333,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32694681.6,
+      "memhost": 32694681.6,
+      "netin": 702.063333333333,
+      "netout": 109.68,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538400
+    },
+    {
+      "cpu": 0.135218910885245,
+      "disk": 0,
+      "diskread": 42.6666666666667,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32614536.5333333,
+      "memhost": 32614536.5333333,
+      "netin": 567.706666666667,
+      "netout": 94.3266666666666,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538460
+    },
+    {
+      "cpu": 0.148001374280006,
+      "disk": 0,
+      "diskread": 34.1333333333333,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32631603.2,
+      "memhost": 32631603.2,
+      "netin": 799.303333333333,
+      "netout": 111.323333333333,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538520
+    },
+    {
+      "cpu": 0.135799038274917,
+      "disk": 0,
+      "diskread": 42.6666666666667,
+      "diskwrite": 0,
+      "maxcpu": 2,
+      "maxdisk": 4294967296,
+      "maxmem": 1073741824,
+      "mem": 32832170.6666667,
+      "memhost": 32832170.6666667,
+      "netin": 645.25,
+      "netout": 95.97,
+      "pressurecpufull": 0,
+      "pressurecpusome": 0,
+      "pressureiofull": 0,
+      "pressureiosome": 0,
+      "pressurememoryfull": 0,
+      "pressurememorysome": 0,
+      "time": 1792538580
+    }
+  ]
+}

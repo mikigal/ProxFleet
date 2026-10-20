@@ -16,8 +16,10 @@ struct RootView: View {
             ServerListView(selection: $selection)
         } detail: {
             if let selection, let connection = fleet.connection(for: selection) {
-                ServerDetailView(connection: connection)
-                    .id(selection)
+                NavigationStack {
+                    ServerDetailView(connection: connection)
+                }
+                .id(selection)
             } else {
                 ContentUnavailableView("No Server Selected", systemImage: "server.rack", description: Text("Choose a server from the list."))
             }

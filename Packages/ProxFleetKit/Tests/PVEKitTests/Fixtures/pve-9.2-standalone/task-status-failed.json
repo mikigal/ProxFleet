@@ -1,0 +1,14 @@
+{
+  "data": {
+    "exitstatus": "VM 100 already running",
+    "id": "100",
+    "node": "pve-claude",
+    "pid": 12032,
+    "pstart": 292656,
+    "starttime": 1792538612,
+    "status": "stopped",
+    "type": "qmstart",
+    "upid": "UPID:pve-claude:00002F00:00047730:6AD7F7F4:qmstart:100:root@pam:",
+    "user": "root@pam"
+  }
+}

@@ -8,7 +8,19 @@ struct ServerDetailView: View {
     var body: some View {
         content
             .navigationTitle(connection.profile.name)
+            .serverDestinations(connection)
             .task { await connection.connect() }
+            .alert(
+                "Task Failed",
+                isPresented: Binding(get: { connection.tasks.unreportedFailure != nil }, set: { if !$0 { connection.tasks.acknowledgeFailure() } }),
+                presenting: connection.tasks.unreportedFailure
+            ) { _ in
+                Button("OK") {}
+            } message: { task in
+                if case .failed(let message) = task.state {
+                    Text("\(task.title): \(message)")
+                }
+            }
     }
 
     @ViewBuilder

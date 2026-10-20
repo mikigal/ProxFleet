@@ -1,0 +1,93 @@
+{
+  "data": {
+    "agent": 1,
+    "balloon": 1073741824,
+    "ballooninfo": {
+      "actual": 1073741824,
+      "max_mem": 1073741824
+    },
+    "blockstat": {
+      "scsi0": {
+        "account_failed": true,
+        "account_invalid": true,
+        "failed_flush_operations": 0,
+        "failed_rd_operations": 0,
+        "failed_unmap_operations": 0,
+        "failed_wr_operations": 0,
+        "failed_zone_append_operations": 0,
+        "flush_operations": 0,
+        "flush_total_time_ns": 0,
+        "idle_time_ns": 11564983263,
+        "invalid_flush_operations": 0,
+        "invalid_rd_operations": 0,
+        "invalid_unmap_operations": 0,
+        "invalid_wr_operations": 0,
+        "invalid_zone_append_operations": 0,
+        "rd_bytes": 22528,
+        "rd_merged": 0,
+        "rd_operations": 44,
+        "rd_total_time_ns": 4616504,
+        "timed_stats": [],
+        "unmap_bytes": 0,
+        "unmap_merged": 0,
+        "unmap_operations": 0,
+        "unmap_total_time_ns": 0,
+        "wr_bytes": 0,
+        "wr_highest_offset": 0,
+        "wr_merged": 0,
+        "wr_operations": 0,
+        "wr_total_time_ns": 0,
+        "zone_append_bytes": 0,
+        "zone_append_merged": 0,
+        "zone_append_operations": 0,
+        "zone_append_total_time_ns": 0
+      }
+    },
+    "cpu": 0,
+    "cpus": 2,
+    "disk": 0,
+    "diskread": 22528,
+    "diskwrite": 0,
+    "ha": {
+      "managed": 0
+    },
+    "maxdisk": 4294967296,
+    "maxmem": 1073741824,
+    "mem": 32952320,
+    "memhost": 32952320,
+    "name": "web-server",
+    "netin": 421598,
+    "netout": 60436,
+    "nics": {
+      "tap100i0": {
+        "netin": 421598,
+        "netout": 60436
+      }
+    },
+    "pid": 7995,
+    "pressurecpufull": 0,
+    "pressurecpusome": 0,
+    "pressureiofull": 0,
+    "pressureiosome": 0,
+    "pressurememoryfull": 0,
+    "pressurememorysome": 0,
+    "proxmox-support": {
+      "backup-access-api": true,
+      "backup-fleecing": true,
+      "backup-max-workers": true,
+      "pbs-dirty-bitmap": true,
+      "pbs-dirty-bitmap-migration": true,
+      "pbs-dirty-bitmap-savevm": true,
+      "pbs-library-version": "2.0.3 (UNKNOWN)",
+      "pbs-masterkey": true,
+      "query-bitmap-info": true
+    },
+    "qmpstatus": "running",
+    "running-machine": "pc-i440fx-11.0+pve0",
+    "running-qemu": "11.0.3",
+    "status": "running",
+    "tags": "prod;web",
+    "uptime": 589,
+    "vmid": 100
+  }
+}

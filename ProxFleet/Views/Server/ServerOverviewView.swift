@@ -43,6 +43,13 @@ struct ServerOverviewView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                NavigationLink(value: ServerRoute.tasks) {
+                    Label("Tasks", systemImage: "list.bullet.rectangle")
+                }
+                .badge(connection.tasks.runningTasks.count)
+                .accessibilityIdentifier("tasks")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Menu("More", systemImage: "ellipsis") {
                     Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right") {
                         Task { await connection.signOut() }
@@ -57,7 +64,10 @@ struct ServerOverviewView: View {
         if !guests.isEmpty {
             Section(title) {
                 ForEach(guests) { guest in
-                    GuestRow(guest: guest, showsNode: showsNode)
+                    NavigationLink(value: ServerRoute.guest(GuestReference(guest))) {
+                        GuestRow(guest: guest, showsNode: showsNode)
+                    }
+                    .accessibilityIdentifier("guest.\(guest.vmid)")
                 }
             }
         }
@@ -120,7 +130,7 @@ private struct NodeHeader: View {
                 }
             }
             HStack(spacing: 16) {
-                UsageGauge(title: "CPU", fraction: node.cpuUsage, detail: "\(node.cpuCount) cores")
+                UsageGauge(title: "CPU", fraction: node.cpuUsage, detail: Format.cores(node.cpuCount))
                 UsageGauge(title: "Memory", fraction: Format.fraction(node.memoryUsed, of: node.memoryTotal), detail: Format.bytes(node.memoryTotal))
             }
             HStack(spacing: 0) {
@@ -181,7 +191,7 @@ private struct NodeRow: View {
             }
             if node.isOnline {
                 HStack(spacing: 16) {
-                    UsageGauge(title: "CPU", fraction: node.cpuUsage, detail: "\(node.cpuCount) cores")
+                    UsageGauge(title: "CPU", fraction: node.cpuUsage, detail: Format.cores(node.cpuCount))
                     UsageGauge(title: "Memory", fraction: Format.fraction(node.memoryUsed, of: node.memoryTotal), detail: Format.bytes(node.memoryTotal))
                 }
             }

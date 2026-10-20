@@ -1,0 +1,19 @@
+{
+  "data": {
+    "agent": "1",
+    "boot": "order=scsi0;net0",
+    "cores": 2,
+    "description": "Test VM without an OS",
+    "digest": "5d3cb4e2d938b4f8c1210ef626e1506914fa07cb",
+    "memory": "1024",
+    "meta": "creation-qemu=11.0.3,ctime=1792538012",
+    "name": "web-server",
+    "net0": "virtio=BC:24:11:B1:83:AD,bridge=vmbr0",
+    "ostype": "l26",
+    "scsi0": "local-lvm:vm-100-disk-0,size=4G",
+    "scsihw": "virtio-scsi-single",
+    "smbios1": "uuid=fd9d79ea-50ae-4b26-8cb3-cb35c16723be",
+    "tags": "prod;web",
+    "vmgenid": "f684cc23-79c9-4a42-b99f-c3ba1eae12aa"
+  }
+}

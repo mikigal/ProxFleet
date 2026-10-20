@@ -105,6 +105,49 @@ struct LiveServerTests {
         }
     }
 
+    /// Pauses and resumes VM 102 from the seed script, and checks that a failing task reports its message.
+    @Test func powerActionTasks() async throws {
+        let session = try await trustedSession()
+        _ = try await session.login(username: try #require(server["USER"]), password: try #require(server["PASSWORD"]), realm: server["REALM"])
+        let node = try #require(try await session.fetchClusterSnapshot().nodes.first?.name)
+        let vm = GuestReference(node: node, vmid: 102, kind: .virtualMachine)
+        try #require(try await session.send(PVE.guestStatus(vm)).powerState == .running)
+
+        func finish(_ upid: String) async throws -> TaskStatus {
+            for _ in 0..<60 {
+                let status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+                if !status.isRunning { return status }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            throw ProxmoxError.invalidResponse("task did not finish")
+        }
+
+        #expect(try await finish(try await session.send(PVE.powerAction(.pause, on: vm))).succeeded)
+        #expect(try await session.send(PVE.guestStatus(vm)).powerState == .paused)
+        #expect(try await finish(try await session.send(PVE.powerAction(.resume, on: vm))).succeeded)
+        #expect(try await session.send(PVE.guestStatus(vm)).powerState == .running)
+
+        let failed = try await finish(try await session.send(PVE.powerAction(.start, on: vm)))
+        #expect(!failed.succeeded)
+        #expect(failed.exitStatus == "VM 102 already running")
+
+        let config = try await session.send(PVE.guestConfig(vm))
+        #expect(config.name == "db-server")
+        #expect(!config.disks.isEmpty)
+        let history = try await session.send(PVE.guestRRD(vm, timeframe: .hour))
+        #expect(!history.isEmpty)
+        #expect(try await session.privileges(on: vm.aclPath).contains("VM.PowerMgmt"))
+    }
+
+    @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
+    func readOnlyUserLacksPowerManagement() async throws {
+        let session = try await trustedSession()
+        _ = try await session.login(username: try #require(server["LIMITED_USER"]), password: try #require(server["LIMITED_PASSWORD"]), realm: server["LIMITED_REALM"])
+        let privileges = try await session.privileges(on: "/vms/100")
+        #expect(privileges.contains("VM.Audit"))
+        #expect(!privileges.contains("VM.PowerMgmt"))
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()

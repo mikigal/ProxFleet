@@ -33,7 +33,9 @@ public final class ServerConnection: Identifiable {
     private let environment: FleetEnvironment
     private let onProfileChange: @MainActor (ServerProfile) -> Void
     private var transport: any HTTPTransport
-    private var session: ProxmoxSession
+    private(set) var session: ProxmoxSession
+    /// Tasks started from the app on this server.
+    public let tasks: TaskCenter
     private var addressIndex = 0
 
     init(profile: ServerProfile, environment: FleetEnvironment, session: ProxmoxSession? = nil, transport: (any HTTPTransport)? = nil, onProfileChange: @escaping @MainActor (ServerProfile) -> Void) {
@@ -46,6 +48,16 @@ public final class ServerConnection: Identifiable {
         let address = profile.primaryAddress ?? ServerAddress(host: "invalid", port: profile.product.defaultPort)
         self.session = session ?? ProxmoxSession(address: address, product: profile.product, transport: transport, ticket: environment.credentials.ticket(for: profile.id))
         if session != nil { state = .connected }
+
+        let owner = WeakReference<ServerConnection>()
+        tasks = TaskCenter(
+            fetchStatus: { upid in
+                guard let connection = owner.value else { throw CancellationError() }
+                return try await connection.session.send(PVE.taskStatus(node: upid.node, upid: upid.rawValue))
+            },
+            onFinish: { _ in await owner.value?.refresh() }
+        )
+        owner.value = self
     }
 
     public var currentAddress: ServerAddress { session.address }
@@ -219,14 +231,34 @@ public final class ServerConnection: Identifiable {
     }
 
     private func loadSnapshot() async throws {
-        snapshot = try await session.fetchClusterSnapshot()
+        let snapshot = try await session.fetchClusterSnapshot()
+        self.snapshot = snapshot
+        // Servers added by address alone get a meaningful name once we know what they are.
+        if profile.name == profile.primaryAddress?.host,
+           let name = snapshot.clusterName ?? snapshot.nodes.first(where: \.isLocal)?.name {
+            profile.name = name
+            onProfileChange(profile)
+        }
         if let ticket = await session.ticket {
             environment.credentials.setTicket(ticket, for: profile.id)
         }
+    }
+
+    /// Starts a power action and follows its task.
+    /// - Parameter reportsFailure: false when the caller shows a failure itself.
+    @discardableResult
+    public func perform(_ action: PowerAction, on guest: GuestReference, reportsFailure: Bool = true) async throws -> TaskCenter.TrackedTask {
+        let upid = try await session.send(PVE.powerAction(action, on: guest))
+        return try tasks.track(upid, reportsFailure: reportsFailure)
     }
 
     /// Direct API access for feature screens.
     public func send<Response>(_ request: APIRequest<Response>) async throws -> Response {
         try await session.send(request)
     }
+}
+
+@MainActor
+final class WeakReference<Object: AnyObject> {
+    weak var value: Object?
 }

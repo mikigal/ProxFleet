@@ -1,0 +1,21 @@
+{
+  "data": {
+    "agent": "1",
+    "bios": "ovmf",
+    "boot": "order=scsi0;net0",
+    "cores": 2,
+    "digest": "c8edacd37c2e4c01839cb50a86f28b077d278174",
+    "efidisk0": "local-lvm:vm-101-disk-0,efitype=4m,ms-cert=2023k,pre-enrolled-keys=1,size=4M",
+    "machine": "pc-q35-11.0+pve2",
+    "memory": "2048",
+    "meta": "creation-qemu=11.0.3,ctime=1792538016",
+    "name": "windows-test",
+    "net0": "virtio=BC:24:11:BC:2F:86,bridge=vmbr0",
+    "ostype": "win11",
+    "scsi0": "local-lvm:vm-101-disk-1,size=4G",
+    "scsihw": "virtio-scsi-single",
+    "smbios1": "uuid=30728f30-d852-48c2-b6a2-c00a4270ebf2",
+    "tags": "test",
+    "vmgenid": "6de948c1-ccc8-4514-9704-9a0343b6baf0"
+  }
+}

@@ -21,10 +21,11 @@ public final class DemoTransport: HTTPTransport {
     }
 }
 
-private actor DemoState {
+actor DemoState {
     var cluster: DemoCluster
+    var tasks: [DemoTask] = []
     private var ticketCounter = 0
-    private let started = Date()
+    let started = Date()
 
     init(cluster: DemoCluster) {
         self.cluster = cluster
@@ -63,8 +64,18 @@ private actor DemoState {
         case (.get, "/nodes"):
             return success(.array(cluster.nodes.map { ["node": .string($0.name), "status": $0.isOnline ? "online" : "offline"] }))
         default:
-            return failure(501, "Method '\(request.method.rawValue) \(path)' is not available in demo mode")
+            let user = Self.userID(fromCookie: request.headers["Cookie"]) ?? "root@pam"
+            return handleGuestOrTask(request.method, path: path, parameters: parameters, user: user)
+                ?? failure(501, "Method '\(request.method.rawValue) \(path)' is not available in demo mode")
         }
+    }
+
+    /// `PVEAuthCookie=PVE%3Aroot%40pam%3A...` → `root@pam`.
+    private static func userID(fromCookie cookie: String?) -> String? {
+        guard let cookie, let range = cookie.range(of: "PVEAuthCookie=") else { return nil }
+        let ticket = String(cookie[range.upperBound...]).removingPercentEncoding ?? ""
+        let parts = ticket.split(separator: ":")
+        return parts.count > 1 ? String(parts[1]) : nil
     }
 
     // MARK: - Authentication
@@ -162,7 +173,7 @@ private actor DemoState {
                 "cpu": .double(running ? Self.load(seed: guest.vmid, elapsed: elapsed, base: 0.08, swing: 0.06) : 0),
                 "mem": .int(running ? Int(guest.memoryGiB * gib * 0.6) : 0),
                 "disk": 0,
-                "uptime": .int(running ? 86_400 * (guest.vmid % 9 + 1) + Int(elapsed) : 0),
+                "uptime": .int(running ? uptime(of: guest) : 0),
             ]
             if !guest.tags.isEmpty { item["tags"] = .string(guest.tags.joined(separator: ";")) }
             items.append(.object(item))
@@ -185,18 +196,18 @@ private actor DemoState {
     }
 
     /// Smoothly varying fake CPU load so the UI looks alive.
-    private static func load(seed: Int, elapsed: TimeInterval, base: Double, swing: Double) -> Double {
+    static func load(seed: Int, elapsed: TimeInterval, base: Double, swing: Double) -> Double {
         let phase = Double(abs(seed) % 360) * .pi / 180
         return max(0, base + swing * sin(elapsed / 7 + phase))
     }
 
     // MARK: - Helpers
 
-    private func success(_ data: JSONValue) -> HTTPResponse {
+    func success(_ data: JSONValue) -> HTTPResponse {
         HTTPResponse(statusCode: 200, headers: ["Content-Type": "application/json"], body: JSONValue.object(["data": data, "success": 1]).encoded())
     }
 
-    private func failure(_ status: Int, _ message: String) -> HTTPResponse {
+    func failure(_ status: Int, _ message: String) -> HTTPResponse {
         let body: JSONValue = ["data": nil, "success": 0, "status": .int(status), "message": .string(message)]
         return HTTPResponse(statusCode: 200, headers: ["Content-Type": "application/json"], body: body.encoded())
     }

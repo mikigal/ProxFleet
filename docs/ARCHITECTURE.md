@@ -36,6 +36,12 @@ A profile can hold several addresses. Tickets are valid on every node of a clust
 
 Each saved server has its own `ServerConnection`, so several servers can be signed in at the same time.
 
+## Tasks and guest details
+
+Most actions return a task ID (UPID) instead of a result. `TaskCenter`, owned by each `ServerConnection`, polls `/nodes/{node}/tasks/{upid}/status` until the task stops (every 0.5 s at first, slower later), refreshes the snapshot afterwards and reports failures with the server's `exitstatus`. A screen that shows the outcome itself starts the task with `reportsFailure: false`, so the failure is not shown twice.
+
+`GuestDetail` loads status, configuration, performance history (`rrddata`), IP addresses (QEMU guest agent or container interfaces), the user's privileges on `/vms/{vmid}` and recent tasks in parallel. A paused VM reports `status: running` with `qmpstatus: paused`, so `GuestStatus.powerState` combines both. Power actions are offered according to state and the `VM.PowerMgmt` privilege, as in the web interface.
+
 ## Secrets
 
 - Passwords (only when the user chooses to remember them) and tickets are stored in the Keychain with `WhenUnlockedThisDeviceOnly`.

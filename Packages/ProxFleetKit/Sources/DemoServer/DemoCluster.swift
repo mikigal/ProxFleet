@@ -23,6 +23,9 @@ public struct DemoCluster: Sendable {
         public var diskGiB: Int
         public var tags: [String]
         public var isTemplate: Bool
+        public var isPaused = false
+        /// When the guest was last started in demo mode; nil means "running for a while already".
+        public var bootedAt: Date?
 
         public init(_ vmid: Int, _ kind: Kind, _ name: String, on node: String, running: Bool = true, cores: Int = 2, memoryGiB: Double = 2, diskGiB: Int = 32, tags: [String] = [], template: Bool = false) {
             self.vmid = vmid

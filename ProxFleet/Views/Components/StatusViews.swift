@@ -83,7 +83,12 @@ struct UsageGauge: View {
 
 enum Format {
     static func bytes(_ value: Int64) -> String {
-        value.formatted(.byteCount(style: .memory))
+        value.formatted(.byteCount(style: .memory, spellsOutZero: false))
+    }
+
+    /// "1 core", "4 cores", using automatic grammar agreement.
+    static func cores(_ count: Int) -> String {
+        String(AttributedString(localized: "^[\(count) core](inflect: true)").characters)
     }
 
     static func fraction(_ used: Int64, of total: Int64) -> Double {

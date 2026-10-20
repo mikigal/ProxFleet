@@ -14,9 +14,12 @@ Early development. What works now:
 - Sign-in with password and realm, TOTP, Yubico OTP or recovery keys
 - Standalone nodes and clusters, with several saved servers and automatic failover between cluster nodes
 - Cluster overview: nodes, resource usage, virtual machines and containers
+- VM and container details: usage, performance charts, IP addresses, hardware and options
+- Power actions (start, shut down, reboot, stop, reset, pause, resume, hibernate) with confirmation, hidden without the `VM.PowerMgmt` privilege
+- Task tracking: progress of started actions, recent tasks of the server, task logs
 - Demo mode with a built-in sample cluster
 
-Next up: virtual machine details, power actions, console, configuration editing and creation.
+Next up: console, configuration editing and creating VMs.
 
 ## Requirements
 
