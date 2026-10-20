@@ -123,7 +123,14 @@ private struct CredentialsStep: View {
                 if !onboarding.realms.isEmpty {
                     Picker("Realm", selection: $onboarding.realm) {
                         ForEach(onboarding.realms) { realm in
-                            Text(realm.displayName).tag(realm.realm)
+                            // Short ID in the row, the description as a subtitle in the menu.
+                            VStack {
+                                Text(realm.realm)
+                                if let comment = realm.comment {
+                                    Text(comment)
+                                }
+                            }
+                            .tag(realm.realm)
                         }
                     }
                     .accessibilityIdentifier("realm")

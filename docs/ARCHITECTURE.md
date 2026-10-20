@@ -46,7 +46,10 @@ Each saved server has its own `ServerConnection`, so several servers can be sign
 
 - Package tests (`swift test`) cover the API client, decoding, authentication flows and the app domain, using `MockTransport` and the `DemoServer`.
 - UI tests run the app in the Simulator. Launch arguments: `-inMemory` (do not touch saved servers) and `-demo` (open the demo cluster).
-- Fixtures in tests follow the API documentation for now. They will be replaced by responses recorded from a real test server.
+- `PVEKitTests/Fixtures` holds responses recorded from a real Proxmox VE 9.2 node.
+- `LiveServerTests` run against a real server when `PROXFLEET_TEST_SERVER_ENV` points to an env file: certificate pinning, login, renewal, TOTP and error formats. They are skipped otherwise.
+
+Verified on Proxmox VE 9.2: `extjs` errors return HTTP 200 with `success: 0` and `status` (sometimes as a string). Requests without a valid ticket or CSRF token return HTTP 401 with an empty body. `DELETE` must not have a body. A second-factor challenge can be retried after a wrong code. Renewing a ticket within the same second returns the same ticket.
 
 ## Planned
 

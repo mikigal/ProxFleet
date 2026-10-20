@@ -24,8 +24,10 @@ let package = Package(
         .target(name: "DemoServer", dependencies: ["ProxmoxCore"]),
 
         .testTarget(name: "ProxmoxCoreTests", dependencies: ["ProxmoxCore"]),
-        .testTarget(name: "PVEKitTests", dependencies: ["PVEKit", "DemoServer"]),
+        .testTarget(name: "PVEKitTests", dependencies: ["PVEKit", "DemoServer"], resources: [.copy("Fixtures")]),
         .testTarget(name: "FleetCoreTests", dependencies: ["FleetCore", "DemoServer"]),
+        // Runs against a real server only when PROXFLEET_TEST_SERVER_ENV points to an env file, see README.
+        .testTarget(name: "LiveServerTests", dependencies: ["ProxmoxCore", "ProxmoxURLSession", "PVEKit"]),
     ],
     swiftLanguageModes: [.v6]
 )

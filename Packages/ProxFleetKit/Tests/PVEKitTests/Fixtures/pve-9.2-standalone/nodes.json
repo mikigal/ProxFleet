@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "cpu": 0.121252059308072,
+      "disk": 6262251520,
+      "id": "node/pve-claude",
+      "level": "",
+      "maxcpu": 6,
+      "maxdisk": 43888205824,
+      "maxmem": 8254115840,
+      "mem": 1780064256,
+      "node": "pve-claude",
+      "ssl_fingerprint": "BF:CB:FB:44:A1:85:B5:AB:A9:E6:0C:70:9A:10:AB:99:35:EC:5B:B4:BC:51:D8:56:AC:0A:9C:72:92:E6:A2:3A",
+      "status": "online",
+      "type": "node",
+      "uptime": 2466
+    }
+  ]
+}

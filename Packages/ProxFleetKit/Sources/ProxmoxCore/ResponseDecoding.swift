@@ -36,8 +36,10 @@ enum ResponseDecoder {
 
         let status = envelope.status ?? response.statusCode
         if envelope.success == false || status >= 400 {
-            if status == 401 { throw ProxmoxError.unauthorized(envelope.message) }
-            throw ProxmoxError.api(status: status, message: envelope.message?.trimmingCharacters(in: .whitespacesAndNewlines), fieldErrors: envelope.errors)
+            // Proxmox ends messages with a newline.
+            let message = envelope.message?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if status == 401 { throw ProxmoxError.unauthorized(message) }
+            throw ProxmoxError.api(status: status, message: message, fieldErrors: envelope.errors)
         }
         if let data = envelope.data { return data }
         if let null = T.self as? NullDecodable.Type, let value = null.nullValue as? T { return value }

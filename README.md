@@ -42,6 +42,19 @@ cd Packages/ProxFleetKit && swift test
 xcodebuild test -project ProxFleet.xcodeproj -scheme ProxFleet -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
+### Testing against a real server
+
+Use a disposable Proxmox VE installation, for example a nested VM. Never a production server: the tools create and delete users and guests.
+
+1. Copy `Config/TestServer.example.env` to `Config/TestServer.local.env` (ignored by git) and fill in the address and root credentials.
+2. Run `python3 -I scripts/seed-test-server.py Config/TestServer.local.env`. It creates a TOTP user, a read-only user and a few VMs and containers, and appends the generated credentials to the env file.
+3. Run the live tests:
+
+```sh
+cd Packages/ProxFleetKit
+PROXFLEET_TEST_SERVER_ENV=$PWD/../../Config/TestServer.local.env swift test --filter LiveServerTests
+```
+
 ## Project layout
 
 | Path | Contents |
@@ -53,3 +66,7 @@ xcodebuild test -project ProxFleet.xcodeproj -scheme ProxFleet -destination 'pla
 | `docs/` | Architecture notes |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit together.
+
+## License
+
+ProxFleet is free software, licensed under the GNU General Public License v3.0 or later.

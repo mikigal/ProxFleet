@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import ProxmoxCore
+import PVEKit
 
 /// Drives the "Add Server" flow: address, certificate confirmation, credentials and second factor.
 @MainActor
@@ -34,6 +35,8 @@ public final class ServerOnboarding {
     private var session: ProxmoxSession?
     private var trustedFingerprints: [String] = []
     private var ticket: AuthTicket?
+    /// Name of the node we signed in to, used as the default name of a standalone server.
+    private var nodeName: String?
 
     init(fleet: Fleet) {
         self.fleet = fleet
@@ -78,7 +81,7 @@ public final class ServerOnboarding {
             let user = self.username.trimmingCharacters(in: .whitespaces)
             switch try await session.login(username: user, password: self.password, realm: self.realm) {
             case .authenticated(let ticket):
-                self.didAuthenticate(ticket)
+                await self.didAuthenticate(ticket)
             case .needsSecondFactor(let challenge):
                 self.step = .secondFactor(challenge)
             }
@@ -90,7 +93,7 @@ public final class ServerOnboarding {
         await run {
             do {
                 let ticket = try await session.completeLogin(challenge, method: method, code: code)
-                self.didAuthenticate(ticket)
+                await self.didAuthenticate(ticket)
             } catch ProxmoxError.unauthorized {
                 throw ProxmoxError.unauthorized("The code was not accepted.")
             }
@@ -151,8 +154,12 @@ public final class ServerOnboarding {
         }
     }
 
-    private func didAuthenticate(_ ticket: AuthTicket) {
+    private func didAuthenticate(_ ticket: AuthTicket) async {
         self.ticket = ticket
+        if ticket.clusterName == nil, let session {
+            let status = try? await session.send(PVE.clusterStatus())
+            nodeName = status?.first { $0.kind == .node && $0.isLocal == true }?.name
+        }
         if let cluster = ticket.clusterName, let existing = fleet.profile(inCluster: cluster) {
             step = .duplicateCluster(existing: existing)
             return
@@ -164,7 +171,7 @@ public final class ServerOnboarding {
         guard let address else { return }
         var profile = draftProfile(address: address)
         profile.clusterName = ticket.clusterName
-        profile.name = ticket.clusterName ?? address.host
+        profile.name = ticket.clusterName ?? nodeName ?? address.host
         fleet.environment.credentials.setTicket(ticket, for: profile.id)
         if rememberPassword {
             fleet.environment.credentials.setPassword(password, for: profile.id)

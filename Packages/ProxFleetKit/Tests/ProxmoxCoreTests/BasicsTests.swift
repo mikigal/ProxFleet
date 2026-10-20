@@ -70,7 +70,7 @@ struct ResponseDecodingTests {
 
     @Test func unauthorizedInBodyOrStatusLine() {
         #expect(throws: ProxmoxError.unauthorized("authentication failure")) {
-            try ResponseDecoder.decode(Nothing.self, from: .json(#"{"data":null,"success":0,"status":401,"message":"authentication failure"}"#))
+            try ResponseDecoder.decode(Nothing.self, from: .json(#"{"data":null,"success":0,"status":"401","message":"authentication failure\n"}"#))
         }
         #expect(throws: ProxmoxError.unauthorized(nil)) {
             try ResponseDecoder.decode(Nothing.self, from: HTTPResponse(statusCode: 401, body: Data()))

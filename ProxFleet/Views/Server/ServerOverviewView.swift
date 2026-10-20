@@ -8,17 +8,25 @@ struct ServerOverviewView: View {
     var body: some View {
         List {
             if let snapshot = connection.snapshot {
-                Section {
-                    ClusterHeader(snapshot: snapshot)
-                }
-                Section("Nodes") {
-                    ForEach(snapshot.nodes) { node in
-                        NodeRow(node: node)
+                // A standalone node is shown as the server itself, without cluster information.
+                if snapshot.topology == .standalone, let node = snapshot.nodes.first {
+                    Section {
+                        NodeHeader(node: node, snapshot: snapshot)
+                    }
+                } else {
+                    Section {
+                        ClusterHeader(snapshot: snapshot)
+                    }
+                    Section("Nodes") {
+                        ForEach(snapshot.nodes) { node in
+                            NodeRow(node: node)
+                        }
                     }
                 }
-                guestSection("Virtual Machines", guests: snapshot.virtualMachines.filter { !$0.isTemplate })
-                guestSection("Containers", guests: snapshot.containers.filter { !$0.isTemplate })
-                guestSection("Templates", guests: snapshot.guests.filter(\.isTemplate))
+                let showsNode = snapshot.nodes.count > 1
+                guestSection("Virtual Machines", guests: snapshot.virtualMachines.filter { !$0.isTemplate }, showsNode: showsNode)
+                guestSection("Containers", guests: snapshot.containers.filter { !$0.isTemplate }, showsNode: showsNode)
+                guestSection("Templates", guests: snapshot.guests.filter(\.isTemplate), showsNode: showsNode)
             }
         }
         .refreshable { await connection.refresh() }
@@ -45,11 +53,11 @@ struct ServerOverviewView: View {
     }
 
     @ViewBuilder
-    private func guestSection(_ title: LocalizedStringKey, guests: [GuestSummary]) -> some View {
+    private func guestSection(_ title: LocalizedStringKey, guests: [GuestSummary], showsNode: Bool) -> some View {
         if !guests.isEmpty {
             Section(title) {
                 ForEach(guests) { guest in
-                    GuestRow(guest: guest)
+                    GuestRow(guest: guest, showsNode: showsNode)
                 }
             }
         }
@@ -62,14 +70,10 @@ private struct ClusterHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                switch snapshot.topology {
-                case .standalone:
-                    Label("Standalone Node", systemImage: "server.rack")
-                        .font(.headline)
-                case .cluster(let name, let quorate):
-                    Label("Cluster \(name)", systemImage: "square.stack.3d.up.fill")
-                        .font(.headline)
-                    Spacer()
+                Label("Cluster \(snapshot.clusterName ?? "")", systemImage: "square.stack.3d.up.fill")
+                    .font(.headline)
+                Spacer()
+                if case .cluster(_, let quorate) = snapshot.topology {
                     Text(quorate ? "Quorate" : "No Quorum")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8)
@@ -80,17 +84,57 @@ private struct ClusterHeader: View {
             }
             HStack(spacing: 0) {
                 Metric(value: "\(snapshot.nodes.filter(\.isOnline).count)/\(snapshot.nodes.count)", label: "Nodes online")
-                Metric(value: running(snapshot.virtualMachines), label: "VMs running")
-                Metric(value: running(snapshot.containers), label: "CTs running")
+                Metric(value: runningCount(snapshot.virtualMachines), label: "VMs running")
+                Metric(value: runningCount(snapshot.containers), label: "CTs running")
             }
         }
         .padding(.vertical, 4)
     }
 
-    private func running(_ guests: [GuestSummary]) -> String {
-        let real = guests.filter { !$0.isTemplate }
-        return "\(real.filter { $0.state == .running }.count)/\(real.count)"
+}
+
+/// Header for a standalone node: the node's own status and usage, plus guest counts.
+private struct NodeHeader: View {
+    let node: NodeSummary
+    let snapshot: ClusterSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Label {
+                    Text(node.name)
+                } icon: {
+                    Image(systemName: "server.rack")
+                }
+                .font(.headline)
+                if let ip = node.ip {
+                    Text(ip)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if node.isOnline {
+                    Text("Up \(Format.uptime(node.uptime))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 16) {
+                UsageGauge(title: "CPU", fraction: node.cpuUsage, detail: "\(node.cpuCount) cores")
+                UsageGauge(title: "Memory", fraction: Format.fraction(node.memoryUsed, of: node.memoryTotal), detail: Format.bytes(node.memoryTotal))
+            }
+            HStack(spacing: 0) {
+                Metric(value: runningCount(snapshot.virtualMachines), label: "VMs running")
+                Metric(value: runningCount(snapshot.containers), label: "CTs running")
+            }
+        }
+        .padding(.vertical, 4)
     }
+}
+
+private func runningCount(_ guests: [GuestSummary]) -> String {
+    let real = guests.filter { !$0.isTemplate }
+    return "\(real.filter { $0.state == .running }.count)/\(real.count)"
 }
 
 private struct Metric: View {
@@ -148,6 +192,7 @@ private struct NodeRow: View {
 
 private struct GuestRow: View {
     let guest: GuestSummary
+    let showsNode: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -161,8 +206,10 @@ private struct GuestRow: View {
                 HStack(spacing: 4) {
                     Text(verbatim: "\(guest.vmid)")
                         .monospacedDigit()
-                    Text(verbatim: "·")
-                    Text(guest.node)
+                    if showsNode {
+                        Text(verbatim: "·")
+                        Text(guest.node)
+                    }
                     ForEach(guest.tags, id: \.self) { tag in
                         TagChip(tag: tag)
                     }
