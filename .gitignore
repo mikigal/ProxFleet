@@ -1,0 +1,21 @@
+# Secrets and per-developer settings. Never commit these.
+*.local.*
+*.local
+.env
+.env.*
+fixtures-raw/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+DerivedData/
+build/
+.build/
+.swiftpm/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
