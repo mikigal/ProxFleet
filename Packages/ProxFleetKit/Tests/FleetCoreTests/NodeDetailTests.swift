@@ -155,4 +155,34 @@ struct NodeDetailTests {
         await detail.loadNetwork()
         await #expect(throws: ConfigUpdateError.self) { try await detail.revertNetwork() }
     }
+
+    @Test func disksAndStorage() async throws {
+        let connection = try await connection()
+        let detail = NodeDetail(node: "pve1", connection: connection)
+        #expect(await detail.loadDisks() == nil)
+        let disks = try #require(detail.disks)
+        #expect(NodeDisk.grouped(disks).map(\.disk.name) == ["nvme0n1", "sda", "sdb", "sdc", "sdd"])
+        #expect(detail.zfsPools?.map(\.name) == ["tank"])
+        #expect(detail.volumeGroups?.map(\.name) == ["pve"] && detail.thinPools?.map(\.name) == ["data"])
+        #expect(try await detail.zfsStatus(of: "tank").devices.first?.children.first?.name == "mirror-0")
+        #expect(try await detail.smart(of: "/dev/sdd").attributes.contains { $0.id == 9 })
+        #expect(try await detail.smart(of: "/dev/nvme0n1").text?.contains("Percentage Used") == true)
+
+        var draft = DiskStorageDraft(kind: .zfs)
+        draft.name = "fast"
+        draft.raidLevel = "mirror"
+        draft.devices = ["/dev/sdc", "/dev/sdd"]
+        try await detail.createDiskStorage(draft)
+        #expect(detail.zfsPools?.map(\.name) == ["tank", "fast"])
+        #expect(detail.disks?.first { $0.path == "/dev/sdc" }?.usage == "ZFS")
+        #expect(connection.tasks.tasks.first?.title == "fast – Create ZFS Pool")
+
+        await #expect(throws: ConfigUpdateError.self) { try await detail.wipe("/dev/sdc") }
+        try await detail.deleteDiskStorage(.zfs, name: "fast", cleanupConfig: true, wipeDisks: true)
+        #expect(detail.disks?.first { $0.path == "/dev/sdc" }?.isUnused == true)
+        try await detail.initializeGPT("/dev/sdc")
+        #expect(detail.disks?.first { $0.path == "/dev/sdc" }?.hasGPT == true)
+        try await detail.wipe("/dev/sdc")
+        #expect(detail.disks?.first { $0.path == "/dev/sdc" }?.hasGPT == false)
+    }
 }

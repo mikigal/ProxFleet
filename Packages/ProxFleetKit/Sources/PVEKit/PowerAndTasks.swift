@@ -144,6 +144,9 @@ public enum TaskDescription {
         "termproxy": "Console", "spiceproxy": "SPICE Console", "aptupdate": "Update Package Database",
         "imgcopy": "Copy Image", "imgdel": "Delete Volume", "download": "Download", "startall": "Start All", "stopall": "Stop All",
         "srvreload": "Reload Service", "srvrestart": "Restart Service", "srvstart": "Start Service", "srvstop": "Stop Service",
+        "diskinit": "Initialize Disk with GPT", "wipedisk": "Wipe Disk", "zfscreate": "Create ZFS Pool", "zfsremove": "Remove ZFS Pool",
+        "lvmcreate": "Create LVM Volume Group", "lvmremove": "Remove LVM Volume Group", "lvmthincreate": "Create LVM Thin Pool",
+        "lvmthinremove": "Remove LVM Thin Pool", "dircreate": "Create Directory", "dirremove": "Remove Directory",
     ]
 }
 

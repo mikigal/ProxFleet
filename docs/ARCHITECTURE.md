@@ -100,6 +100,8 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
 - Time: only the time zone can be set. The list comes from the system's time zone names, which match `/usr/share/zoneinfo/zone.tab`.
 - Network: changes go to `/etc/network/interfaces.new` and take effect with `PUT .../network` (a task running `ifreload`); `DELETE .../network` discards them. `GET .../network` reports the pending diff in `changes`, next to `data`, so `NetworkConfiguration` conforms to `EnvelopeDecodable` and decodes from the whole response body.
 - `PUT .../network/{iface}` keeps settings it does not receive and needs `type`; cleared settings go in `delete`. `NetworkInterfaceDraft` serializes like `OptionsDraft` and only sends what changed. VLANs named like `vmbr0.20` take their parent and tag from the name. Proxmox itself checks for a second default gateway and ports used by another interface.
+- Disks: `disks/list` with `include-partitions=1`, grouped under their disks by `parent`. `wearout` is a number or `N/A`; `used` is absent for unused disks. SMART returns attributes for ATA disks and plain text for NVMe and SAS. The LVM endpoint returns a tree (volume groups with physical volumes as children); ZFS pool details nest vdevs and sections (`logs`, `cache`) under `children`.
+- Creating an LVM volume group, thin pool, ZFS pool or directory, initializing with GPT, wiping and removing are tasks. These need `Sys.Modify` on `/`, not only on the node. Only reading was verified on a real server, which has no spare disk; creation and removal are checked against demo mode.
 
 ## Consoles
 

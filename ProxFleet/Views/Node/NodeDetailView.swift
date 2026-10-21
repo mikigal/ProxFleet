@@ -355,6 +355,12 @@ private struct NodeMoreList: View {
                 }
                 .accessibilityIdentifier("more.network")
                 NavigationLink {
+                    NodeDisksView(detail: detail)
+                } label: {
+                    MoreRow(title: "Disks", systemImage: "internaldrive", color: .gray)
+                }
+                .accessibilityIdentifier("more.disks")
+                NavigationLink {
                     NodeSettingLoader(detail: detail, value: detail.dns) { NodeDNSEditor(detail: detail, dns: $0) }
                 } label: {
                     MoreRow(title: "DNS", systemImage: "globe", color: .teal, hint: detail.dns?.servers.first { !$0.isEmpty })

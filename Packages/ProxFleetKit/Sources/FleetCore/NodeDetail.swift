@@ -25,6 +25,11 @@ public final class NodeDetail {
     public private(set) var hosts: NodeHosts?
     public private(set) var time: NodeTime?
     public private(set) var network: NetworkConfiguration?
+    public private(set) var disks: [NodeDisk]?
+    public private(set) var volumeGroups: [LVMVolumeGroup]?
+    public private(set) var thinPools: [LVMThinPool]?
+    public private(set) var zfsPools: [ZFSPool]?
+    public private(set) var directories: [DirectoryMount]?
 
     public var timeframe: RRDTimeframe = .hour {
         didSet {
@@ -140,6 +145,25 @@ public final class NodeDetail {
         await fetch(PVE.network(node: node)) { network = $0 }
     }
 
+    /// Loads the disks and what is built on them: LVM, thin pools, ZFS pools and directories.
+    @discardableResult
+    public func loadDisks() async -> String? {
+        let disks = await fetch(PVE.disks(node: node)) { self.disks = $0 }
+        await fetch(PVE.volumeGroups(node: node)) { volumeGroups = $0.groups }
+        await fetch(PVE.thinPools(node: node)) { thinPools = $0 }
+        await fetch(PVE.zfsPools(node: node)) { zfsPools = $0 }
+        await fetch(PVE.directoryMounts(node: node)) { directories = $0 }
+        return disks
+    }
+
+    public func smart(of disk: String) async throws -> SMARTReport {
+        try await connection.session.send(PVE.smart(node: node, disk: disk))
+    }
+
+    public func zfsStatus(of pool: String) async throws -> ZFSPoolStatus {
+        try await connection.session.send(PVE.zfsPoolStatus(node: node, name: pool))
+    }
+
     // MARK: - Actions
 
     /// Starts, stops or restarts a service, waits for its task and reloads the list.
@@ -210,6 +234,29 @@ public final class NodeDetail {
     public func revertNetwork() async throws(ConfigUpdateError) {
         try await perform(PVE.revertNetwork(node: node))
         await loadNetwork()
+    }
+
+    // MARK: - Disks
+
+    public func initializeGPT(_ disk: String) async throws(ConfigUpdateError) {
+        try await runTask(PVE.initializeGPT(node: node, disk: disk))
+        await loadDisks()
+    }
+
+    public func wipe(_ disk: String) async throws(ConfigUpdateError) {
+        try await runTask(PVE.wipeDisk(node: node, disk: disk))
+        await loadDisks()
+    }
+
+    /// Creates an LVM volume group, thin pool, ZFS pool or directory and waits for its task.
+    public func createDiskStorage(_ draft: DiskStorageDraft) async throws(ConfigUpdateError) {
+        try await runTask(PVE.createDiskStorage(node: node, draft))
+        await loadDisks()
+    }
+
+    public func deleteDiskStorage(_ kind: DiskStorageKind, name: String, volumeGroup: String? = nil, cleanupConfig: Bool, wipeDisks: Bool) async throws(ConfigUpdateError) {
+        try await runTask(PVE.deleteDiskStorage(node: node, kind: kind, name: name, volumeGroup: volumeGroup, cleanupConfig: cleanupConfig, wipeDisks: wipeDisks))
+        await loadDisks()
     }
 
     private func perform<Value>(_ request: APIRequest<Value>) async throws(ConfigUpdateError) {

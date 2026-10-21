@@ -60,6 +60,8 @@ actor DemoState {
     var activeNetworks: [String: [DemoInterface]] = [:]
     /// Network configuration waiting for Apply Configuration, by node.
     var pendingNetworks: [String: [DemoInterface]] = [:]
+    /// Disks and storage built on them, by node, once changed in demo mode.
+    var diskLayouts: [String: DemoDiskLayout] = [:]
     /// Console proxies started but not yet connected, by ticket.
     var consoles: [String: DemoConsoleRequest] = [:]
     private var ticketCounter = 0

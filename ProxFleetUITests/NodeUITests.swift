@@ -149,6 +149,41 @@ final class NodeUITests: XCTestCase {
         waitForExpectations(timeout: 10)
     }
 
+    @MainActor
+    func testDisksAndZFSPool() {
+        app.launch()
+        openNode("pve1")
+        app.buttons["tab.more"].tap()
+        app.buttons["more.disks"].tap()
+        XCTAssertTrue(app.buttons["disk.sdd"].waitForExistence(timeout: 10))
+        snapshot("58-node-disks")
+
+        app.buttons["disk.sdd"].tap()
+        let attributes = app.buttons["SMART Attributes"]
+        XCTAssertTrue(attributes.waitForExistence(timeout: 10))
+        attributes.tap()
+        XCTAssertTrue(app.staticTexts["Power On Hours"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        app.buttons["disks.add"].tap()
+        app.buttons["Create ZFS Pool"].firstMatch.tap()
+        let name = app.textFields["storage.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("fast")
+        app.buttons["candidate.sdc"].tap()
+        app.buttons["candidate.sdd"].tap()
+        snapshot("59-node-create-zfs")
+        app.buttons["storage.create"].tap()
+
+        let pool = app.buttons["zfs.fast"]
+        XCTAssertTrue(pool.waitForExistence(timeout: 15))
+        app.buttons["zfs.tank"].tap()
+        XCTAssertTrue(app.staticTexts["mirror-0"].waitForExistence(timeout: 10))
+        snapshot("60-node-zfs-pool")
+    }
+
     private func openNode(_ name: String) {
         let row = app.buttons["node.\(name)"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))

@@ -24,9 +24,10 @@ Early development. What works now:
 - Backups: back up now (mode, compression, notes, protection), list from all backup storages, notes and protection, configuration in the backup, restore over the guest or as a new one, delete
 - Nodes: status, usage and history, shell, package updates (refresh, list, upgrade in the shell), services, system log, tasks, reboot and shutdown
 - Node settings: network interfaces (bridges, bonds, VLANs; pending changes with apply and revert), DNS, hosts and time zone
+- Disks: list with partitions, SMART values, wipe and GPT initialization; LVM, LVM-thin, ZFS (with pool status) and directories, created on unused disks or removed
 - Demo mode with a built-in sample cluster, including working demo consoles
 
-Next up: disks, repositories and certificates of nodes, then datacenter settings.
+Next up: repositories and certificates of nodes, then datacenter settings.
 
 ## Requirements
 

@@ -539,6 +539,24 @@ struct LiveServerTests {
         #expect(try await session.send(PVE.network(node: node)).pendingChanges == nil)
     }
 
+    /// Disks, SMART and the storage panels. Read only: the test server has no spare disk.
+    @Test func nodeDisks() async throws {
+        let (session, node) = try await rootSession()
+        let disks = try await session.send(PVE.disks(node: node))
+        let grouped = NodeDisk.grouped(disks)
+        let system = try #require(grouped.first)
+        #expect(system.disk.size > 0 && system.disk.hasGPT)
+        #expect(system.partitions.count >= 2 && system.partitions.allSatisfy { $0.parent == system.disk.path })
+        let smart = try await session.send(PVE.smart(node: node, disk: system.disk.path))
+        #expect(!smart.health.isEmpty)
+        #expect(smart.text != nil || !smart.attributes.isEmpty)
+        let groups = try await session.send(PVE.volumeGroups(node: node)).groups
+        #expect(groups.first { $0.name == "pve" }?.physicalVolumes.isEmpty == false)
+        #expect(try await session.send(PVE.thinPools(node: node)).contains { $0.name == "data" && $0.volumeGroup == "pve" })
+        _ = try await session.send(PVE.zfsPools(node: node))
+        _ = try await session.send(PVE.directoryMounts(node: node))
+    }
+
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
     func readOnlyUserLacksPowerManagement() async throws {
         let session = try await trustedSession()
