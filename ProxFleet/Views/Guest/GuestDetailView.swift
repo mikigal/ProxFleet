@@ -597,6 +597,33 @@ private struct GuestHardwareSections: View {
                 .accessibilityIdentifier("hardware.addNetwork")
             }
         }
+
+        if isVM {
+            Section("Devices") {
+                ForEach(config.otherDevices, id: \.key) { device in
+                    editable(privilege: device.kind.privilege) {
+                        VMDeviceEditor(detail: detail, config: config, kind: device.kind, key: device.key)
+                    } label: {
+                        HardwareRow(
+                            systemImage: device.kind.systemImage,
+                            title: device.key,
+                            value: device.kind.summary(of: device.value),
+                            detail: nil,
+                            pending: detail.pendingChange(for: device.key) != nil
+                        )
+                    }
+                    .accessibilityIdentifier("hardware.\(device.key)")
+                }
+                if detail.can("VM.Config.HWType") || detail.can("VM.Config.Disk") {
+                    NavigationLink {
+                        AddDeviceList(detail: detail, config: config)
+                    } label: {
+                        Label("Add Device", systemImage: "plus.circle")
+                    }
+                    .accessibilityIdentifier("hardware.addDevice")
+                }
+            }
+        }
     }
 
     /// A navigation row to an editor, or a locked row explaining why it cannot be changed.

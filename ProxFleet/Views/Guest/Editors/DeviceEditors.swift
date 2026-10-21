@@ -66,7 +66,7 @@ struct NetworkDeviceEditor: View {
                         .multilineTextAlignment(.trailing)
                 }
                 LabeledContent("MTU") {
-                    TextField(draft.model == "virtio" ? "1500 (1 = Same as Bridge)" : "Default", text: $mtuText)
+                    TextField("Default", text: $mtuText)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                 }
