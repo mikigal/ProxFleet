@@ -81,6 +81,72 @@ struct AccessControlModelTests {
         try await access.changePassword(of: "ci@pve", to: "new secret", confirmation: "demo")
     }
 
+    @Test func twoFactorAuthentication() async throws {
+        let access = AccessControl(connection: try await connection())
+        await access.load()
+        #expect(access.twoFactors(of: "anna@pve")?.entries.map(\.type) == ["totp", "recovery"])
+        #expect(access.twoFactors(of: "auditor@pve")?.isLocked() == true)
+        try await access.unlockTwoFactor(of: "auditor@pve")
+        #expect(access.twoFactors(of: "auditor@pve")?.isLocked() == false)
+
+        let secret = TOTPSecret.random(issuer: "Proxmox - demo", account: "ci@pve")
+        await #expect(throws: ConfigUpdateError.self) {
+            try await access.addTOTP(for: "ci@pve", secret: secret, code: "12", description: "Phone", password: nil)
+        }
+        try await access.addTOTP(for: "ci@pve", secret: secret, code: "123456", description: "Phone", password: nil)
+        let keys = try await access.addRecoveryKeys(for: "ci@pve", password: nil)
+        #expect(keys.count == 10)
+        await #expect(throws: ConfigUpdateError.self) { _ = try await access.addRecoveryKeys(for: "ci@pve", password: nil) }
+        let totp = try #require(access.twoFactors(of: "ci@pve")?.entries.first { $0.type == "totp" })
+        try await access.updateTwoFactor(of: "ci@pve", id: totp.id, description: "Old phone", isEnabled: false, password: nil)
+        #expect(access.twoFactors(of: "ci@pve")?.entries.first { $0.id == totp.id }?.isEnabled == false)
+        for entry in access.twoFactors(of: "ci@pve")?.entries ?? [] {
+            try await access.deleteTwoFactor(of: "ci@pve", id: entry.id, password: nil)
+        }
+        #expect(access.twoFactors(of: "ci@pve") == nil)
+    }
+
+    @Test func usersConfirmTheirOwnSecondFactorChanges() async throws {
+        let access = AccessControl(connection: try await connection(username: "anna"))
+        await access.load()
+        let recovery = try #require(access.twoFactors(of: "anna@pve")?.entries.first { $0.type == "recovery" })
+        await #expect(throws: ConfigUpdateError.self) { try await access.deleteTwoFactor(of: "anna@pve", id: recovery.id, password: nil) }
+        try await access.deleteTwoFactor(of: "anna@pve", id: recovery.id, password: "demo")
+        #expect(access.twoFactors(of: "anna@pve")?.hasRecoveryKeys == false)
+    }
+
+    @Test func realms() async throws {
+        let access = AccessControl(connection: try await connection())
+        await access.load()
+        #expect(access.realms?.map(\.realm) == ["pam", "pve", "corp", "sso"])
+        let corp = try #require(RealmDraft(realm: "corp", try await access.realmConfig("corp")))
+        #expect(corp.type == .ad && corp.domain == "corp.example.com" && corp.emailAttribute == "mail")
+        #expect(corp.syncDefaults.removeVanished == [.acl, .entry])
+
+        var ldap = RealmDraft(type: .ldap)
+        ldap.realm = "lab"
+        ldap.server1 = "ldap.lab"
+        ldap.baseDN = "dc=lab"
+        ldap.userAttribute = "uid"
+        ldap.isDefault = true
+        try await access.createRealm(ldap)
+        #expect(access.realms?.first { $0.isDefault }?.realm == "lab")
+        var edit = try #require(RealmDraft(realm: "lab", try await access.realmConfig("lab")))
+        let original = edit
+        edit.comment = "Lab directory"
+        try await access.updateRealm("lab", edit.changes(from: original), digest: nil)
+        #expect(access.realms?.first { $0.realm == "lab" }?.comment == "Lab directory")
+
+        let task = try await access.syncRealm("lab", scope: "users", enableNew: true, removeVanished: [], dryRun: false)
+        #expect(await access.connection.tasks.result(of: task.id) == .succeeded)
+        await access.load()
+        #expect(access.users?.contains { $0.userid == "j.smith@lab" } == true)
+
+        try await access.deleteRealm("lab")
+        #expect(access.realms?.contains { $0.realm == "lab" } == false)
+        await #expect(throws: ConfigUpdateError.self) { try await access.deleteRealm("pam") }
+    }
+
     @Test func auditorCannotChangeAccess() async throws {
         let access = AccessControl(connection: try await connection(username: "auditor"))
         await access.load()

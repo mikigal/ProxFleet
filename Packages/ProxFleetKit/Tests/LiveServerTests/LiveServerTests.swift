@@ -1152,6 +1152,88 @@ struct LiveServerTests {
         #expect(!privileges.contains("VM.PowerMgmt"))
     }
 
+    /// Second factors of a temporary user, and a temporary LDAP realm that points nowhere.
+    @Test func twoFactorAndRealms() async throws {
+        let (session, node) = try await rootSession()
+        let me = try #require(server["USER"]).contains("@") ? server["USER"]! : "\(server["USER"]!)@\(server["REALM"] ?? "pam")"
+        let password = me == "root@pam" ? nil : server["PASSWORD"]
+        let userid = "pflive2fa@pve"
+        try #require(try await !session.send(PVE.users()).contains { $0.userid == userid }, "left over from an earlier run")
+        try #require(try await !session.send(ProxmoxAccess.realms()).contains { $0.realm == "pflive" }, "left over from an earlier run")
+
+        var user = UserDraft()
+        user.name = "pflive2fa"
+        user.password = "Live-test-\(UUID().uuidString.prefix(8))"
+        _ = try await session.send(PVE.createUser(user))
+
+        let secret = TOTPSecret.random(issuer: "ProxFleet live test", account: userid)
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PVE.addTOTP(userid: userid, secret: secret, code: "000000", description: "Wrong", password: password))
+        }
+        _ = try await session.send(PVE.addTOTP(userid: userid, secret: secret, code: try TOTP.code(secret: secret.secret), description: "Phone", password: password))
+        let keys = try await session.send(PVE.addRecoveryKeys(userid: userid, password: password)).recoveryKeys
+        #expect(keys.count >= 4)
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PVE.addRecoveryKeys(userid: userid, password: password))
+        }
+        var factors = try #require(try await session.send(PVE.twoFactors()).first { $0.userid == userid })
+        #expect(factors.entries.map(\.type).sorted() == ["recovery", "totp"])
+        #expect(factors.hasRecoveryKeys && !factors.isLocked())
+        let totp = try #require(factors.entries.first { $0.type == "totp" })
+        #expect(totp.description == "Phone" && totp.isEnabled)
+
+        _ = try await session.send(PVE.updateTwoFactor(userid: userid, id: totp.id, description: "Old phone", isEnabled: false, password: password))
+        factors = try #require(try await session.send(PVE.twoFactors()).first { $0.userid == userid })
+        #expect(factors.entries.first { $0.id == totp.id }.map { ($0.description, $0.isEnabled) } ?? ("", true) == ("Old phone", false))
+        _ = try await session.send(PVE.unlockTwoFactor(userid: userid))
+        for entry in factors.entries {
+            _ = try await session.send(PVE.deleteTwoFactor(userid: userid, id: entry.id, password: password))
+        }
+        #expect(try await session.send(PVE.twoFactors()).first { $0.userid == userid }?.entries.isEmpty ?? true)
+        _ = try await session.send(PVE.deleteUser(userid))
+
+        var realm = RealmDraft(type: .ldap)
+        realm.realm = "pflive"
+        realm.comment = "ProxFleet live test"
+        realm.server1 = "ldap.invalid"
+        realm.baseDN = "dc=example,dc=com"
+        realm.userAttribute = "uid"
+        realm.bindDN = "cn=reader,dc=example,dc=com"
+        realm.password = "bind-secret"
+        realm.emailAttribute = "mail"
+        realm.twoFactor.kind = .oath
+        realm.syncDefaults.scope = "users"
+        realm.syncDefaults.removeVanished = [.acl, .entry]
+        #expect(realm.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createRealm(realm))
+        let config = try await session.send(PVE.realmConfig("pflive"))
+        let saved = try #require(RealmDraft(realm: "pflive", config))
+        #expect(saved.type == .ldap && saved.server1 == "ldap.invalid" && saved.emailAttribute == "mail" && saved.twoFactor.kind == .oath)
+        #expect(saved.syncDefaults.scope == "users" && saved.syncDefaults.removeVanished == [.acl, .entry])
+        #expect(saved.changes(from: saved).isEmpty)
+
+        var edit = saved
+        edit.comment = ""
+        edit.mode = "ldaps"
+        edit.twoFactor.kind = .none
+        var update = edit.changes(from: saved)
+        update.digest = config.digest
+        _ = try await session.send(PVE.updateRealm("pflive", update))
+        let edited = try #require(RealmDraft(realm: "pflive", try await session.send(PVE.realmConfig("pflive"))))
+        #expect(edited.comment.isEmpty && edited.mode == "ldaps" && edited.twoFactor.kind == .none)
+
+        // The server is not reachable, so the sync starts and then fails.
+        let upid = try await session.send(PVE.syncRealm("pflive", scope: "users", enableNew: true, removeVanished: [], dryRun: true))
+        var status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+        for _ in 0..<40 where status.isRunning {
+            try await Task.sleep(for: .milliseconds(500))
+            status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+        }
+        #expect(!status.isRunning && !status.succeeded)
+        _ = try await session.send(PVE.deleteRealm("pflive"))
+        #expect(try await !session.send(ProxmoxAccess.realms()).contains { $0.realm == "pflive" })
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()

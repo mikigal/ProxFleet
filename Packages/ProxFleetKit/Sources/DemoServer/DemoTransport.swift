@@ -106,10 +106,7 @@ actor DemoState {
         case (.post, "/access/ticket"):
             return ticket(parameters)
         case (.get, "/access/domains"):
-            return success([
-                ["realm": "pam", "type": "pam", "comment": "Linux PAM standard authentication"],
-                ["realm": "pve", "type": "pve", "comment": "Proxmox VE authentication server", "default": 1],
-            ])
+            return realmList()
         default:
             break
         }

@@ -13,6 +13,11 @@ struct DemoAccess: Sendable {
     var groups: [(id: String, comment: String)]
     var roles: [(id: String, privileges: [String], builtIn: Bool)]
     var acl: [(path: String, type: String, id: String, role: String, propagate: Bool)]
+    /// Second factors by user.
+    var twoFactors: [String: [DemoTwoFactor]] = DemoAccess.sampleTwoFactors
+    /// Users whose authenticator codes are locked after too many wrong ones.
+    var lockedTOTP: Set<String> = ["auditor@pve"]
+    var realms: [DemoRealm] = DemoAccess.sampleRealms
 
     static let builtInRoles: [(id: String, privileges: [String])] = [
         ("Administrator", ["Datastore.Allocate", "Datastore.AllocateSpace", "Datastore.AllocateTemplate", "Datastore.Audit", "Group.Allocate",

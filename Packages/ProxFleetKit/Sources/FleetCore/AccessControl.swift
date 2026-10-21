@@ -14,6 +14,8 @@ public final class AccessControl {
     public private(set) var roles: [AccessRole]?
     public private(set) var acl: [ACLEntry]?
     public private(set) var realms: [Realm]?
+    /// Second factors of every user the signed-in user may see.
+    public private(set) var twoFactors: [UserTwoFactors]?
     public private(set) var privileges: Set<String>?
     public private(set) var loadError: String?
 
@@ -39,6 +41,7 @@ public final class AccessControl {
             roles = try await connection.session.send(PVE.roles()).sorted { ($0.isBuiltIn ? 1 : 0, $0.roleid) < ($1.isBuiltIn ? 1 : 0, $1.roleid) }
             acl = try await connection.session.send(PVE.acl()).sorted { ($0.path, $0.subjectID, $0.role) < ($1.path, $1.subjectID, $1.role) }
             realms = try? await connection.session.send(ProxmoxAccess.realms())
+            twoFactors = try? await connection.session.send(PVE.twoFactors()).sorted { $0.userid.localizedStandardCompare($1.userid) == .orderedAscending }
             loadError = nil
         } catch is CancellationError {
         } catch {
@@ -113,6 +116,75 @@ public final class AccessControl {
 
     public func removePermission(_ entry: ACLEntry) async throws(ConfigUpdateError) {
         try await perform(PVE.removePermission(entry))
+    }
+
+    // MARK: - Two-factor authentication
+
+    public func twoFactors(of userid: String) -> UserTwoFactors? {
+        twoFactors?.first { $0.userid == userid }
+    }
+
+    /// `password` is the signed-in user's own password, which everyone but root@pam must give.
+    public func addTOTP(for userid: String, secret: TOTPSecret, code: String, description: String, password: String?) async throws(ConfigUpdateError) {
+        do {
+            _ = try await connection.session.send(PVE.addTOTP(userid: userid, secret: secret, code: code, description: description, password: password))
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+        await load()
+    }
+
+    /// Creates recovery keys and returns them; the server never shows them again.
+    public func addRecoveryKeys(for userid: String, password: String?) async throws(ConfigUpdateError) -> [String] {
+        do {
+            let added = try await connection.session.send(PVE.addRecoveryKeys(userid: userid, password: password))
+            await load()
+            return added.recoveryKeys
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+    }
+
+    public func updateTwoFactor(of userid: String, id: String, description: String, isEnabled: Bool, password: String?) async throws(ConfigUpdateError) {
+        try await perform(PVE.updateTwoFactor(userid: userid, id: id, description: description, isEnabled: isEnabled, password: password))
+    }
+
+    public func deleteTwoFactor(of userid: String, id: String, password: String?) async throws(ConfigUpdateError) {
+        try await perform(PVE.deleteTwoFactor(userid: userid, id: id, password: password))
+    }
+
+    public func unlockTwoFactor(of userid: String) async throws(ConfigUpdateError) {
+        try await perform(PVE.unlockTwoFactor(userid: userid))
+    }
+
+    // MARK: - Realms
+
+    public func realmConfig(_ realm: String) async throws(ConfigUpdateError) -> RealmConfig {
+        do {
+            return try await connection.session.send(PVE.realmConfig(realm))
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+    }
+
+    public func createRealm(_ draft: RealmDraft) async throws(ConfigUpdateError) {
+        try await perform(PVE.createRealm(draft))
+    }
+
+    /// Sends the changes with the digest of the configuration the form was opened with.
+    public func updateRealm(_ realm: String, _ update: GuestConfigUpdate, digest: String?) async throws(ConfigUpdateError) {
+        var update = update
+        update.digest = digest
+        try await perform(PVE.updateRealm(realm, update))
+    }
+
+    public func deleteRealm(_ realm: String) async throws(ConfigUpdateError) {
+        try await perform(PVE.deleteRealm(realm))
+    }
+
+    /// Starts a sync; with `dryRun` its log lists what would change without changing anything.
+    public func syncRealm(_ realm: String, scope: String, enableNew: Bool, removeVanished: Set<VanishedRemoval>, dryRun: Bool) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        try await connection.start(PVE.syncRealm(realm, scope: scope, enableNew: enableNew, removeVanished: removeVanished, dryRun: dryRun))
     }
 
     /// Permissions granted directly to a user, a group or a token.

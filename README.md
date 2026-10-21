@@ -29,7 +29,7 @@ Early development. What works now:
 - Storage: usage and content by type (ISO images, templates, backups, VM disks, CT volumes, snippets), download from a URL with an optional checksum (also from the VM wizard), delete
 - Datacenter storage: add, edit, disable, restrict to nodes and remove storage definitions (Directory, NFS, SMB/CIFS, Proxmox Backup Server, LVM, LVM-Thin, ZFS, Btrfs), with scans for exports, shares, datastores and pools, and backup retention
 - Backup jobs: schedules with a preview of the next runs, all guests, selected ones, all except some, or a pool, retention, Run Now, and the guests no job covers
-- Users & Permissions: users (create, edit, disable, expiry, password), API tokens with the secret shown once, groups, custom roles, and permissions on paths for users, groups and tokens
+- Users & Permissions: users (create, edit, disable, expiry, password), API tokens with the secret shown once, groups, custom roles, and permissions on paths for users, groups and tokens, two-factor authentication (authenticator apps with a QR code, recovery keys, unlocking) and realms (LDAP, Active Directory, OpenID Connect, sync)
 - Firewall for the datacenter, nodes and guests: turn it on and off, rules (direction, action, macros, protocols, ports, ICMP types, addresses with aliases and IP sets, interface, log level), reordering, security groups, aliases, IP sets with excluded entries, all options, and the firewall log of nodes and guests
 - Demo mode with a built-in sample cluster, including working demo consoles
 

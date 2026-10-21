@@ -50,7 +50,7 @@ struct OnboardingTests {
 
         await onboarding.trustCertificate(certificate)
         #expect(onboarding.step == .credentials)
-        #expect(onboarding.realms.map(\.realm) == ["pam", "pve"])
+        #expect(onboarding.realms.map(\.realm) == ["pam", "pve", "corp", "sso"])
 
         onboarding.username = "root"
         onboarding.password = "secret"

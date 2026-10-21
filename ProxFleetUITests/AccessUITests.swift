@@ -70,6 +70,92 @@ final class AccessUITests: XCTestCase {
         XCTAssertFalse(app.buttons["save"].exists)
     }
 
+    @MainActor
+    func testTwoFactorAuthentication() {
+        app.launch()
+        openAccess()
+        app.buttons["access.tfa"].tap()
+        XCTAssertTrue(app.buttons["tfa.anna@pve.totp-1"].waitForExistence(timeout: 10))
+        snapshot("93-two-factor")
+
+        // The demo account is not a datacenter user, so new second factors go to the first user, root@pam.
+        app.buttons["tfa.add"].tap()
+        app.buttons["tfa.add.totp"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["tfa.secret"].waitForExistence(timeout: 5))
+        snapshot("94-add-authenticator")
+        type("123456", into: app.textFields["tfa.code"])
+        type("demo", into: app.secureTextFields["Your Password"])
+        app.buttons["save"].tap()
+        let added = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tfa.root@pam.totp-'")).firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: 10))
+
+        app.buttons["tfa.add"].tap()
+        app.buttons["tfa.add.recovery"].tap()
+        type("demo", into: app.secureTextFields["Your Password"])
+        app.buttons["tfa.recovery.create"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["tfa.recovery.keys"].waitForExistence(timeout: 10))
+        snapshot("95-recovery-keys")
+        app.buttons["done"].tap()
+        XCTAssertTrue(app.buttons["tfa.root@pam.recovery"].waitForExistence(timeout: 10))
+
+        let unlock = app.buttons["tfa.unlock.auditor@pve"]
+        for _ in 0..<5 where !unlock.isHittable { app.swipeUp() }
+        unlock.tap()
+        XCTAssertTrue(unlock.waitForNonExistence(timeout: 10))
+    }
+
+    @MainActor
+    func testRealms() {
+        app.launch()
+        openAccess()
+        app.buttons["access.realms"].tap()
+        XCTAssertTrue(app.buttons["realm.corp"].waitForExistence(timeout: 10))
+        snapshot("96-realms")
+
+        app.buttons["realm.corp"].tap()
+        let domain = app.textFields["realm.domain"]
+        XCTAssertTrue(domain.waitForExistence(timeout: 10))
+        XCTAssertEqual(domain.value as? String, "corp.example.com")
+        snapshot("97-realm-editor")
+        let sync = app.buttons["realm.sync"]
+        for _ in 0..<10 where !sync.isHittable { app.swipeUp() }
+        sync.tap()
+        app.buttons["sync.preview"].tap()
+        XCTAssertTrue(app.buttons["sync.log"].waitForExistence(timeout: 10))
+        snapshot("98-realm-sync")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        app.buttons["realm.add"].tap()
+        app.buttons["realm.add.ldap"].tap()
+        type("lab", into: app.textFields["realm.id"])
+        type("dc=lab", into: app.textFields["realm.baseDN"])
+        type("uid", into: app.textFields["realm.userAttribute"])
+        type("ldap.lab", into: app.textFields["realm.server"])
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["realm.lab"].waitForExistence(timeout: 10))
+    }
+
+    private func openAccess() {
+        let entry = app.buttons["datacenter.access"]
+        XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
+        for _ in 0..<10 where !entry.isHittable { app.swipeUp() }
+        entry.tap()
+    }
+
+    /// Scrolls the form until the field is visible, then types into it.
+    private func type(_ text: String, into field: XCUIElement) {
+        for _ in 0..<10 where !(field.exists && field.isHittable) {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+        }
+        for _ in 0..<3 {
+            field.tap()
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { break }
+        }
+        field.typeText(text)
+    }
+
     private func snapshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

@@ -41,6 +41,23 @@ struct AccessHubView: View {
             } footer: {
                 Text("A permission grants a role, a set of privileges, to a user, group or API token on a path such as /vms/100. Paths inherit permissions from above when they propagate.")
             }
+            Section {
+                NavigationLink {
+                    TwoFactorListView(access: access)
+                } label: {
+                    MoreRow(title: "Two-Factor Authentication", systemImage: "lock.rotation", color: .teal,
+                            hint: access.twoFactors.map { String($0.reduce(0) { $0 + $1.entries.count }) })
+                }
+                .accessibilityIdentifier("access.tfa")
+                NavigationLink {
+                    RealmsView(access: access)
+                } label: {
+                    MoreRow(title: "Realms", systemImage: "building.columns", color: .purple, hint: access.realms.map { String($0.count) })
+                }
+                .accessibilityIdentifier("access.realms")
+            } footer: {
+                Text("Realms are where users sign in from: Linux PAM, Proxmox VE, LDAP, Active Directory or OpenID Connect.")
+            }
             if let error = access.loadError {
                 Section {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -55,7 +72,7 @@ struct AccessHubView: View {
 }
 
 /// An alert-style error for the access screens.
-private struct AccessErrorAlert: ViewModifier {
+struct AccessErrorAlert: ViewModifier {
     @Binding var message: String?
 
     func body(content: Content) -> some View {
@@ -67,11 +84,11 @@ private struct AccessErrorAlert: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func accessError(_ message: Binding<String?>) -> some View { modifier(AccessErrorAlert(message: message)) }
 }
 
-private struct Badge: View {
+struct AccessBadge: View {
     let text: LocalizedStringKey
     var color: Color = .secondary
 
@@ -134,8 +151,8 @@ private struct UserRow: View {
                     Text(user.userid)
                         .font(.body.weight(.medium))
                         .lineLimit(1)
-                    if !user.isEnabled { Badge(text: "Disabled") }
-                    if user.isExpired() { Badge(text: "Expired", color: .orange) }
+                    if !user.isEnabled { AccessBadge(text: "Disabled") }
+                    if user.isExpired() { AccessBadge(text: "Expired", color: .orange) }
                 }
                 let details = [user.displayName, user.groups.isEmpty ? nil : user.groups.joined(separator: ", "), user.comment].compactMap { $0 }
                 if !details.isEmpty {
@@ -197,6 +214,22 @@ private struct UserDetailView: View {
                     }
                 }
                 .disabled(!canModify)
+                Section {
+                    NavigationLink {
+                        TwoFactorListView(access: access, userid: userid)
+                    } label: {
+                        let factors = access.twoFactors(of: userid)
+                        LabeledContent {
+                            HStack(spacing: 6) {
+                                if factors?.isLocked() == true { AccessBadge(text: "Locked", color: .orange) }
+                                Text(factors.map { $0.entries.isEmpty ? String(localized: "None") : String($0.entries.count) } ?? String(localized: "None"))
+                            }
+                        } label: {
+                            Label("Two-Factor Authentication", systemImage: "lock.rotation")
+                        }
+                    }
+                    .accessibilityIdentifier("user.tfa")
+                }
                 PermissionList(access: access, entries: access.permissions(of: .user, userid), adding: $addsPermission)
                 Section {
                     ForEach(user.tokens) { token in
@@ -206,7 +239,7 @@ private struct UserDetailView: View {
                                     .font(.callout.monospaced())
                                     .lineLimit(1)
                                     .truncationMode(.middle)
-                                if !token.isSeparated { Badge(text: "User's Privileges", color: .orange) }
+                                if !token.isSeparated { AccessBadge(text: "User's Privileges", color: .orange) }
                             }
                             let details = [token.comment, token.expires.map { String(localized: "Expires \($0.formatted(date: .abbreviated, time: .omitted))") }].compactMap { $0 }
                             if !details.isEmpty {
@@ -443,7 +476,8 @@ private struct PasswordView: View {
             if access.needsPasswordConfirmation {
                 Section {
                     SecureField("Your Password", text: $ownPassword)
-                        .textContentType(.password)
+                        // Not `.password`: iOS would offer to save it as a new password once the sheet closes.
+                        .textContentType(.oneTimeCode)
                     FieldError(message: fieldErrors["confirmation-password"])
                 } footer: {
                     Text("Proxmox asks for the password of \(access.currentUser) to confirm the change.")
@@ -925,7 +959,7 @@ private struct PermissionRow: View {
                     .truncationMode(.middle)
                 HStack(spacing: 6) {
                     Text(entry.role)
-                    if !entry.propagates { Badge(text: "This path only") }
+                    if !entry.propagates { AccessBadge(text: "This path only") }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
