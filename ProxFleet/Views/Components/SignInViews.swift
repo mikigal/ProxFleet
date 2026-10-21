@@ -63,6 +63,30 @@ struct CertificateTrustView: View {
     }
 }
 
+/// A password form with the second-factor form over it while a challenge is pending.
+///
+/// iOS offers to save a password once its fields leave the screen. Replacing the password form with the code entry
+/// would bring that offer up over the code entry, so the password form stays in place, invisible and hidden from
+/// VoiceOver, until the sign-in completes and the whole screen goes away.
+struct PasswordThenSecondFactor<PasswordForm: View, CodeForm: View>: View {
+    let challenge: SecondFactorChallenge?
+    @ViewBuilder let passwordForm: PasswordForm
+    @ViewBuilder let codeForm: (SecondFactorChallenge) -> CodeForm
+
+    var body: some View {
+        ZStack {
+            passwordForm
+                .opacity(challenge == nil ? 1 : 0)
+                .allowsHitTesting(challenge == nil)
+                .accessibilityHidden(challenge != nil)
+            if let challenge {
+                codeForm(challenge)
+                    .background(Color(.systemGroupedBackground))
+            }
+        }
+    }
+}
+
 /// Code entry for TOTP, Yubico OTP or a recovery key.
 struct SecondFactorForm: View {
     let challenge: SecondFactorChallenge
