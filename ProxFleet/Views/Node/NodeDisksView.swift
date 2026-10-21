@@ -20,7 +20,7 @@ struct NodeDisksView: View {
                         NavigationLink {
                             DiskDetailView(detail: detail, path: entry.disk.path)
                         } label: {
-                            DiskRow(disk: entry.disk)
+                            DiskRow(disk: entry.disk, usage: Self.usage(of: entry))
                         }
                         .accessibilityIdentifier("disk.\(entry.disk.name)")
                     }
@@ -110,10 +110,19 @@ struct NodeDisksView: View {
         }
     }
 
+    /// For a partitioned disk, what its partitions hold, e.g. `ZFS` or `BIOS boot, EFI, LVM`.
+    static func usage(of entry: (disk: NodeDisk, partitions: [NodeDisk])) -> String {
+        let uses = entry.partitions.compactMap(\.usage).filter { $0 != "ZFS reserved" }
+        guard entry.disk.usage == "partitions", !uses.isEmpty else { return entry.disk.usageTitle }
+        return uses.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.joined(separator: ", ")
+    }
+
+    /// Not `role: .destructive`: a full swipe with that role hides the row right away, but this only asks first.
     @ViewBuilder
     private func deleteButton(_ target: DiskStorageTarget) -> some View {
         if canModify {
-            Button("Remove", systemImage: "trash", role: .destructive) { deleting = target }
+            Button("Remove", systemImage: "trash") { deleting = target }
+                .tint(.red)
         }
     }
 }
@@ -178,6 +187,7 @@ extension NodeDisk {
         case "nvme": String(localized: "NVMe")
         case "usb": String(localized: "USB")
         case "partition": String(localized: "Partition")
+        case "unknown": String(localized: "Disk")
         default: type.uppercased()
         }
     }
@@ -185,6 +195,7 @@ extension NodeDisk {
 
 private struct DiskRow: View {
     let disk: NodeDisk
+    let usage: String
 
     var body: some View {
         HStack(spacing: 12) {
@@ -199,7 +210,7 @@ private struct DiskRow: View {
                     Text(Format.bytes(disk.size))
                         .foregroundStyle(.secondary)
                 }
-                Text([disk.model, disk.usageTitle].compactMap { $0 }.joined(separator: " · "))
+                Text([disk.model, usage].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -298,7 +309,7 @@ private struct DiskDetailView: View {
                     if let serial = disk.serial { LabeledContent("Serial Number", value: serial) }
                     LabeledContent("Size", value: Format.bytes(disk.size))
                     LabeledContent("Type", value: disk.rpm.map { "\(disk.typeTitle), \($0) rpm" } ?? disk.typeTitle)
-                    LabeledContent("Usage", value: disk.usageTitle)
+                    LabeledContent("Usage", value: NodeDisksView.usage(of: entry))
                     LabeledContent("Partition Table", value: disk.hasGPT ? "GPT" : String(localized: "None"))
                     if let wwn = disk.wwn { LabeledContent("WWN", value: wwn) }
                 }
@@ -477,7 +488,9 @@ private struct ZFSPoolView: View {
                 Section("Devices") {
                     ForEach(Array(status.devices.flatMap { $0.flattened() }.enumerated()), id: \.offset) { _, row in
                         HStack(spacing: 8) {
-                            Text(row.device.name)
+                            Text(row.device.displayName)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                                 .font(row.depth == 0 ? .body.weight(.medium) : .body)
                                 .padding(.leading, CGFloat(row.depth) * 18)
                             Spacer()
@@ -619,6 +632,7 @@ private struct CreateDiskStorageView: View {
     }
 
     private func toggle(_ path: String) {
+        draft.deviceSizes = Dictionary(uniqueKeysWithValues: candidates.map { ($0.path, $0.size) })
         if let index = draft.devices.firstIndex(of: path) {
             draft.devices.remove(at: index)
         } else if draft.kind.takesSeveralDisks {
@@ -668,11 +682,11 @@ private struct DeleteDiskStorageView: View {
             }
             Section {
                 Toggle("Remove Storage Configuration", isOn: $cleanupConfig)
-                if target.kind != .lvmThin {
-                    Toggle("Wipe Disks", isOn: $wipeDisks)
-                }
+                Toggle("Wipe Disks", isOn: $wipeDisks)
             } footer: {
-                Text("Removes the storage entries that use it, and wipes its disks so they show as unused.")
+                Text(target.kind == .lvmThin
+                    ? "Removes the storage entries that use it. Wiping also removes the thin pool's volume group, so its disks show as unused."
+                    : "Removes the storage entries that use it, and wipes its disks so they show as unused.")
             }
             Section {
                 TextField(target.name, text: $confirmation)
@@ -713,7 +727,7 @@ private struct DeleteDiskStorageView: View {
         errorMessage = nil
         defer { isDeleting = false }
         do {
-            try await detail.deleteDiskStorage(target.kind, name: target.name, volumeGroup: target.volumeGroup, cleanupConfig: cleanupConfig, wipeDisks: wipeDisks && target.kind != .lvmThin)
+            try await detail.deleteDiskStorage(target.kind, name: target.name, volumeGroup: target.volumeGroup, cleanupConfig: cleanupConfig, wipeDisks: wipeDisks)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

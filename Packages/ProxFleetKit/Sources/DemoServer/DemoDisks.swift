@@ -61,9 +61,9 @@ struct DemoDiskLayout: Sendable {
            thinPools: [ThinPool(name: "data", volumeGroup: "pve", sizeGiB: 800, usedGiB: 310)])
         if first {
             layout.disks += [
-                Disk(path: "/dev/sda", model: "WDC WD80EFAX-68KNBN0", serial: "VAG8K2LL", sizeGiB: 7452, type: "hdd", usage: "ZFS", hasGPT: true, wearout: nil,
+                Disk(path: "/dev/sda", model: "WDC WD80EFAX-68KNBN0", serial: "VAG8K2LL", sizeGiB: 7452, type: "hdd", usage: "partitions", hasGPT: true, wearout: nil,
                      partitions: [("sda1", 7452, "ZFS"), ("sda9", 0, "ZFS reserved")]),
-                Disk(path: "/dev/sdb", model: "WDC WD80EFAX-68KNBN0", serial: "VAG8M1TQ", sizeGiB: 7452, type: "hdd", usage: "ZFS", hasGPT: true, wearout: nil,
+                Disk(path: "/dev/sdb", model: "WDC WD80EFAX-68KNBN0", serial: "VAG8M1TQ", sizeGiB: 7452, type: "hdd", usage: "partitions", hasGPT: true, wearout: nil,
                      partitions: [("sdb1", 7452, "ZFS"), ("sdb9", 0, "ZFS reserved")]),
             ]
             layout.pools = [Pool(name: "tank", raidLevel: "mirror", devices: ["/dev/sda", "/dev/sdb"], sizeGiB: 7440, usedGiB: 2210)]
@@ -99,14 +99,15 @@ extension DemoState {
             return success(smartJSON(disk))
         case (.post, ["initgpt"]):
             guard let index = layout.disks.firstIndex(where: { $0.path == parameters["disk"] }) else { return failure(500, "no such disk") }
-            guard layout.disks[index].usage == nil else { return failure(500, "disk '\(layout.disks[index].path)' is already in use") }
+            guard layout.disks[index].usage == nil else { return failure(500, "disk \(layout.disks[index].path) already in use") }
             layout.disks[index].hasGPT = true
             return startTask(node: node, type: "diskinit", objectID: layout.disks[index].path.replacingOccurrences(of: "/dev/", with: ""), user: user, duration: 1.5)
         case (.put, ["wipedisk"]):
             guard let index = layout.disks.firstIndex(where: { $0.path == parameters["disk"] }) else { return failure(500, "no such disk") }
             let disk = layout.disks[index]
             let directory = layout.directories.contains { $0.device == disk.path }
-            guard disk.path != "/dev/nvme0n1", !["LVM", "ZFS"].contains(disk.usage ?? ""), !directory else {
+            let pool = layout.pools.contains { $0.devices.contains(disk.path) }
+            guard disk.path != "/dev/nvme0n1", disk.usage != "LVM", !pool, !directory else {
                 return failure(500, "disk '\(disk.path)' is in use")
             }
             layout.disks[index].usage = nil
@@ -143,7 +144,7 @@ extension DemoState {
         case (.get, ["directory"]):
             return success(.array(layout.directories.map { directory in
                 [
-                    "path": .string("/mnt/pve/\(directory.name)"), "device": .string(directory.device + "1"), "type": .string(directory.fileSystem),
+                    "path": .string("/mnt/pve/\(directory.name)"), "device": .string("/dev/disk/by-uuid/\(abs(directory.name.hashValue) % 100_000_000)-demo"), "type": .string(directory.fileSystem),
                     "options": "defaults", "unitfile": .string("/etc/systemd/system/mnt-pve-\(directory.name).mount"),
                 ]
             }))
@@ -175,10 +176,16 @@ extension DemoState {
             let level = parameters["raidlevel"] ?? "single"
             let minimum = ["mirror": 2, "raid10": 4, "raidz": 3, "raidz2": 4, "raidz3": 5][level] ?? 1
             guard devices.count >= minimum else { return failure(500, "\(level) needs at least \(minimum) disks") }
+            if level != "single", Set(indices.map { layout.disks[$0].sizeGiB }).count > 1 {
+                let paths = devices.map { "/dev/disk/by-id/ata-\($0.replacingOccurrences(of: "/dev/", with: ""))" }.joined(separator: " ")
+                return startTask(node: node, type: "zfscreate", objectID: name, user: user, duration: 1,
+                                 error: "command '/sbin/zpool create -o 'ashift=12' \(name) \(level) \(paths)' failed: exit code 1")
+            }
             let usable = ["mirror": 1, "raid10": devices.count / 2, "raidz": devices.count - 1, "raidz2": devices.count - 2, "raidz3": devices.count - 3][level] ?? devices.count
             layout.pools.append(.init(name: name, raidLevel: level, devices: devices, sizeGiB: size * usable, usedGiB: 0.01))
             for index in indices {
-                layout.disks[index].usage = "ZFS"
+                // Proxmox reports the disk as partitioned; its partitions are ZFS and ZFS reserved.
+                layout.disks[index].usage = "partitions"
                 layout.disks[index].hasGPT = true
                 let base = layout.disks[index].path.replacingOccurrences(of: "/dev/", with: "")
                 layout.disks[index].partitions = [("\(base)1", size, "ZFS"), ("\(base)9", 0, "ZFS reserved")]
@@ -217,10 +224,15 @@ extension DemoState {
             guard let index = layout.thinPools.firstIndex(where: { $0.name == name && $0.volumeGroup == parameters["volume-group"] }) else {
                 return failure(500, "thin pool '\(name)' does not exist")
             }
-            layout.thinPools.remove(at: index)
-            if let group = layout.volumeGroups.firstIndex(where: { $0.name == name }) {
-                layout.volumeGroups[group].volumes = 0
-                layout.volumeGroups[group].freeGiB = layout.volumeGroups[group].sizeGiB
+            let pool = layout.thinPools.remove(at: index)
+            if let group = layout.volumeGroups.firstIndex(where: { $0.name == pool.volumeGroup }) {
+                // Wiping the disks also removes the volume group, as Proxmox does.
+                if parameters["cleanup-disks"] == "1" {
+                    devices = [layout.volumeGroups.remove(at: group).device]
+                } else {
+                    layout.volumeGroups[group].volumes = 0
+                    layout.volumeGroups[group].freeGiB = layout.volumeGroups[group].sizeGiB
+                }
             }
         default:
             guard let index = layout.directories.firstIndex(where: { $0.name == name }) else { return failure(500, "mount point '/mnt/pve/\(name)' does not exist") }
@@ -235,7 +247,8 @@ extension DemoState {
             }
         }
         let type = ["zfs": "zfsremove", "lvm": "lvmremove", "lvmthin": "lvmthinremove", "directory": "dirremove"][kind] ?? kind
-        return startTask(node: node, type: type, objectID: name, user: user, duration: 1.5)
+        let objectID = kind == "lvmthin" ? "\(parameters["volume-group"] ?? name)-\(name)" : name
+        return startTask(node: node, type: type, objectID: objectID, user: user, duration: 1.5)
     }
 
     private func diskJSON(_ disk: DemoDiskLayout.Disk) -> [JSONValue] {
@@ -303,7 +316,7 @@ extension DemoState {
 
     private func zfsStatusJSON(_ pool: DemoDiskLayout.Pool) -> JSONValue {
         func leaf(_ device: String) -> JSONValue {
-            ["name": .string(device.replacingOccurrences(of: "/dev/", with: "") + "1"), "state": "ONLINE", "read": 0, "write": 0, "cksum": 0, "msg": "", "leaf": 1]
+            ["name": .string("/dev/disk/by-id/ata-\(device.replacingOccurrences(of: "/dev/", with: ""))-part1"), "state": "ONLINE", "read": 0, "write": 0, "cksum": 0, "msg": "", "leaf": 1]
         }
         let vdevs: [JSONValue]
         switch pool.raidLevel {

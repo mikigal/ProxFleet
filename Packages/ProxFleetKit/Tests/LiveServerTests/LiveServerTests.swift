@@ -557,6 +557,114 @@ struct LiveServerTests {
         _ = try await session.send(PVE.directoryMounts(node: node))
     }
 
+    /// Spare disks for the storage tests: unused whole disks. The test server has three virtual ones of different
+    /// sizes (8, 16 and 4 GiB); without them the storage tests fail early with a clear message.
+    private func spareDisks(_ session: ProxmoxSession, node: String) async throws -> [NodeDisk] {
+        try await session.send(PVE.disks(node: node)).filter { !$0.isPartition && $0.isUnused }.sorted { $0.path < $1.path }
+    }
+
+    private func finishTask(_ session: ProxmoxSession, node: String, _ upid: String?) async throws -> TaskStatus? {
+        guard let upid else { return nil }
+        for _ in 0..<60 {
+            let status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+            if !status.isRunning { return status }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        return nil
+    }
+
+    /// GPT, wipe, refusals for the system disk, and a ZFS pool added as storage and removed with its disk wiped.
+    @Test(.timeLimit(.minutes(2))) func zfsPoolOnSpareDisks() async throws {
+        let (session, node) = try await rootSession()
+        let spares = try await spareDisks(session, node: node)
+        try #require(spares.count >= 2, "the test server has no spare disks")
+        let system = try #require(try await session.send(PVE.disks(node: node)).first { !$0.isPartition && !$0.isUnused })
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.initializeGPT(node: node, disk: system.path)) }
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.wipeDisk(node: node, disk: system.path)) }
+
+        let disk = spares[0]
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.initializeGPT(node: node, disk: disk.path)))?.succeeded == true)
+        #expect(try await session.send(PVE.disks(node: node)).first { $0.path == disk.path }?.hasGPT == true)
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.wipeDisk(node: node, disk: disk.path)))?.succeeded == true)
+        #expect(try await session.send(PVE.disks(node: node)).first { $0.path == disk.path }?.hasGPT == false)
+
+        if Set(spares.prefix(2).map(\.size)).count > 1 {
+            // The form refuses a mirror of different sizes, and so does zpool.
+            var mirror = DiskStorageDraft(kind: .zfs)
+            mirror.name = "pflive"
+            mirror.raidLevel = "mirror"
+            mirror.devices = spares.prefix(2).map(\.path)
+            mirror.deviceSizes = Dictionary(uniqueKeysWithValues: spares.map { ($0.path, $0.size) })
+            #expect(mirror.problems["devices"] != nil)
+            #expect(try await finishTask(session, node: node, try await session.send(PVE.createDiskStorage(node: node, mirror)))?.succeeded == false)
+        }
+
+        var pool = DiskStorageDraft(kind: .zfs)
+        pool.name = "pflive"
+        pool.devices = [disk.path]
+        pool.compression = "lz4"
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.createDiskStorage(node: node, pool)))?.succeeded == true)
+        let created = try #require(try await session.send(PVE.zfsPools(node: node)).first { $0.name == "pflive" })
+        #expect(created.isHealthy && created.size > 0)
+        let status = try await session.send(PVE.zfsPoolStatus(node: node, name: "pflive"))
+        #expect(status.state == "ONLINE" && status.errors == "No known data errors")
+        #expect(status.devices.flatMap { $0.flattened() }.last?.device.displayName.hasSuffix("-part1") == true)
+        // The disk shows as partitioned; its partitions are ZFS and ZFS reserved.
+        let partitions = try await session.send(PVE.disks(node: node, includePartitions: true)).filter { $0.parent == disk.path }
+        #expect(partitions.compactMap(\.usage).sorted() == ["ZFS", "ZFS reserved"])
+        #expect(try await session.send(PVE.storages(node: node)).contains { $0.storage == "pflive" })
+
+        let removal = PVE.deleteDiskStorage(node: node, kind: .zfs, name: "pflive", cleanupConfig: true, wipeDisks: true)
+        #expect(try await finishTask(session, node: node, try await session.send(removal))?.succeeded == true)
+        #expect(try await !session.send(PVE.zfsPools(node: node)).contains { $0.name == "pflive" })
+        #expect(try await !session.send(PVE.storages(node: node)).contains { $0.storage == "pflive" })
+        #expect(try await session.send(PVE.disks(node: node)).first { $0.path == disk.path }?.isUnused == true)
+    }
+
+    /// An LVM volume group, an LVM thin pool and a directory, each added as storage and removed with its disk wiped.
+    @Test(.timeLimit(.minutes(3))) func lvmThinPoolAndDirectoryOnSpareDisks() async throws {
+        let (session, node) = try await rootSession()
+        let spares = try await spareDisks(session, node: node)
+        try #require(spares.count >= 3, "the test server has no spare disks")
+
+        func create(_ kind: DiskStorageKind, _ name: String, on disk: NodeDisk) async throws {
+            var draft = DiskStorageDraft(kind: kind)
+            draft.name = name
+            draft.devices = [disk.path]
+            #expect(draft.problems.isEmpty)
+            #expect(try await finishTask(session, node: node, try await session.send(PVE.createDiskStorage(node: node, draft)))?.succeeded == true)
+        }
+        try await create(.lvm, "pflivevg", on: spares[0])
+        try await create(.lvmThin, "pflivethin", on: spares[1])
+        try await create(.directory, "pflivedir", on: spares[2])
+
+        let groups = try await session.send(PVE.volumeGroups(node: node)).groups
+        #expect(groups.first { $0.name == "pflivevg" }?.physicalVolumes.map(\.name) == [spares[0].path])
+        #expect(groups.first { $0.name == "pflivethin" }?.volumeCount == 1)
+        let thin = try #require(try await session.send(PVE.thinPools(node: node)).first { $0.name == "pflivethin" })
+        #expect(thin.volumeGroup == "pflivethin" && thin.size > 0 && thin.metadataSize > 0)
+        let mount = try #require(try await session.send(PVE.directoryMounts(node: node)).first { $0.name == "pflivedir" })
+        #expect(mount.path == "/mnt/pve/pflivedir" && mount.fileSystem == "ext4")
+        let disks = try await session.send(PVE.disks(node: node, includePartitions: true))
+        #expect(disks.first { $0.path == spares[0].path }?.usage == "LVM")
+        #expect(disks.contains { $0.parent == spares[2].path && $0.usage == "ext4" && $0.isMounted })
+        let storages = try await session.send(PVE.storages(node: node)).map(\.storage)
+        #expect(["pflivevg", "pflivethin", "pflivedir"].allSatisfy(storages.contains))
+
+        func remove(_ kind: DiskStorageKind, _ name: String, volumeGroup: String? = nil) async throws {
+            let request = PVE.deleteDiskStorage(node: node, kind: kind, name: name, volumeGroup: volumeGroup, cleanupConfig: true, wipeDisks: true)
+            #expect(try await finishTask(session, node: node, try await session.send(request))?.succeeded == true)
+        }
+        try await remove(.lvm, "pflivevg")
+        // Wiping the thin pool's disk removes its volume group too.
+        try await remove(.lvmThin, "pflivethin", volumeGroup: "pflivethin")
+        try await remove(.directory, "pflivedir")
+        #expect(try await !session.send(PVE.volumeGroups(node: node)).groups.contains { $0.name.hasPrefix("pflive") })
+        #expect(try await !session.send(PVE.directoryMounts(node: node)).contains { $0.name == "pflivedir" })
+        #expect(try await spareDisks(session, node: node).count == spares.count)
+        #expect(try await !session.send(PVE.storages(node: node)).contains { $0.storage.hasPrefix("pflive") })
+    }
+
     /// Disables and enables the Ceph repository again, and reads the subscription.
     @Test func repositories() async throws {
         let (session, node) = try await rootSession()

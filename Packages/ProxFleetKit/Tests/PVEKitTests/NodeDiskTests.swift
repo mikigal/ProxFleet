@@ -80,6 +80,14 @@ struct NodeDiskTests {
         #expect(rows.map(\.depth) == [0, 1, 2, 2, 0])
         #expect(rows[3].device.hasErrors && rows[3].device.message == "cannot open")
         #expect(rows[4].device.state == nil)
+
+        // Recorded from Proxmox VE 9.2: `zpool status -P` lists disks by full path.
+        let single = try decode(ZFSPoolStatus.self, #"""
+        {"errors": "No known data errors", "leaf": 0, "name": "pftest", "state": "ONLINE",
+         "children": [{"cksum": 0, "msg": "", "state": "ONLINE", "name": "pftest", "leaf": 0, "read": 0, "write": 0,
+           "children": [{"write": 0, "cksum": 0, "state": "ONLINE", "name": "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1-part1", "msg": "", "leaf": 1, "read": 0}]}]}
+        """#)
+        #expect(single.devices.flatMap { $0.flattened() }.map(\.device.displayName) == ["pftest", "scsi-0QEMU_QEMU_HARDDISK_drive-scsi1-part1"])
     }
 
     @Test func directoryMounts() throws {
@@ -99,6 +107,11 @@ struct NodeDiskTests {
         #expect(PVE.createDiskStorage(node: "pve", zfs).path == "/nodes/pve/disks/zfs")
         #expect(PVE.createDiskStorage(node: "pve", zfs).parameters.formEncoded
             == "name=tank&devices=%2Fdev%2Fsdb%2C%2Fdev%2Fsdc%2C%2Fdev%2Fsdd&raidlevel=raidz&compression=on&ashift=12&add_storage=1")
+        zfs.deviceSizes = ["/dev/sdb": 8_589_934_592, "/dev/sdc": 17_179_869_184, "/dev/sdd": 8_589_934_592]
+        #expect(zfs.problems["devices"] == "raidz needs disks of the same size.")
+        zfs.raidLevel = "single"
+        #expect(zfs.problems.isEmpty)
+        zfs.deviceSizes = [:]
         zfs.raidLevel = "raid10"
         zfs.devices.append("/dev/sde")
         zfs.devices.append("/dev/sdf")

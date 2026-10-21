@@ -164,7 +164,8 @@ struct NodeDetailTests {
         #expect(NodeDisk.grouped(disks).map(\.disk.name) == ["nvme0n1", "sda", "sdb", "sdc", "sdd"])
         #expect(detail.zfsPools?.map(\.name) == ["tank"])
         #expect(detail.volumeGroups?.map(\.name) == ["pve"] && detail.thinPools?.map(\.name) == ["data"])
-        #expect(try await detail.zfsStatus(of: "tank").devices.first?.children.first?.name == "mirror-0")
+        let tank = try await detail.zfsStatus(of: "tank").devices.flatMap { $0.flattened() }
+        #expect(tank.map(\.device.displayName) == ["tank", "mirror-0", "ata-sda-part1", "ata-sdb-part1"])
         #expect(try await detail.smart(of: "/dev/sdd").attributes.contains { $0.id == 9 })
         #expect(try await detail.smart(of: "/dev/nvme0n1").text?.contains("Percentage Used") == true)
 
@@ -172,9 +173,15 @@ struct NodeDetailTests {
         draft.name = "fast"
         draft.raidLevel = "mirror"
         draft.devices = ["/dev/sdc", "/dev/sdd"]
+        // zpool refuses a mirror of disks with different sizes; the form catches it before sending.
+        draft.deviceSizes = Dictionary(uniqueKeysWithValues: disks.map { ($0.path, $0.size) })
+        #expect(draft.problems["devices"] == "mirror needs disks of the same size.")
+        await #expect(throws: ConfigUpdateError.self) { try await detail.createDiskStorage(draft) }
+        draft.raidLevel = "single"
         try await detail.createDiskStorage(draft)
         #expect(detail.zfsPools?.map(\.name) == ["tank", "fast"])
-        #expect(detail.disks?.first { $0.path == "/dev/sdc" }?.usage == "ZFS")
+        #expect(detail.disks?.first { $0.path == "/dev/sdc" }?.usage == "partitions")
+        #expect(detail.disks?.first { $0.path == "/dev/sdc1" }?.usage == "ZFS")
         #expect(connection.tasks.tasks.first?.title == "fast – Create ZFS Pool")
 
         await #expect(throws: ConfigUpdateError.self) { try await detail.wipe("/dev/sdc") }

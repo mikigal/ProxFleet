@@ -151,8 +151,12 @@ extension PVE {
         APIRequest(.get, guest.path + "/pending")
     }
 
-    public static func storages(node: String, content: String) -> APIRequest<[StorageInfo]> {
-        APIRequest(.get, "/nodes/\(node)/storage", parameters: ["content": .string(content), "enabled": true])
+    /// Enabled storages of a node, optionally only those holding a content type such as `iso` or `images`.
+    public static func storages(node: String, content: String? = nil) -> APIRequest<[StorageInfo]> {
+        var parameters: APIParameters = [:]
+        if let content { parameters["content"] = .string(content) }
+        parameters["enabled"] = true
+        return APIRequest(.get, "/nodes/\(node)/storage", parameters: parameters)
     }
 
     public static func storageContent(node: String, storage: String, content: String) -> APIRequest<[StorageVolume]> {

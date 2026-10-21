@@ -226,6 +226,11 @@ public struct ZFSPoolStatus: Decodable, Sendable, Equatable {
         public var id: String { name }
         public var hasErrors: Bool { readErrors + writeErrors + checksumErrors > 0 }
 
+        /// Disks are listed by full path (`zpool status -P`), e.g. `/dev/disk/by-id/ata-…-part1`; this is the last part.
+        public var displayName: String {
+            name.hasPrefix("/") ? (name.split(separator: "/").last.map(String.init) ?? name) : name
+        }
+
         public init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: AnyCodingKey.self)
             name = container.lossyString(AnyCodingKey("name")) ?? ""
@@ -307,6 +312,8 @@ public struct DiskStorageDraft: Equatable, Sendable {
     public var compression = "on"
     public var ashift = 12
     public var fileSystem = "ext4"
+    /// Sizes of the chosen disks, by path, so a mirror or RAIDZ of different sizes is caught before `zpool` refuses it.
+    public var deviceSizes: [String: Int64] = [:]
 
     public static let raidLevels = ["single", "mirror", "raid10", "raidz", "raidz2", "raidz3"]
     public static let compressions = ["on", "off", "lz4", "zstd", "gzip", "lzjb", "zle"]
@@ -342,6 +349,8 @@ public struct DiskStorageDraft: Equatable, Sendable {
             problems[key] = String(localized: "\(raidLevel) needs at least \(Self.minimumDisks(for: raidLevel)) disks.")
         } else if kind == .zfs, raidLevel == "raid10", !devices.count.isMultiple(of: 2) {
             problems[key] = String(localized: "raid10 needs an even number of disks.")
+        } else if kind == .zfs, raidLevel != "single", Set(devices.compactMap { deviceSizes[$0] }).count > 1 {
+            problems[key] = String(localized: "\(raidLevel) needs disks of the same size.")
         }
         return problems
     }
