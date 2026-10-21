@@ -113,7 +113,7 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
 
 - Deleting a volume is a task. Disks still used by a guest fail with the server's message; backups have their own screen with protection and restore.
 - Download from URL: `GET .../query-url-metadata` fills in the file name and size, `POST .../download-url` starts a task on the node. The VM wizard offers it next to the ISO picker and selects the image once the task finishes.
-- Upload: `ProxmoxSession.upload` writes a `multipart/form-data` body to a temporary file (`MultipartBody`), copying the source in chunks so ISO images are never held in memory, and `FileUploadTransport` sends it with progress. pveproxy is strict about the request:
+- Upload (hidden in the app for now through `StorageDetailView.allowsUploads`; the code stays and was verified): `ProxmoxSession.upload` writes a `multipart/form-data` body to a temporary file (`MultipartBody`), copying the source in chunks so ISO images are never held in memory, and `FileUploadTransport` sends it with progress. pveproxy is strict about the request:
   - It needs `Content-Length`; chunked bodies are not accepted.
   - URLSession upload tasks add the headers of resumable uploads (`Upload-Draft-Interop-Version`, `Upload-Complete`), which pveproxy answers with 400 or a stalled request, so the body goes as the stream of a data task instead.
   - Fields are read in order: `checksum-algorithm` must come before `checksum`, or the upload fails with 400 and no message.

@@ -135,8 +135,12 @@ extension StorageContentType {
 
 // MARK: - Storage
 
-/// A storage's usage and its content, one content type at a time, with uploads, downloads and deletion.
+/// A storage's usage and its content, one content type at a time, with downloads and deletion.
 struct StorageDetailView: View {
+    /// Uploading files from the device is hidden for now (decided 2026-10-21). The code below and the upload
+    /// support in the package stay, verified against a real server, so it can be turned back on here.
+    static let allowsUploads = false
+
     @State private var detail: StorageDetail
     @State private var content: StorageContentType?
     @State private var fileTarget: StorageContentType?
@@ -240,8 +244,10 @@ struct StorageDetailView: View {
                 Menu("Add", systemImage: "plus") {
                     ForEach(types.filter(\.acceptsFiles)) { type in
                         Section(type.title) {
-                            Button("Upload from Files", systemImage: "folder") { fileTarget = type }
-                                .accessibilityIdentifier("storage.upload.\(type.rawValue)")
+                            if Self.allowsUploads {
+                                Button("Upload from Files", systemImage: "folder") { fileTarget = type }
+                                    .accessibilityIdentifier("storage.upload.\(type.rawValue)")
+                            }
                             Button("Download from URL", systemImage: "link") { downloadTarget = type }
                                 .accessibilityIdentifier("storage.download.\(type.rawValue)")
                             if type == .vztmpl {

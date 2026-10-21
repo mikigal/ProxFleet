@@ -23,6 +23,9 @@ final class StorageUITests: XCTestCase {
         snapshot("70-storage-iso")
 
         app.buttons["storage.add"].tap()
+        XCTAssertTrue(app.buttons["Download from URL"].firstMatch.waitForExistence(timeout: 5))
+        // Uploads from the device are hidden for now.
+        XCTAssertFalse(app.buttons["Upload from Files"].exists)
         app.buttons["Download from URL"].firstMatch.tap()
         let url = app.textFields["download.url"]
         XCTAssertTrue(url.waitForExistence(timeout: 5))

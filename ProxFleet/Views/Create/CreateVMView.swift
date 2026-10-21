@@ -115,7 +115,7 @@ struct CreateVMView: View {
         } header: {
             Text("Installation Media")
         } footer: {
-            Text("The node downloads the image itself and selects it here when done. Uploads from this device are on the storage screen.")
+            Text("The node downloads the image itself and selects it here when done.")
         }
         Section {
             OSTypePicker(connection: connection, kind: .virtualMachine, selection: Binding(get: { draft.osType }, set: { draft.applyDefaults(for: $0) }))
