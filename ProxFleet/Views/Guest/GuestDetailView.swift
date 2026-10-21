@@ -388,6 +388,14 @@ private struct GuestMoreList: View {
                         MoreRow(title: "Notes", systemImage: "note.text", color: .yellow, hint: config.description?.isEmpty == false ? nil : String(localized: "None"))
                     }
                     .accessibilityIdentifier("more.notes")
+                    if detail.reference.kind == .virtualMachine {
+                        NavigationLink {
+                            CloudInitEditor(detail: detail, config: config)
+                        } label: {
+                            MoreRow(title: "Cloud-Init", systemImage: "cloud", color: .cyan, hint: config.cloudInitDrive == nil ? String(localized: "No drive") : nil)
+                        }
+                        .accessibilityIdentifier("more.cloudinit")
+                    }
                 }
                 NavigationLink {
                     GuestTaskHistory(tasks: detail.recentTasks)
