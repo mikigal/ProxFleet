@@ -21,6 +21,10 @@ public final class NodeDetail {
     public private(set) var versions: [PackageVersion]?
     public private(set) var journal: [String]?
     public private(set) var tasks: [ClusterTask]?
+    public private(set) var dns: NodeDNS?
+    public private(set) var hosts: NodeHosts?
+    public private(set) var time: NodeTime?
+    public private(set) var network: NetworkConfiguration?
 
     public var timeframe: RRDTimeframe = .hour {
         didSet {
@@ -88,6 +92,7 @@ public final class NodeDetail {
     }
 
     /// Loads a list for one of the screens. Returns an error message to show, or nil on success or cancellation.
+    @discardableResult
     private func fetch<Value: Decodable & Sendable>(_ request: APIRequest<Value>, store: (Value) -> Void) async -> String? {
         do {
             store(try await connection.session.send(request))
@@ -122,6 +127,19 @@ public final class NodeDetail {
         await fetch(PVE.nodeTasks(node: node)) { tasks = $0 }
     }
 
+    @discardableResult
+    public func loadSystemSettings() async -> String? {
+        let dns = await fetch(PVE.nodeDNS(node)) { self.dns = $0 }
+        let hosts = await fetch(PVE.nodeHosts(node)) { self.hosts = $0 }
+        let time = await fetch(PVE.nodeTime(node)) { self.time = $0 }
+        return dns ?? hosts ?? time
+    }
+
+    @discardableResult
+    public func loadNetwork() async -> String? {
+        await fetch(PVE.network(node: node)) { network = $0 }
+    }
+
     // MARK: - Actions
 
     /// Starts, stops or restarts a service, waits for its task and reloads the list.
@@ -139,6 +157,67 @@ public final class NodeDetail {
     /// Reboots or shuts down the node. The connection to it ends shortly after.
     public func power(_ command: NodePowerCommand) async throws(ConfigUpdateError) {
         try await runTask(PVE.nodePower(node, command))
+    }
+
+    // MARK: - System settings
+
+    public func saveDNS(_ dns: NodeDNS) async throws(ConfigUpdateError) {
+        try await perform(PVE.updateNodeDNS(node, dns))
+        await fetch(PVE.nodeDNS(node)) { self.dns = $0 }
+    }
+
+    /// Replaces `/etc/hosts`, unless it changed since `hosts` was loaded. After a conflict the latest version is
+    /// loaded, so saving again overwrites it, as in the web interface.
+    public func saveHosts(_ text: String) async throws(ConfigUpdateError) {
+        do {
+            try await perform(PVE.updateNodeHosts(node, text: text, digest: hosts?.digest))
+        } catch .conflict {
+            await fetch(PVE.nodeHosts(node)) { hosts = $0 }
+            throw .conflict
+        }
+        await fetch(PVE.nodeHosts(node)) { hosts = $0 }
+    }
+
+    public func setTimeZone(_ timeZone: String) async throws(ConfigUpdateError) {
+        try await perform(PVE.setNodeTimeZone(node, timeZone))
+        await fetch(PVE.nodeTime(node)) { time = $0 }
+    }
+
+    // MARK: - Network
+
+    /// Adds an interface to the pending configuration. Nothing changes on the node until `applyNetwork`.
+    public func createInterface(_ draft: NetworkInterfaceDraft) async throws(ConfigUpdateError) {
+        try await perform(PVE.createInterface(node: node, draft))
+        await loadNetwork()
+    }
+
+    public func updateInterface(_ name: String, type: String, _ update: GuestConfigUpdate) async throws(ConfigUpdateError) {
+        try await perform(PVE.updateInterface(node: node, name: name, type: type, update))
+        await loadNetwork()
+    }
+
+    public func deleteInterface(_ name: String) async throws(ConfigUpdateError) {
+        try await perform(PVE.deleteInterface(node: node, name: name))
+        await loadNetwork()
+    }
+
+    /// Activates the pending network configuration and waits for its task.
+    public func applyNetwork() async throws(ConfigUpdateError) {
+        try await runTask(PVE.applyNetwork(node: node))
+        await loadNetwork()
+    }
+
+    public func revertNetwork() async throws(ConfigUpdateError) {
+        try await perform(PVE.revertNetwork(node: node))
+        await loadNetwork()
+    }
+
+    private func perform<Value>(_ request: APIRequest<Value>) async throws(ConfigUpdateError) {
+        do {
+            _ = try await connection.session.send(request)
+        } catch {
+            throw ConfigUpdateError(error)
+        }
     }
 
     private func runTask(_ request: APIRequest<String?>) async throws(ConfigUpdateError) {

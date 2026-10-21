@@ -23,9 +23,10 @@ Early development. What works now:
 - Snapshots (take with or without RAM, roll back, describe, delete), cloning (full or linked from templates, from a snapshot), converting to a template and deleting guests
 - Backups: back up now (mode, compression, notes, protection), list from all backup storages, notes and protection, configuration in the backup, restore over the guest or as a new one, delete
 - Nodes: status, usage and history, shell, package updates (refresh, list, upgrade in the shell), services, system log, tasks, reboot and shutdown
+- Node settings: network interfaces (bridges, bonds, VLANs; pending changes with apply and revert), DNS, hosts and time zone
 - Demo mode with a built-in sample cluster, including working demo consoles
 
-Next up: node settings (network, disks, certificates) and datacenter settings.
+Next up: disks, repositories and certificates of nodes, then datacenter settings.
 
 ## Requirements
 

@@ -93,6 +93,14 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
 - Service actions return tasks named `srvrestart` and so on, with the service as object ID. Stopping `pveproxy`, `pvedaemon` or `pve-cluster` cuts off API access, so the app warns before it.
 - Reboot and shutdown (`POST .../status`) answer right away; the node then goes offline.
 
+### Node settings
+
+- DNS: `PUT .../dns` requires `search` and removes every server it does not receive, so the app always sends all of them (`NodeDNS.parameters`), moving the remaining ones up.
+- Hosts: `POST .../hosts` takes the whole file plus the `digest` it was read with; a changed file is refused like a guest configuration, and the latest version is loaded so saving again overwrites it.
+- Time: only the time zone can be set. The list comes from the system's time zone names, which match `/usr/share/zoneinfo/zone.tab`.
+- Network: changes go to `/etc/network/interfaces.new` and take effect with `PUT .../network` (a task running `ifreload`); `DELETE .../network` discards them. `GET .../network` reports the pending diff in `changes`, next to `data`, so `NetworkConfiguration` conforms to `EnvelopeDecodable` and decodes from the whole response body.
+- `PUT .../network/{iface}` keeps settings it does not receive and needs `type`; cleared settings go in `delete`. `NetworkInterfaceDraft` serializes like `OptionsDraft` and only sends what changed. VLANs named like `vmbr0.20` take their parent and tag from the name. Proxmox itself checks for a second default gateway and ports used by another interface.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

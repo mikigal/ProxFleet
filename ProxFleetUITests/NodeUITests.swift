@@ -78,6 +78,77 @@ final class NodeUITests: XCTestCase {
         waitForExpectations(timeout: 15)
     }
 
+    @MainActor
+    func testNetworkChangesAreAppliedLater() {
+        app.launch()
+        openNode("pve1")
+        app.buttons["tab.more"].tap()
+        app.buttons["more.network"].tap()
+        XCTAssertTrue(app.buttons["interface.vmbr0"].waitForExistence(timeout: 10))
+        snapshot("54-node-network")
+
+        app.buttons["network.add"].tap()
+        app.buttons["Linux Bridge"].firstMatch.tap()
+        let comment = app.textFields["interface.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+        comment.typeText("Isolated")
+        let cidr = app.textFields["interface.cidr"]
+        cidr.tap()
+        cidr.typeText("192.168.50.1/24")
+        snapshot("55-node-new-bridge")
+        app.buttons["save"].tap()
+
+        let apply = app.buttons["network.apply"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["interface.vmbr2"].label.contains("Inactive"))
+        app.buttons["network.changes"].tap()
+        XCTAssertTrue(app.staticTexts["+auto vmbr2"].waitForExistence(timeout: 5))
+        snapshot("56-node-network-changes")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        apply.tap()
+        let confirm = app.alerts.buttons["network.apply.confirm"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        let vmbr2 = app.buttons["interface.vmbr2"]
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: apply)
+        waitForExpectations(timeout: 15)
+        XCTAssertFalse(vmbr2.label.contains("Inactive"))
+    }
+
+    @MainActor
+    func testDNSAndTimeZone() {
+        app.launch()
+        openNode("pve2")
+        app.buttons["tab.more"].tap()
+        app.buttons["more.dns"].tap()
+        let server = app.textFields["dns.server3"]
+        XCTAssertTrue(server.waitForExistence(timeout: 10))
+        server.tap()
+        server.typeText("9.9.9.9")
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["more.time"].waitForExistence(timeout: 10))
+
+        app.buttons["more.time"].tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.tap()
+        search.typeText("Warsaw")
+        let warsaw = app.buttons["zone.Europe/Warsaw"]
+        XCTAssertTrue(warsaw.waitForExistence(timeout: 5))
+        warsaw.tap()
+        expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: warsaw)
+        waitForExpectations(timeout: 10)
+        snapshot("57-node-time-zone")
+        app.buttons["close"].firstMatch.tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let row = app.buttons["more.time"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        expectation(for: NSPredicate(format: "label CONTAINS 'Europe/Warsaw'"), evaluatedWith: row)
+        waitForExpectations(timeout: 10)
+    }
+
     private func openNode(_ name: String) {
         let row = app.buttons["node.\(name)"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))

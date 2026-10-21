@@ -20,6 +20,10 @@ extension Nothing: NullDecodable {
     public static var nullValue: Nothing { Nothing() }
 }
 
+/// A response that needs more of the body than `data`: it decodes from the whole envelope, for example
+/// `GET /nodes/{node}/network`, which reports pending changes in `changes` next to `data`.
+public protocol EnvelopeDecodable: Decodable {}
+
 enum ResponseDecoder {
     static func decode<T: Decodable>(_ type: T.Type, from response: HTTPResponse) throws -> T {
         let envelope: Envelope<T>
@@ -40,6 +44,13 @@ enum ResponseDecoder {
             let message = envelope.message?.trimmingCharacters(in: .whitespacesAndNewlines)
             if status == 401 { throw ProxmoxError.unauthorized(message) }
             throw ProxmoxError.api(status: status, message: message, fieldErrors: envelope.errors)
+        }
+        if T.self is EnvelopeDecodable.Type {
+            do {
+                return try JSONDecoder().decode(T.self, from: response.body)
+            } catch {
+                throw ProxmoxError.invalidResponse(String(describing: error))
+            }
         }
         if let data = envelope.data { return data }
         if let null = T.self as? NullDecodable.Type, let value = null.nullValue as? T { return value }
@@ -81,7 +92,7 @@ private struct Envelope<T: Decodable>: Decodable {
         self.errors = errors
 
         // Failed responses carry `data: null`, which must not fail decoding of a non-optional `T`.
-        if success == false || (status ?? 200) >= 400 {
+        if success == false || (status ?? 200) >= 400 || T.self is EnvelopeDecodable.Type {
             data = nil
         } else {
             data = try container.decodeIfPresent(T.self, forKey: AnyCodingKey("data"))

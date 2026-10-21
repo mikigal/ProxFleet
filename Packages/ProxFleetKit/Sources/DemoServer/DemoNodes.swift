@@ -22,6 +22,9 @@ extension DemoState {
     /// Routes below `/nodes/{node}` that concern the node itself. nil for other paths.
     func handleNode(_ method: HTTPMethod, node: String, rest: [String], parameters: [String: String], user: String) -> HTTPResponse? {
         settleNodeReboots()
+        if let response = handleNodeSystem(method, node: node, rest: rest, parameters: parameters, user: user) {
+            return response
+        }
         let isOnline = cluster.nodes.first { $0.name == node }?.isOnline ?? false
         let offline = failure(595, "Connection refused: node '\(node)' seems to be offline")
         let allowed = privileges(for: user)

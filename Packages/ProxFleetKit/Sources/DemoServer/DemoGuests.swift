@@ -81,8 +81,6 @@ extension DemoState {
             ]
             let content = parameters["content"] ?? "iso"
             return success(.array(volumes.filter { $0.content == content }.map(\.volume) + (content == "vztmpl" ? downloadedTemplateVolumes() : [])))
-        case (.get, ["network"]):
-            return success([["iface": "vmbr0", "type": "bridge", "comments": "LAN"], ["iface": "vmbr1", "type": "bridge", "comments": "Lab VLANs"]])
         case (.get, ["capabilities", "qemu", "machines"]):
             return success(.array(["10.0+pve1", "9.2+pve1", "9.0", "8.1"].flatMap { version in
                 ["q35", "i440fx"].map { type in ["id": .string("pc-\(type)-\(version)"), "type": .string(type), "version": .string(version)] }

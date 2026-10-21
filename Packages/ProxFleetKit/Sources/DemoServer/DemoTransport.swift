@@ -53,6 +53,13 @@ actor DemoState {
     /// Nodes rebooting until a time, and when they last booted.
     var nodeReboots: [String: Date] = [:]
     var nodeBootTimes: [String: Date] = [:]
+    /// Node settings changed in demo mode, by node. Unchanged nodes use generated defaults.
+    var nodeDNS: [String: [String: String]] = [:]
+    var nodeHosts: [String: String] = [:]
+    var nodeTimeZones: [String: String] = [:]
+    var activeNetworks: [String: [DemoInterface]] = [:]
+    /// Network configuration waiting for Apply Configuration, by node.
+    var pendingNetworks: [String: [DemoInterface]] = [:]
     /// Console proxies started but not yet connected, by ticket.
     var consoles: [String: DemoConsoleRequest] = [:]
     private var ticketCounter = 0

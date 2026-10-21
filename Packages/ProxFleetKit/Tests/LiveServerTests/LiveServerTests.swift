@@ -476,6 +476,69 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.nodeTasks(node: node, limit: 5)).isEmpty)
     }
 
+    /// DNS, hosts and time zone are written back unchanged; a port-less bridge is created, applied and removed again.
+    @Test func nodeSystemAndNetwork() async throws {
+        let (session, node) = try await rootSession()
+        func finish(_ upid: String?) async throws -> TaskStatus? {
+            guard let upid else { return nil }
+            for _ in 0..<60 {
+                let status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+                if !status.isRunning { return status }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            return nil
+        }
+
+        let dns = try await session.send(PVE.nodeDNS(node))
+        #expect(!dns.searchDomain.isEmpty && !dns.servers[0].isEmpty)
+        _ = try await session.send(PVE.updateNodeDNS(node, dns))
+        #expect(try await session.send(PVE.nodeDNS(node)) == dns)
+        let hosts = try await session.send(PVE.nodeHosts(node))
+        #expect(hosts.text.contains(node) && hosts.digest != nil)
+        _ = try await session.send(PVE.updateNodeHosts(node, text: hosts.text, digest: hosts.digest))
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PVE.updateNodeHosts(node, text: hosts.text, digest: "0000"))
+        }
+        let time = try await session.send(PVE.nodeTime(node))
+        #expect(abs(time.time.timeIntervalSinceNow) < 120)
+        _ = try await session.send(PVE.setNodeTimeZone(node, time.timeZone))
+
+        let before = try await session.send(PVE.network(node: node))
+        try #require(before.pendingChanges == nil, "the test server has unapplied network changes")
+        let name = "vmbr97"
+        var draft = NetworkInterfaceDraft(creating: .bridge, existing: before.interfaces)
+        draft.name = name
+        draft.comments = "ProxFleet live test"
+        draft.vlanAware = true
+        _ = try await session.send(PVE.createInterface(node: node, draft))
+        let pending = try await session.send(PVE.network(node: node))
+        #expect(pending.pendingChanges?.contains("+auto \(name)") == true)
+        let created = try #require(pending.interfaces.first { $0.name == name })
+        #expect(created.comments == "ProxFleet live test" && created.bridgeVLANAware && !created.isActive)
+
+        var edit = NetworkInterfaceDraft(created)
+        edit.vlanAware = false
+        edit.mtu = "9000"
+        _ = try await session.send(PVE.updateInterface(node: node, name: name, type: "bridge", edit.changes(from: NetworkInterfaceDraft(created))))
+        let edited = try #require(try await session.send(PVE.network(node: node)).interfaces.first { $0.name == name })
+        #expect(edited.mtu == 9000 && !edited.bridgeVLANAware && edited.bridgeVIDs == nil)
+
+        #expect(try await finish(try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+        let applied = try await session.send(PVE.network(node: node))
+        #expect(applied.pendingChanges == nil)
+        #expect(applied.interfaces.first { $0.name == name }?.isActive == true)
+
+        _ = try await session.send(PVE.deleteInterface(node: node, name: name))
+        #expect(try await finish(try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+        let after = try await session.send(PVE.network(node: node))
+        #expect(after.pendingChanges == nil && !after.interfaces.contains { $0.name == name })
+
+        // Revert drops staged changes.
+        _ = try await session.send(PVE.createInterface(node: node, draft))
+        _ = try await session.send(PVE.revertNetwork(node: node))
+        #expect(try await session.send(PVE.network(node: node)).pendingChanges == nil)
+    }
+
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
     func readOnlyUserLacksPowerManagement() async throws {
         let session = try await trustedSession()

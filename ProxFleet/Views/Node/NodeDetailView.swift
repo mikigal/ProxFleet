@@ -347,6 +347,33 @@ private struct NodeMoreList: View {
                 }
                 .accessibilityIdentifier("more.tasks")
             }
+            Section("System") {
+                NavigationLink {
+                    NodeNetworkView(detail: detail)
+                } label: {
+                    MoreRow(title: "Network", systemImage: "point.3.filled.connected.trianglepath.dotted", color: .blue)
+                }
+                .accessibilityIdentifier("more.network")
+                NavigationLink {
+                    NodeSettingLoader(detail: detail, value: detail.dns) { NodeDNSEditor(detail: detail, dns: $0) }
+                } label: {
+                    MoreRow(title: "DNS", systemImage: "globe", color: .teal, hint: detail.dns?.servers.first { !$0.isEmpty })
+                }
+                .accessibilityIdentifier("more.dns")
+                NavigationLink {
+                    NodeSettingLoader(detail: detail, value: detail.hosts) { NodeHostsEditor(detail: detail, hosts: $0) }
+                } label: {
+                    MoreRow(title: "Hosts", systemImage: "list.bullet.indent", color: .mint)
+                }
+                .accessibilityIdentifier("more.hosts")
+                NavigationLink {
+                    NodeTimeZoneView(detail: detail)
+                } label: {
+                    MoreRow(title: "Time Zone", systemImage: "clock", color: .orange, hint: detail.time?.timeZone)
+                }
+                .accessibilityIdentifier("more.time")
+            }
+            .disabled(!detail.isOnline)
             Section {
                 Button {
                     pendingPower = .reboot
@@ -371,6 +398,7 @@ private struct NodeMoreList: View {
             }
             .disabled(!detail.can("Sys.PowerMgmt") || !detail.isOnline || isWorking)
         }
+        .task { await detail.loadSystemSettings() }
         .alert(pendingPower == .shutdown ? "Shut down \(detail.node)?" : "Reboot \(detail.node)?", isPresented: Binding(get: { pendingPower != nil }, set: { if !$0 { pendingPower = nil } }), presenting: pendingPower) { command in
             Button("Cancel", role: .cancel) {}
             Button(command == .shutdown ? "Shut Down" : "Reboot", role: .destructive) { Task { await power(command) } }
@@ -401,23 +429,6 @@ private struct NodeMoreList: View {
             await detail.connection.refresh()
         } catch {
             errorMessage = error.localizedDescription
-        }
-    }
-}
-
-private struct MoreRow: View {
-    let title: LocalizedStringKey
-    let systemImage: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(color.gradient, in: .rect(cornerRadius: 8))
-            Text(title)
         }
     }
 }
