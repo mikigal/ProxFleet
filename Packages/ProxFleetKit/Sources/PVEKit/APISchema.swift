@@ -10,6 +10,8 @@ public struct SchemaParameter: Sendable, Identifiable, Equatable {
     public let isOptional: Bool
     public let defaultValue: String?
     public let enumValues: [String]?
+    /// Labels for enum values, from the `value;; label` lines of the long description, e.g. `l26` → "Linux 2.6 - 7.X Kernel".
+    public let enumDescriptions: [String: String]
     public let minimum: Double?
     public let maximum: Double?
     public let typeText: String?
@@ -38,6 +40,7 @@ public struct SchemaParameter: Sendable, Identifiable, Equatable {
         isOptional = Self.flag(json["optional"])
         defaultValue = json["default"].flatMap(Self.text)
         enumValues = json["enum"] as? [String]
+        enumDescriptions = Self.enumDescriptions(in: json["verbose_description"] as? String)
         minimum = json["minimum"].flatMap(Self.number)
         maximum = json["maximum"].flatMap(Self.number)
         typeText = json["typetext"] as? String ?? json["format_description"] as? String
@@ -52,6 +55,18 @@ public struct SchemaParameter: Sendable, Identifiable, Equatable {
             hasKeyAliases = false
             properties = nil
         }
+    }
+
+    static func enumDescriptions(in text: String?) -> [String: String] {
+        var result: [String: String] = [:]
+        for line in (text ?? "").split(separator: "\n") {
+            let parts = line.components(separatedBy: ";;")
+            guard parts.count == 2 else { continue }
+            let key = parts[0].trimmingCharacters(in: .whitespaces)
+            let label = parts[1].trimmingCharacters(in: .whitespaces)
+            if !key.isEmpty, !key.contains(" "), !label.isEmpty { result[key] = label }
+        }
+        return result
     }
 
     private static func flag(_ value: Any?) -> Bool {

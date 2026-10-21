@@ -46,9 +46,7 @@ private struct VMOptionsEditor: View {
                         .accessibilityIdentifier("option.name")
                 }
                 FieldError(message: errors["name"])
-                Picker("OS Type", selection: $draft.osType) {
-                    ForEach(OptionsEditor.vmOSTypes, id: \.self) { Text(GuestConfig(values: ["ostype": $0]).osTypeDescription ?? $0).tag($0) }
-                }
+                OSTypePicker(detail: detail, selection: $draft.osType)
                 Toggle("Protection", isOn: $draft.protection)
             } footer: {
                 Text("Protection prevents removing the VM or its disks by accident.")
@@ -266,9 +264,7 @@ private struct ContainerOptionsEditor: View {
                         .accessibilityIdentifier("option.name")
                 }
                 FieldError(message: errors["hostname"])
-                Picker("OS Type", selection: $draft.osType) {
-                    ForEach(ContainerOptionsDraft.osTypes, id: \.self) { Text(GuestConfig(values: ["ostype": $0]).osTypeDescription ?? $0).tag($0) }
-                }
+                OSTypePicker(detail: detail, selection: $draft.osType)
                 Picker("Architecture", selection: $draft.architecture) {
                     ForEach(ContainerOptionsDraft.architectures, id: \.self) { Text($0).tag($0) }
                 }
@@ -470,8 +466,39 @@ private func loadSnippets(_ detail: GuestDetail) async -> [StorageVolume] {
     return volumes
 }
 
-extension OptionsEditor {
-    static let vmOSTypes = ["l26", "l24", "win11", "win10", "win8", "win7", "w2k8", "wxp", "w2k", "solaris", "other"]
+/// OS types the server knows, with its own labels when its API schema provides them.
+private struct OSTypePicker: View {
+    let detail: GuestDetail
+    @Binding var selection: String
+    @State private var offered: [String] = []
+    @State private var labels: [String: String] = [:]
+
+    private var kind: GuestKind { detail.reference.kind }
+
+    private var choices: [String] {
+        var types = GuestConfig.orderedOSTypes(offered, kind: kind)
+        if !selection.isEmpty, !types.contains(selection) { types.insert(selection, at: 0) }
+        return types
+    }
+
+    var body: some View {
+        Picker("OS Type", selection: $selection) {
+            if selection.isEmpty { Text("Not Set").tag("") }
+            ForEach(choices, id: \.self) { type in
+                Text(label(for: type)).tag(type)
+            }
+        }
+        .task {
+            guard let parameter = try? await detail.connection.apiSchema().config(for: kind).first(where: { $0.name == "ostype" }) else { return }
+            offered = parameter.enumValues ?? []
+            labels = parameter.enumDescriptions
+        }
+    }
+
+    private func label(for type: String) -> String {
+        // The server's labels name Microsoft on every Windows entry; the list reads better without it.
+        labels[type].map { $0.replacingOccurrences(of: "Microsoft ", with: "") } ?? GuestConfig.osTypeName(type)
+    }
 }
 
 /// Reorderable list of boot devices; devices can be switched off.

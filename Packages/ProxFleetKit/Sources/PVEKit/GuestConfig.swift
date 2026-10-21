@@ -75,17 +75,36 @@ public struct GuestConfig: Decodable, Sendable, Equatable {
         return Self.osTypeNames[osType] ?? osType
     }
 
+    /// VM OS types in the order the web interface lists them. Newer servers may offer more; see `orderedOSTypes`.
+    public static let vmOSTypes = ["l26", "l24", "win11", "win10", "win8", "win7", "wvista", "w2k8", "w2k3", "wxp", "w2k", "solaris", "other"]
+    public static let containerOSTypes = ["debian", "devuan", "ubuntu", "centos", "fedora", "opensuse", "archlinux", "alpine", "gentoo", "nixos", "unmanaged"]
+
+    /// Known OS types first in their usual order, then any others the server offers, with `other`/`unmanaged` last.
+    public static func orderedOSTypes(_ offered: [String], kind: GuestKind) -> [String] {
+        let known = kind == .virtualMachine ? vmOSTypes : containerOSTypes
+        let last = kind == .virtualMachine ? "other" : "unmanaged"
+        let extra = Set(offered).subtracting(known).sorted()
+        return known.filter { $0 != last } + extra + [last]
+    }
+
+    /// Names for OS types, as the web interface shows them.
+    public static func osTypeName(_ type: String) -> String {
+        osTypeNames[type] ?? type
+    }
+
     static let osTypeNames: [String: String] = [
-        "l26": "Linux 6.x – 2.6 Kernel",
+        "l26": "Linux 2.6 – 7.x Kernel",
         "l24": "Linux 2.4 Kernel",
         "win11": "Windows 11/2022/2025",
         "win10": "Windows 10/2016/2019",
-        "win8": "Windows 8.x/2012/2012r2",
-        "win7": "Windows 7/2008r2",
-        "w2k8": "Windows Vista/2008",
-        "wxp": "Windows XP/2003",
+        "win8": "Windows 8/2012/2012r2",
+        "win7": "Windows 7",
+        "wvista": "Windows Vista",
+        "w2k8": "Windows 2008",
+        "w2k3": "Windows 2003",
+        "wxp": "Windows XP",
         "w2k": "Windows 2000",
-        "solaris": "Solaris Kernel",
+        "solaris": "Solaris/OpenSolaris/OpenIndiana",
         "other": "Other",
         "alpine": "Alpine",
         "archlinux": "Arch Linux",

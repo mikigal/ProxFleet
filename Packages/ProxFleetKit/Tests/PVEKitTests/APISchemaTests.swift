@@ -71,6 +71,20 @@ struct APISchemaTests {
         #expect(GuestConfig(values: ["numa0": "x"]).nextKey(for: numa) == "numa1")
     }
 
+    @Test func enumLabelsComeFromTheLongDescription() {
+        let labels = SchemaParameter.enumDescriptions(in: "Specify guest operating system.\n\n[horizontal]\nother;; unspecified OS\nl26;; Linux 2.6 - 7.X Kernel\nwin11;; Microsoft Windows 11/2022/2025\n")
+        #expect(labels == ["other": "unspecified OS", "l26": "Linux 2.6 - 7.X Kernel", "win11": "Microsoft Windows 11/2022/2025"])
+    }
+
+    @Test func osTypesKeepTheirOrderAndAcceptNewOnes() {
+        let offered = ["other", "wxp", "w2k", "w2k3", "w2k8", "wvista", "win7", "win8", "win10", "win11", "win12", "l24", "l26", "solaris"]
+        let ordered = GuestConfig.orderedOSTypes(offered, kind: .virtualMachine)
+        #expect(ordered.first == "l26")
+        #expect(ordered.last == "other")
+        #expect(ordered.contains("wvista") && ordered.contains("w2k3") && ordered.contains("win12"))
+        #expect(GuestConfig.orderedOSTypes([], kind: .container).count == 11)
+    }
+
     @Test func plainValuesAreValidated() throws {
         let schema = try APISchema(apidoc: Data(apidoc.utf8))
         let cores = try #require(schema.vmConfig.first { $0.name == "cores" })

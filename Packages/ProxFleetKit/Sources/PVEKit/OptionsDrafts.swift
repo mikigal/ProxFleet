@@ -312,7 +312,6 @@ public struct ContainerOptionsDraft: OptionsDraft, Sendable {
         }
     }
 
-    public static let osTypes = ["alpine", "archlinux", "centos", "debian", "devuan", "fedora", "gentoo", "nixos", "opensuse", "ubuntu", "unmanaged"]
     public static let architectures = ["amd64", "i386", "arm64", "armhf", "riscv32", "riscv64"]
     public static let consoleModes = ["tty", "console", "shell"]
     public static let mountableTypes = ["nfs", "cifs"]
