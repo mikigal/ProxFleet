@@ -19,6 +19,34 @@ struct GuestConfigEditingTests {
         return detail
     }
 
+    @Test func newDisksAreAllocatedAndDetachedDisksKept() async throws {
+        let detail = try await detail(vmid: 102, node: "pve2")
+        var update = GuestConfigUpdate()
+        update.set("scsi1", "local-lvm:8,discard=on")
+        update.set("tpmstate0", "local-lvm:1,version=v2.0")
+        try await detail.apply(update)
+        #expect(detail.config?["scsi1"] == "local-lvm:vm-102-disk-3,discard=on,size=8G")
+        #expect(detail.config?["tpmstate0"]?.hasPrefix("local-lvm:vm-102-disk-") == true)
+
+        var removal = GuestConfigUpdate()
+        removal.set("scsi1", nil)
+        try await detail.apply(removal)
+        #expect(detail.config?["scsi1"] == nil)
+        #expect(detail.config?["unused0"] == "local-lvm:vm-102-disk-3")
+    }
+
+    @Test func disksMoveBetweenStoragesAndGuests() async throws {
+        let detail = try await detail(vmid: 103, node: "pve2")
+        try await detail.run(PVE.moveDisk(detail.reference, disk: "scsi0", storage: "local", deleteSource: false))
+        #expect(detail.config?["scsi0"]?.hasPrefix("local:vm-103-disk-1,") == true)
+        #expect(detail.config?["unused0"] == "local-lvm:vm-103-disk-0")
+
+        try await detail.run(PVE.reassignDisk(detail.reference, disk: "unused0", to: 102, as: "unused5"))
+        #expect(detail.config?["unused0"] == nil)
+        let target = try await detail.connection.send(PVE.guestConfig(GuestReference(node: "pve2", vmid: 102, kind: .virtualMachine)))
+        #expect(target["unused5"]?.hasPrefix("local-lvm:vm-102-disk-") == true)
+    }
+
     @Test func stoppedVMChangesApplyImmediately() async throws {
         let detail = try await detail(vmid: 102, node: "pve2")
         var update = GuestConfigUpdate()

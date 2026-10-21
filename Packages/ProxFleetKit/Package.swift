@@ -31,7 +31,7 @@ let package = Package(
         .testTarget(name: "FleetCoreTests", dependencies: ["FleetCore", "DemoServer"]),
         // Runs against a real server only when PROXFLEET_TEST_SERVER_ENV points to an env file, see README.
         .testTarget(name: "LiveServerTests", dependencies: ["ProxmoxCore", "ProxmoxURLSession", "PVEKit", "ProxmoxConsole"]),
-        .testTarget(name: "ProxmoxConsoleTests", dependencies: ["ProxmoxConsole"]),
+        .testTarget(name: "ProxmoxConsoleTests", dependencies: ["ProxmoxConsole", "DemoServer"]),
     ],
     swiftLanguageModes: [.v6]
 )

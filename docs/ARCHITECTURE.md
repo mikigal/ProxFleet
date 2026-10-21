@@ -70,6 +70,7 @@ Both consoles open a one-time proxy on the node and connect to it through `/node
 ## Testing
 
 - Package tests (`swift test`) cover the API client, decoding, authentication flows and the app domain, using `MockTransport` and the `DemoServer`.
+- The demo server also answers console WebSockets: `termproxy` reaches a small fake shell and `vncproxy` an RFB server that draws a text console with Core Text, so both console clients run end to end without a Proxmox host. It serves its own reduced API schema for All Settings.
 - UI tests run the app in the Simulator. Launch arguments: `-inMemory` (do not touch saved servers) and `-demo` (open the demo cluster).
 - `PVEKitTests/Fixtures` holds responses recorded from a real Proxmox VE 9.2 node.
 - `LiveServerTests` run against a real server when `PROXFLEET_TEST_SERVER_ENV` points to an env file: certificate pinning, login, renewal, TOTP and error formats. They are skipped otherwise.

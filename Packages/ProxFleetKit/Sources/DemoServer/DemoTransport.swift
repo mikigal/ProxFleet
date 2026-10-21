@@ -21,6 +21,18 @@ public final class DemoTransport: HTTPTransport {
     }
 }
 
+extension DemoTransport: WebSocketTransport {
+    /// Consoles connect to an in-process fake: a shell for terminals, a text-mode screen for VNC.
+    public func openWebSocket(_ request: HTTPRequest, protocols: [String]) async throws -> any WebSocketConnection {
+        let ticket = URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "vncticket" }?.value ?? ""
+        guard let console = await state.takeConsole(ticket: ticket) else {
+            throw ProxmoxError.unauthorized("invalid console ticket")
+        }
+        return DemoConsoleServer.start(console)
+    }
+}
+
 actor DemoState {
     var cluster: DemoCluster
     var tasks: [DemoTask] = []
@@ -29,6 +41,8 @@ actor DemoState {
     /// Changes of running guests that wait for a restart.
     var pendingEdits: [Int: [String: String?]] = [:]
     var configRevisions: [Int: Int] = [:]
+    /// Console proxies started but not yet connected, by ticket.
+    var consoles: [String: DemoConsoleRequest] = [:]
     private var ticketCounter = 0
     let started = Date()
 
@@ -36,9 +50,16 @@ actor DemoState {
         self.cluster = cluster
     }
 
+    func takeConsole(ticket: String) -> DemoConsoleRequest? {
+        consoles.removeValue(forKey: ticket)
+    }
+
     func handle(_ request: HTTPRequest) -> HTTPResponse {
         let prefix = APIFormat.pathPrefix
         let fullPath = request.url.path(percentEncoded: false)
+        if fullPath == "/pve-docs/api-viewer/apidoc.js" {
+            return HTTPResponse(statusCode: 200, headers: ["Content-Type": "application/javascript"], body: DemoAPISchema.apidoc)
+        }
         guard fullPath.hasPrefix(prefix) else { return failure(404, "Not found") }
         let path = String(fullPath.dropFirst(prefix.count))
         let parameters = Self.parameters(of: request)

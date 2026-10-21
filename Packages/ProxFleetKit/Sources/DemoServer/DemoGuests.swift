@@ -30,10 +30,15 @@ extension DemoState {
         case (.get, 2) where parts == ["access", "permissions"]:
             let path = parameters["path"] ?? "/"
             return success(.object([path: .object(Dictionary(uniqueKeysWithValues: privileges(for: user).map { ($0, JSONValue.int(1)) }))]))
+        case (.get, 3) where parts[0] == "cluster" && parts[1] == "mapping":
+            return success(resourceMappings(parts[2]))
         default:
             break
         }
 
+        if parts.count == 3, parts[0] == "nodes", method == .post, parts[2] == "termproxy" {
+            return startConsole(.init(kind: .terminal, hostname: parts[1], osName: "Proxmox VE \(cluster.version)", isContainer: false), user: user)
+        }
         guard parts.count >= 4, parts[0] == "nodes" else { return nil }
         let node = parts[1]
 
@@ -50,7 +55,7 @@ extension DemoState {
         case (.get, ["storage"]):
             let content = parameters["content"] ?? ""
             let storages: [JSONValue] = [
-                ["storage": "local", "type": "dir", "content": "iso,vztmpl,backup", "active": 1, "shared": 0, "avail": 82_000_000_000, "total": 107_000_000_000],
+                ["storage": "local", "type": "dir", "content": "iso,vztmpl,backup,snippets", "active": 1, "shared": 0, "avail": 82_000_000_000, "total": 107_000_000_000],
                 ["storage": "local-lvm", "type": "lvmthin", "content": "images,rootdir", "active": 1, "shared": 0, "avail": 520_000_000_000, "total": 858_000_000_000],
             ]
             return success(.array(storages.filter { storage in
@@ -58,12 +63,25 @@ extension DemoState {
                 return types.split(separator: ",").contains { $0 == content }
             }))
         case (.get, ["storage", "local", "content"]):
-            return success([
-                ["volid": "local:iso/debian-13.1.0-amd64-netinst.iso", "size": 790_626_304, "format": "iso"],
-                ["volid": "local:iso/ubuntu-24.04.3-live-server-amd64.iso", "size": 3_213_064_192, "format": "iso"],
-            ])
+            let volumes: [(content: String, volume: JSONValue)] = [
+                ("iso", ["volid": "local:iso/debian-13.1.0-amd64-netinst.iso", "size": 790_626_304, "format": "iso"]),
+                ("iso", ["volid": "local:iso/ubuntu-24.04.3-live-server-amd64.iso", "size": 3_213_064_192, "format": "iso"]),
+                ("vztmpl", ["volid": "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst", "size": 128_974_848, "format": "tzst"]),
+                ("snippets", ["volid": "local:snippets/hookscript.pl", "size": 1_204, "format": "snippet"]),
+                ("snippets", ["volid": "local:snippets/user-data.yaml", "size": 512, "format": "snippet"]),
+            ]
+            let content = parameters["content"] ?? "iso"
+            return success(.array(volumes.filter { $0.content == content }.map(\.volume)))
         case (.get, ["network"]):
             return success([["iface": "vmbr0", "type": "bridge", "comments": "LAN"], ["iface": "vmbr1", "type": "bridge", "comments": "Lab VLANs"]])
+        case (.get, ["capabilities", "qemu", "machines"]):
+            return success(.array(["10.0+pve1", "9.2+pve1", "9.0", "8.1"].flatMap { version in
+                ["q35", "i440fx"].map { type in ["id": .string("pc-\(type)-\(version)"), "type": .string(type), "version": .string(version)] }
+            }))
+        case (.get, ["hardware", "pci"]):
+            return success(Self.pciDevices)
+        case (.get, ["hardware", "usb"]):
+            return success(Self.usbDevices)
         case (.get, ["capabilities", "qemu", "cpu"]):
             return success(.array(["host", "x86-64-v2-AES", "x86-64-v3", "kvm64", "qemu64", "EPYC-Rome", "Skylake-Server"].map { ["name": .string($0), "vendor": "default", "custom": 0] }))
         default:
@@ -107,6 +125,17 @@ extension DemoState {
                     ["ip-address": .string(ipAddress(for: guest)), "ip-address-type": "inet", "prefix": "24"],
                 ]],
             ]))
+        case (.post, ["termproxy"]), (.post, ["vncproxy"]):
+            guard guest.isRunning else { return failure(500, "\(guest.kind == .qemu ? "VM" : "CT") \(vmid) not running") }
+            let isVNC = rest == ["vncproxy"]
+            return startConsole(.init(
+                kind: isVNC ? .vnc : .terminal, hostname: guest.name, osName: osName(for: guest),
+                isContainer: guest.kind == .lxc, vmid: vmid, isWindows: isVNC && guest.name.contains("win")
+            ), user: user)
+        case (.post, ["move_disk"]), (.post, ["move_volume"]):
+            return moveDisk(guest, parameters: parameters, user: user)
+        case (.put, ["cloudinit"]):
+            return success(nil)
         case (.post, let action) where action.count == 2 && action[0] == "status":
             guard privileges(for: user).contains("VM.PowerMgmt") else {
                 return failure(403, "Permission check failed (/vms/\(vmid), VM.PowerMgmt)")
@@ -190,7 +219,11 @@ extension DemoState {
     private func privileges(for user: String) -> [String] {
         let audit = ["VM.Audit", "VM.Monitor", "Datastore.Audit", "Sys.Audit", "Pool.Audit"]
         if user.hasPrefix("auditor") || user.hasPrefix("limited") { return audit }
-        return audit + ["VM.PowerMgmt", "VM.Console", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options", "VM.Allocate", "VM.Clone", "VM.Snapshot", "VM.Backup", "Sys.Modify", "Sys.PowerMgmt", "Sys.Console"]
+        return audit + [
+            "VM.PowerMgmt", "VM.Console", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.CDROM",
+            "VM.Config.Network", "VM.Config.HWType", "VM.Config.Options", "VM.Config.Cloudinit", "VM.Allocate", "VM.Clone",
+            "VM.Snapshot", "VM.Backup", "VM.Migrate", "Datastore.AllocateSpace", "Sys.Modify", "Sys.PowerMgmt", "Sys.Console",
+        ]
     }
 
     // MARK: - JSON
@@ -375,10 +408,16 @@ extension DemoState {
 
         var changes: [String: String?] = [:]
         for (key, value) in parameters where !["digest", "delete", "revert"].contains(key) {
-            changes[key] = .some(value)
+            changes[key] = .some(allocateVolume(value, key: key, guest: guest))
         }
+        let config = currentConfig(guest)
         for key in (parameters["delete"] ?? "").split(separator: ",").map(String.init) {
             changes[key] = .some(nil)
+            // Like Proxmox, a detached disk stays as an unused volume until it is deleted.
+            if let volume = Self.detachableVolume(key: key, value: config[key]) {
+                let unused = (0..<256).map { "unused\($0)" }.first { config[$0] == nil && changes[$0] == nil }
+                if let unused { changes[unused] = .some(volume) }
+            }
         }
         // Like Proxmox without hotplug for these, a running guest gets them on its next start.
         let coldKeys: Set<String> = ["memory", "cores", "sockets", "cpu", "bios", "machine"]
@@ -411,7 +450,7 @@ extension DemoState {
         return startConfigTask(guest, user: user, type: "resize")
     }
 
-    private func startConfigTask(_ guest: DemoCluster.Guest, user: String, type: String = "qmconfig") -> HTTPResponse {
+    func startConfigTask(_ guest: DemoCluster.Guest, user: String, type: String = "qmconfig") -> HTTPResponse {
         let start = Date()
         let upid = String(format: "UPID:%@:%08X:%08X:%08X:%@:%d:%@:", guest.node, 4000 + tasks.count, 100_000 + tasks.count, Int(start.timeIntervalSince1970), type, guest.vmid, user)
         tasks.append(DemoTask(upid: upid, node: guest.node, type: type, objectID: String(guest.vmid), user: user, startedAt: start, duration: 0.4, error: nil, apply: nil))
