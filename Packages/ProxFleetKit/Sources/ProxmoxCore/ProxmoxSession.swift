@@ -129,6 +129,29 @@ public actor ProxmoxSession {
         try await perform(request, authenticated: false)
     }
 
+    /// Fetches a file the web interface serves outside the API, such as the API schema. No login is sent.
+    public func fetchStaticFile(_ path: String) async throws -> Data {
+        guard var components = URLComponents(url: address.baseURL, resolvingAgainstBaseURL: false) else {
+            throw ProxmoxError.invalidResponse("invalid address")
+        }
+        components.percentEncodedPath = path
+        guard let url = components.url else { throw ProxmoxError.invalidResponse("invalid path \(path)") }
+        let response: HTTPResponse
+        do {
+            response = try await transport.send(HTTPRequest(method: .get, url: url))
+        } catch let error as ProxmoxError {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw ProxmoxError.transport(error.localizedDescription)
+        }
+        guard response.statusCode == 200 else {
+            throw ProxmoxError.api(status: response.statusCode, message: "HTTP \(response.statusCode)", fieldErrors: [:])
+        }
+        return response.body
+    }
+
     private func perform<Response>(_ request: APIRequest<Response>, authenticated: Bool) async throws -> Response {
         let httpRequest = try buildRequest(request, authenticated: authenticated)
         let response: HTTPResponse

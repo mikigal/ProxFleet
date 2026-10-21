@@ -398,6 +398,12 @@ private struct GuestMoreList: View {
                     }
                 }
                 NavigationLink {
+                    AllSettingsView(detail: detail)
+                } label: {
+                    MoreRow(title: "All Settings", systemImage: "list.bullet.rectangle.portrait", color: .indigo, hint: nil)
+                }
+                .accessibilityIdentifier("more.allSettings")
+                NavigationLink {
                     GuestTaskHistory(tasks: detail.recentTasks)
                 } label: {
                     MoreRow(title: "Task History", systemImage: "list.bullet.rectangle", color: .blue, hint: detail.recentTasks.isEmpty ? nil : "\(detail.recentTasks.count)")

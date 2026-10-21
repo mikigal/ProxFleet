@@ -255,6 +255,22 @@ public final class ServerConnection: Identifiable {
     /// The authenticated session, for features such as consoles that talk to the API directly.
     public var apiSession: ProxmoxSession { session }
 
+    @ObservationIgnored private var schemaTask: Task<APISchema, any Error>?
+
+    /// The server's API schema, loaded once per connection; it describes every configuration key.
+    public func apiSchema() async throws -> APISchema {
+        if let schemaTask { return try await schemaTask.value }
+        let session = session
+        let task = Task { try await session.apiSchema() }
+        schemaTask = task
+        do {
+            return try await task.value
+        } catch {
+            schemaTask = nil
+            throw error
+        }
+    }
+
     /// Direct API access for feature screens.
     public func send<Response>(_ request: APIRequest<Response>) async throws -> Response {
         try await session.send(request)

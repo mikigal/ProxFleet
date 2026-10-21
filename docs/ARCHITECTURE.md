@@ -44,12 +44,15 @@ Most actions return a task ID (UPID) instead of a result. `TaskCenter`, owned by
 
 ## Configuration editing
 
-Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys to revert) and `GuestDetail.apply` sends it with the `digest` of the configuration they were based on. A changed digest makes the server refuse with "checksum mismatch", which becomes `ConfigUpdateError.conflict`; validation errors come back per parameter and are shown under the matching field.
+Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys to revert) and `GuestDetail.apply` sends it with the `digest` of the configuration the editor was opened with. A changed digest makes the server refuse with "checksum mismatch", which becomes `ConfigUpdateError.conflict`; validation errors come back per parameter and are shown under the matching field.
 
 - VMs update with `POST .../config` and return a task, which is awaited. Containers update with the synchronous `PUT`.
 - `GET .../config` is called with `current=1`. Without it, Proxmox returns pending values, which made a running VM look already changed.
 - Changes that cannot apply to a running VM (memory and CPU without hotplug, firmware) show up in `GET .../pending` until the next start. The Hardware tab lists them, with a way to revert them.
-- Property-string values such as `net0` or `scsi0` are edited through drafts (`NetworkDeviceDraft`, `DiskOptionsDraft`) that keep options the form does not know.
+- Property-string values such as `net0` or `scsi0` are edited through drafts (`NetworkDeviceDraft`, `DiskOptionsDraft`, `PCIDeviceDraft`…) that keep options the form does not know.
+- Option screens use `OptionsDraft`: the draft and the original are serialized the same way and only keys whose value differs are sent, so defaults the server stores differently never show up as changes.
+- Rows the user lacks the privilege for show a lock and explain why; editors open read-only instead of disappearing.
+- Every other key is reachable from All Settings, which builds its forms from the server's API schema. `apidoc.js` is fetched once per connection from `/pve-docs/api-viewer/apidoc.js` (no login needed) and only the guest configuration methods are kept. Types, enums, ranges and property-string keys pick the controls; keys that run code on the host (`args`) stay locked for anyone but root@pam.
 
 ## Consoles
 
@@ -75,6 +78,6 @@ Verified on Proxmox VE 9.2: `extjs` errors return HTTP 200 with `success: 0` and
 
 ## Planned
 
-- Generating endpoint definitions and parameter types from the Proxmox API schema (`apidoc.js`), and a generic form that can edit any endpoint from its schema. Hand-made screens for the important flows, generated forms for everything else.
+- Using the API schema beyond guest configuration: generic forms for node, storage and datacenter settings.
 - Task tracking (UPID) shared by all long-running actions.
 - Compressed VNC encodings (ZRLE or Tight) for slow connections.
