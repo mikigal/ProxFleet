@@ -54,6 +54,14 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
 - Rows the user lacks the privilege for show a lock and explain why; editors open read-only instead of disappearing.
 - Every other key is reachable from All Settings, which builds its forms from the server's API schema. `apidoc.js` is fetched once per connection from `/pve-docs/api-viewer/apidoc.js` (no login needed) and only the guest configuration methods are kept. Types, enums, ranges and property-string keys pick the controls; keys that run code on the host (`args`) stay locked for anyone but root@pam.
 
+## Creating guests
+
+`VMCreationDraft` and `ContainerCreationDraft` (PVEKit) hold the creation forms and build the parameters of `POST /nodes/{node}/qemu` and `POST /nodes/{node}/lxc`. They start from the web interface's defaults; `applyDefaults(for:)` adjusts a VM to its OS type the way the web wizard does (Windows gets SATA and an Intel NIC, Windows 11 also OVMF, q35 and a TPM). Problems the app can see itself (ID range, names, missing storage or template, password rules) are listed by parameter name, the same keys the server uses for its validation errors, so both show under the same field.
+
+- The ID comes from `GET /cluster/nextid`; the same call with `vmid` checks a typed ID.
+- Creation returns a task. `ServerConnection.start` tracks it without reporting failures, since the form shows them; if the form closes while the task runs, `TaskCenter.reportFailure(of:)` hands the outcome back so a failure still shows up.
+- Container templates come from storages with `vztmpl` content. `GET /nodes/{node}/aplinfo` lists what the node can download and `POST` to it starts the download.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

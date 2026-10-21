@@ -255,6 +255,75 @@ struct LiveServerTests {
         #expect(try await session.send(PVE.pendingConfig(running)).allSatisfy { !$0.hasPendingChange })
     }
 
+    /// Creates a Windows 11 VM and a container the way the creation forms do, checks them, and destroys them again.
+    @Test func guestCreation() async throws {
+        let (session, node) = try await rootSession()
+        func finish(_ upid: String) async throws -> TaskStatus {
+            for _ in 0..<80 {
+                let status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+                if !status.isRunning { return status }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            throw ProxmoxError.invalidResponse("task did not finish")
+        }
+        func destroy(_ guest: GuestReference) async throws {
+            let request = APIRequest<String>(.delete, guest.path, parameters: ["purge": true, "destroy-unreferenced-disks": true])
+            #expect(try await finish(try await session.send(request)).succeeded)
+        }
+
+        do {
+            _ = try await session.send(PVE.checkVMID(100))
+            Issue.record("VM 100 should exist")
+        } catch ProxmoxError.api(_, _, let fieldErrors) {
+            #expect(fieldErrors["vmid"] != nil)
+        }
+        #expect(try await !session.send(PVE.applianceTemplates(node: node)).isEmpty)
+        let storage = try #require(try await session.send(PVE.storages(node: node, content: "images")).first?.storage)
+        let iso = try await session.send(PVE.storageContent(node: node, storage: "local", content: "iso")).first?.volumeID
+
+        var vm = VMCreationDraft(node: node, vmid: try await session.send(PVE.nextVMID()).value)
+        vm.name = "creation-test"
+        vm.applyDefaults(for: "win11")
+        vm.isoVolume = iso
+        vm.diskStorage = storage
+        vm.efiStorage = storage
+        vm.tpmStorage = storage
+        vm.diskSizeGiB = 1
+        #expect(vm.problems.isEmpty)
+        let created = try await finish(try await session.send(PVE.createVM(vm)))
+        #expect(created.succeeded, "\(created.exitStatus ?? "")")
+        let vmReference = GuestReference(node: node, vmid: vm.vmid, kind: .virtualMachine)
+        let vmConfig = try await session.send(PVE.guestConfig(vmReference))
+        #expect(vmConfig.name == "creation-test")
+        #expect(vmConfig.bios == "ovmf")
+        #expect(vmConfig["efidisk0"] != nil && vmConfig["tpmstate0"] != nil && vmConfig["sata0"] != nil)
+        #expect(vmConfig.bootOrder.first == "sata0")
+        try await destroy(vmReference)
+
+        let template = try #require(try await session.send(PVE.storageContent(node: node, storage: "local", content: "vztmpl")).first?.volumeID)
+        let rootStorage = try #require(try await session.send(PVE.storages(node: node, content: "rootdir")).first?.storage)
+        var container = ContainerCreationDraft(node: node, vmid: try await session.send(PVE.nextVMID()).value)
+        container.hostname = "creation-test"
+        container.template = template
+        container.rootStorage = rootStorage
+        container.rootSizeGiB = 1
+        container.password = UUID().uuidString
+        container.passwordConfirmation = container.password
+        container.nameservers = "1.1.1.1"
+        container.startAfterCreation = true
+        #expect(container.problems.isEmpty)
+        let createdContainer = try await finish(try await session.send(PVE.createContainer(container)))
+        #expect(createdContainer.succeeded, "\(createdContainer.exitStatus ?? "")")
+        let containerReference = GuestReference(node: node, vmid: container.vmid, kind: .container)
+        let containerConfig = try await session.send(PVE.guestConfig(containerReference))
+        #expect(containerConfig.name == "creation-test")
+        #expect(containerConfig.isUnprivileged)
+        #expect(containerConfig["features"] == "nesting=1")
+        #expect(try await session.send(PVE.guestStatus(containerReference)).powerState == .running)
+        _ = try await finish(try await session.send(PVE.powerAction(.stop, on: containerReference)))
+        try await destroy(containerReference)
+    }
+
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
     func readOnlyUserLacksPowerManagement() async throws {
         let session = try await trustedSession()

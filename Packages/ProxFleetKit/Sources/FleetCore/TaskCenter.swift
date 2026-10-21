@@ -63,6 +63,13 @@ public final class TaskCenter {
         return tasks.first { $0.id == id }?.state ?? .failed("Unknown task.")
     }
 
+    /// Hands the outcome of a task back to the task center, e.g. when the screen following it closes early.
+    public func reportFailure(of id: String) {
+        guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[index].reportsFailure = true
+        if case .failed = tasks[index].state { unreportedFailure = tasks[index] }
+    }
+
     public func acknowledgeFailure() {
         unreportedFailure = nil
     }

@@ -41,6 +41,9 @@ actor DemoState {
     /// Changes of running guests that wait for a restart.
     var pendingEdits: [Int: [String: String?]] = [:]
     var configRevisions: [Int: Int] = [:]
+    /// Configurations of guests created in demo mode, used instead of the generated ones.
+    var createdConfigs: [Int: [String: String]] = [:]
+    var downloadedTemplates: [(volume: String, availableAt: Date)] = []
     /// Console proxies started but not yet connected, by ticket.
     var consoles: [String: DemoConsoleRequest] = [:]
     private var ticketCounter = 0

@@ -128,10 +128,26 @@ struct NumberField: View {
     }
 }
 
+extension ServerConnection {
+    /// Loads a list for a form, e.g. storages or bridges. Returns an empty list on failure.
+    func load<Item: Decodable & Sendable>(_ request: APIRequest<[Item]>) async -> [Item] {
+        (try? await send(request)) ?? []
+    }
+
+    /// Volumes with a content type (`iso`, `vztmpl`…) on every storage of a node, sorted by file name.
+    func volumes(node: String, content: String) async -> [StorageVolume] {
+        var volumes: [StorageVolume] = []
+        for storage in await load(PVE.storages(node: node, content: content)) {
+            volumes += await load(PVE.storageContent(node: node, storage: storage.storage, content: content))
+        }
+        return volumes.sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
+    }
+}
+
 extension GuestDetail {
     /// Loads a list for an editor, e.g. storages or bridges. Returns an empty list on failure.
     func load<Item: Decodable & Sendable>(_ request: APIRequest<[Item]>) async -> [Item] {
-        (try? await connection.send(request)) ?? []
+        await connection.load(request)
     }
 }
 

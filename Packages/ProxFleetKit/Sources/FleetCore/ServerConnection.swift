@@ -252,6 +252,16 @@ public final class ServerConnection: Identifiable {
         return try tasks.track(upid, reportsFailure: reportsFailure)
     }
 
+    /// Sends a request that starts a task, such as creating a guest, and follows the task.
+    /// The caller shows the outcome; validation errors come back by parameter name.
+    public func start(_ request: APIRequest<String>) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        do {
+            return try tasks.track(try await session.send(request), reportsFailure: false)
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+    }
+
     /// The authenticated session, for features such as consoles that talk to the API directly.
     public var apiSession: ProxmoxSession { session }
 

@@ -23,6 +23,9 @@ extension DemoState {
     func handleGuestOrTask(_ method: HTTPMethod, path: String, parameters: [String: String], user: String) -> HTTPResponse? {
         settleTasks()
         let parts = path.split(separator: "/").map(String.init)
+        if let response = handleCreation(method, parts: parts, parameters: parameters, user: user) {
+            return response
+        }
 
         switch (method, parts.count) {
         case (.get, 2) where parts == ["cluster", "tasks"]:
@@ -39,7 +42,7 @@ extension DemoState {
         if parts.count == 3, parts[0] == "nodes", method == .post, parts[2] == "termproxy" {
             return startConsole(.init(kind: .terminal, hostname: parts[1], osName: "Proxmox VE \(cluster.version)", isContainer: false), user: user)
         }
-        guard parts.count >= 4, parts[0] == "nodes" else { return nil }
+        guard parts.count >= 3, parts[0] == "nodes" else { return nil }
         let node = parts[1]
 
         if parts[2] == "tasks", parts.count == 5 {
@@ -71,7 +74,7 @@ extension DemoState {
                 ("snippets", ["volid": "local:snippets/user-data.yaml", "size": 512, "format": "snippet"]),
             ]
             let content = parameters["content"] ?? "iso"
-            return success(.array(volumes.filter { $0.content == content }.map(\.volume)))
+            return success(.array(volumes.filter { $0.content == content }.map(\.volume) + (content == "vztmpl" ? downloadedTemplateVolumes() : [])))
         case (.get, ["network"]):
             return success([["iface": "vmbr0", "type": "bridge", "comments": "LAN"], ["iface": "vmbr1", "type": "bridge", "comments": "Lab VLANs"]])
         case (.get, ["capabilities", "qemu", "machines"]):
@@ -88,6 +91,7 @@ extension DemoState {
             break
         }
 
+        guard parts.count >= 4 else { return nil }
         guard ["qemu", "lxc"].contains(parts[2]), let vmid = Int(parts[3]),
               let index = cluster.guests.firstIndex(where: { $0.vmid == vmid && $0.kind.rawValue == parts[2] })
         else { return failure(500, "Configuration file 'nodes/\(node)/\(parts[2])/\(parts[3]).conf' does not exist") }
@@ -216,7 +220,7 @@ extension DemoState {
         }
     }
 
-    private func privileges(for user: String) -> [String] {
+    func privileges(for user: String) -> [String] {
         let audit = ["VM.Audit", "VM.Monitor", "Datastore.Audit", "Sys.Audit", "Pool.Audit"]
         if user.hasPrefix("auditor") || user.hasPrefix("limited") { return audit }
         return audit + [
@@ -358,6 +362,11 @@ extension DemoState {
 
     /// Generated configuration with edits applied.
     func currentConfig(_ guest: DemoCluster.Guest) -> [String: String] {
+        if var config = createdConfigs[guest.vmid] {
+            for (key, value) in configEdits[guest.vmid] ?? [:] { config[key] = value }
+            config["digest"] = digest(for: guest)
+            return config
+        }
         guard case .object(let generated) = configJSON(guest) else { return [:] }
         var config: [String: String] = [:]
         for (key, value) in generated {

@@ -3,6 +3,17 @@ import ProxmoxCore
 import PVEKit
 import SwiftUI
 
+extension CPUModel {
+    /// CPU types for a picker: common ones first, then the rest of what the node offers.
+    static func pickerNames(_ models: [CPUModel], including current: String) -> [String] {
+        var names = Set(models.map(\.name))
+        names.formUnion(["host", "x86-64-v2-AES", "x86-64-v3", "kvm64"])
+        if !current.isEmpty { names.insert(current) }
+        let preferred = ["host", "x86-64-v2-AES", "x86-64-v3", "x86-64-v4", "kvm64", "qemu64"]
+        return preferred.filter(names.contains) + names.subtracting(preferred).sorted()
+    }
+}
+
 /// Sockets, cores, CPU type, flags and scheduling limits.
 struct CPUEditor: View {
     let detail: GuestDetail
@@ -97,13 +108,7 @@ struct CPUEditor: View {
         }
     }
 
-    private var modelNames: [String] {
-        var names = Set(models.map(\.name))
-        names.formUnion(["host", "x86-64-v2-AES", "x86-64-v3", "kvm64"])
-        if !draft.model.isEmpty { names.insert(draft.model) }
-        let preferred = ["host", "x86-64-v2-AES", "x86-64-v3", "x86-64-v4", "kvm64", "qemu64"]
-        return preferred.filter(names.contains) + names.subtracting(preferred).sorted()
-    }
+    private var modelNames: [String] { CPUModel.pickerNames(models, including: draft.model) }
 
     private func update() -> GuestConfigUpdate? {
         let update = draft.changes(from: original)

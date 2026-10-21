@@ -4,6 +4,10 @@ import SwiftUI
 
 struct ServerOverviewView: View {
     let connection: ServerConnection
+    @State private var creating: GuestKind?
+    /// Set by the creation sheet; opened once the sheet is gone, as pushing while it closes is unreliable.
+    @State private var newGuest: GuestReference?
+    @State private var createdGuest: GuestReference?
 
     var body: some View {
         List {
@@ -41,6 +45,23 @@ struct ServerOverviewView: View {
                     .padding(.bottom, 8)
             }
         }
+        .sheet(item: $creating, onDismiss: {
+            createdGuest = newGuest
+            newGuest = nil
+        }) { kind in
+            NavigationStack {
+                switch kind {
+                case .virtualMachine:
+                    CreateVMView(connection: connection) { newGuest = $0 }
+                case .container:
+                    CreateContainerView(connection: connection) { newGuest = $0 }
+                }
+            }
+            .serverDestinations(connection)
+        }
+        .navigationDestination(item: $createdGuest) { reference in
+            GuestDetailView(reference: reference, connection: connection)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 NavigationLink(value: ServerRoute.tasks) {
@@ -48,6 +69,15 @@ struct ServerOverviewView: View {
                 }
                 .badge(connection.tasks.runningTasks.count)
                 .accessibilityIdentifier("tasks")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu("Create", systemImage: "plus") {
+                    Button("Virtual Machine", systemImage: "desktopcomputer") { creating = .virtualMachine }
+                        .accessibilityIdentifier("create.vm")
+                    Button("Container", systemImage: "shippingbox") { creating = .container }
+                        .accessibilityIdentifier("create.ct")
+                }
+                .accessibilityIdentifier("create.menu")
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu("More", systemImage: "ellipsis") {

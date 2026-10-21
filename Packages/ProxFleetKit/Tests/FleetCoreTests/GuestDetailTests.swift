@@ -101,4 +101,56 @@ struct GuestDetailTests {
         connection.tasks.acknowledgeFailure()
         #expect(connection.tasks.unreportedFailure == nil)
     }
+
+    @Test func createsVMsAndContainers() async throws {
+        let connection = try await connection()
+        let vmid = try await connection.send(PVE.nextVMID()).value
+        #expect(vmid == 106)
+        // Node-level lists the forms need.
+        #expect(try await connection.send(PVE.storages(node: "pve1", content: "images")).map(\.storage) == ["local-lvm"])
+        #expect(try await !connection.send(PVE.bridges(node: "pve1")).isEmpty)
+        #expect(try await connection.send(PVE.pools()).map(\.id) == ["lab"])
+
+        var vm = VMCreationDraft(node: "pve1", vmid: 100)
+        vm.diskStorage = "local-lvm"
+        do {
+            _ = try await connection.start(PVE.createVM(vm))
+            Issue.record("VM 100 exists")
+        } catch .invalid(_, let fields) {
+            #expect(fields["vmid"] != nil)
+        }
+
+        vm.vmid = vmid
+        vm.name = "fresh"
+        vm.startAfterCreation = true
+        let task = try await connection.start(PVE.createVM(vm))
+        #expect(task.title == "VM \(vmid) – Create")
+        #expect(await connection.tasks.result(of: task.id) == .succeeded)
+        let detail = GuestDetail(reference: GuestReference(node: "pve1", vmid: vmid, kind: .virtualMachine), connection: connection)
+        await detail.load()
+        #expect(detail.name == "fresh")
+        #expect(detail.powerState == .running)
+        #expect(detail.config?["scsi0"] == "local-lvm:vm-\(vmid)-disk-0,discard=on,iothread=1,size=32G")
+        #expect(detail.config?.bootOrder == ["scsi0", "net0"])
+
+        // A downloaded template becomes available for a container.
+        let download = try await connection.start(PVE.downloadTemplate(node: "pve1", storage: "local", template: "alpine-3.22-default_20250617_amd64.tar.xz"))
+        #expect(await connection.tasks.result(of: download.id) == .succeeded)
+        let templates = try await connection.send(PVE.storageContent(node: "pve1", storage: "local", content: "vztmpl"))
+        #expect(templates.contains { $0.volumeID == "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz" })
+
+        var container = ContainerCreationDraft(node: "pve1", vmid: try await connection.send(PVE.nextVMID()).value)
+        container.template = "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"
+        container.rootStorage = "local-lvm"
+        container.password = "secret"
+        container.passwordConfirmation = "secret"
+        let created = try await connection.start(PVE.createContainer(container))
+        #expect(await connection.tasks.result(of: created.id) == .succeeded)
+        let config = try await connection.send(PVE.guestConfig(GuestReference(node: "pve1", vmid: container.vmid, kind: .container)))
+        #expect(config.osType == "alpine")
+        #expect(config["rootfs"] == "local-lvm:vm-\(container.vmid)-disk-0,size=8G")
+        #expect(config["password"] == nil)
+        await connection.refresh()
+        #expect(connection.snapshot?.containers.contains { $0.vmid == container.vmid && $0.state == .stopped } == true)
+    }
 }

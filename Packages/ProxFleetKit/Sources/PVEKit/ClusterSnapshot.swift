@@ -108,9 +108,11 @@ public struct NodeSummary: Sendable, Equatable, Identifiable {
     }
 }
 
-public enum GuestKind: String, Sendable, Equatable, Hashable, Codable {
+public enum GuestKind: String, Sendable, Equatable, Hashable, Codable, Identifiable {
     case virtualMachine = "qemu"
     case container = "lxc"
+
+    public var id: String { rawValue }
 }
 
 public struct GuestSummary: Sendable, Equatable, Identifiable {

@@ -46,7 +46,7 @@ private struct VMOptionsEditor: View {
                         .accessibilityIdentifier("option.name")
                 }
                 FieldError(message: errors["name"])
-                OSTypePicker(detail: detail, selection: $draft.osType)
+                OSTypePicker(connection: detail.connection, kind: detail.reference.kind, selection: $draft.osType)
                 Toggle("Protection", isOn: $draft.protection)
             } footer: {
                 Text("Protection prevents removing the VM or its disks by accident.")
@@ -264,7 +264,7 @@ private struct ContainerOptionsEditor: View {
                         .accessibilityIdentifier("option.name")
                 }
                 FieldError(message: errors["hostname"])
-                OSTypePicker(detail: detail, selection: $draft.osType)
+                OSTypePicker(connection: detail.connection, kind: detail.reference.kind, selection: $draft.osType)
                 Picker("Architecture", selection: $draft.architecture) {
                     ForEach(ContainerOptionsDraft.architectures, id: \.self) { Text($0).tag($0) }
                 }
@@ -467,13 +467,12 @@ private func loadSnippets(_ detail: GuestDetail) async -> [StorageVolume] {
 }
 
 /// OS types the server knows, with its own labels when its API schema provides them.
-private struct OSTypePicker: View {
-    let detail: GuestDetail
+struct OSTypePicker: View {
+    let connection: ServerConnection
+    let kind: GuestKind
     @Binding var selection: String
     @State private var offered: [String] = []
     @State private var labels: [String: String] = [:]
-
-    private var kind: GuestKind { detail.reference.kind }
 
     private var choices: [String] {
         var types = GuestConfig.orderedOSTypes(offered, kind: kind)
@@ -489,7 +488,7 @@ private struct OSTypePicker: View {
             }
         }
         .task {
-            guard let parameter = try? await detail.connection.apiSchema().config(for: kind).first(where: { $0.name == "ostype" }) else { return }
+            guard let parameter = try? await connection.apiSchema().config(for: kind).first(where: { $0.name == "ostype" }) else { return }
             offered = parameter.enumValues ?? []
             labels = parameter.enumDescriptions
         }

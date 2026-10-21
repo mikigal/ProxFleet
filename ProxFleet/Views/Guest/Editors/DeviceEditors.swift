@@ -380,12 +380,7 @@ struct CDROMEditor: View {
     }
 
     private func loadImages() async {
-        let storages = await detail.load(PVE.storages(node: detail.reference.node, content: "iso"))
-        var all: [StorageVolume] = []
-        for storage in storages {
-            all += await detail.load(PVE.storageContent(node: detail.reference.node, storage: storage.storage, content: "iso"))
-        }
-        images = all.sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
+        images = await detail.connection.volumes(node: detail.reference.node, content: "iso")
         isLoading = false
     }
 

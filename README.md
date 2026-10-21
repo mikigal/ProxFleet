@@ -19,9 +19,10 @@ Early development. What works now:
 - Task tracking: progress of started actions, recent tasks of the server, task logs
 - Consoles: a native VNC client for VMs (zoom, full screen, special keys, hardware keyboard) and a terminal for containers
 - Configuration editing: processor, memory, firmware, disks (add, grow, detach, delete), CD/DVD drives, network devices, options, boot order and notes, with pending changes shown until the next restart
+- Creating VMs (installation ISO, OS-specific defaults such as UEFI and TPM for Windows 11, disk, CPU, memory, network) and containers (templates, which can be downloaded from the app, root password or SSH keys, network and DNS)
 - Demo mode with a built-in sample cluster, including working demo consoles
 
-Next up: creating VMs and containers.
+Next up: node and datacenter settings.
 
 ## Requirements
 
