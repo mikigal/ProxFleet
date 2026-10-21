@@ -44,12 +44,17 @@ final class GuestUITests: XCTestCase {
         confirm.tap()
         XCTAssertTrue(app.buttons["power.start"].waitForExistence(timeout: 10))
 
-        app.buttons["Hardware"].tap()
+        app.buttons["tab.hardware"].tap()
         XCTAssertTrue(app.staticTexts["Processor"].waitForExistence(timeout: 5))
-        app.buttons["Options"].tap()
+        snapshot("14-hardware")
+        app.buttons["tab.more"].tap()
+        app.buttons["Options"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Start at Boot"].waitForExistence(timeout: 5))
-        snapshot("14-options")
+        snapshot("15-options")
 
+        // Back to the More list, then back to the server.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["tab.more"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["tasks"].tap()
         XCTAssertTrue(app.staticTexts["VM 100 – Stop"].waitForExistence(timeout: 10))

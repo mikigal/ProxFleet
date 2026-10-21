@@ -82,7 +82,7 @@ struct PowerControls: View {
                         }
                     }
                 } label: {
-                    ActionLabel(title: "More", systemImage: "ellipsis")
+                    ActionLabel(title: "Other", systemImage: "ellipsis")
                 }
                 .accessibilityIdentifier("power.more")
             }

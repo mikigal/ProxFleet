@@ -16,90 +16,105 @@ struct GuestDetailView: View {
     private var kind: GuestKind { detail.reference.kind }
 
     var body: some View {
-        List {
-            Section {
-                GuestHeader(detail: detail)
-                if !detail.availableActions.isEmpty {
-                    PowerControls(actions: detail.availableActions, isBusy: detail.runningTask != nil) { action in
-                        if action.needsConfirmation {
-                            pendingAction = action
-                        } else {
-                            Task { await detail.perform(action) }
-                        }
-                    }
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                }
+        tabContent
+            .safeAreaInset(edge: .bottom) {
+                GuestTabBar(selection: $tab)
+                    .padding(.bottom, 6)
             }
-
-            Section {
-                Picker("Section", selection: $tab) {
-                    ForEach(GuestTab.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("guestTabs")
+            .navigationTitle(detail.name)
+            .navigationSubtitle(subtitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .refreshable { await detail.refresh() }
+            .task { await detail.load() }
+            .task { await detail.keepRefreshing() }
+            .sensoryFeedback(.selection, trigger: tab)
+            .sensoryFeedback(trigger: detail.runningTask?.id) { old, new in
+                old != nil && new == nil ? (detail.actionError == nil ? .success : .error) : nil
             }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets())
+            .alert(
+                pendingAction?.confirmationTitle(detail.name) ?? "",
+                isPresented: Binding(get: { pendingAction != nil }, set: { if !$0 { pendingAction = nil } }),
+                presenting: pendingAction
+            ) { action in
+                Button("Cancel", role: .cancel) {}
+                Button(action.title, role: action.isForceful ? .destructive : nil) {
+                    Task { await detail.perform(action) }
+                }
+                .accessibilityIdentifier("confirm.\(action.rawValue)")
+            } message: { action in
+                Text(action.confirmationMessage)
+            }
+            .alert(
+                "Action Failed",
+                isPresented: Binding(get: { detail.actionError != nil }, set: { if !$0 { detail.dismissActionError() } }),
+                presenting: detail.actionError
+            ) { _ in
+                Button("OK") {}
+            } message: { message in
+                Text(message)
+            }
+    }
 
-            if let error = detail.loadError {
+    private var subtitle: String {
+        let kind = kind == .virtualMachine ? String(localized: "VM") : String(localized: "CT")
+        return "\(kind) \(detail.reference.vmid) · \(detail.reference.node)"
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch tab {
+        case .summary:
+            List {
                 Section {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                    GuestHeader(detail: detail)
+                    if !detail.availableActions.isEmpty {
+                        PowerControls(actions: detail.availableActions, isBusy: detail.runningTask != nil) { action in
+                            if action.needsConfirmation {
+                                pendingAction = action
+                            } else {
+                                Task { await detail.perform(action) }
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    }
+                }
+                errorSection
+                summaryContent
+            }
+            .overlay {
+                if !detail.hasLoaded && detail.status == nil {
+                    ProgressView()
                 }
             }
-
-            switch tab {
-            case .summary:
-                summaryContent
-            case .hardware:
+        case .console:
+            ContentUnavailableView(
+                "Console",
+                systemImage: "terminal",
+                description: Text("The console is coming in the next update.")
+            )
+        case .hardware:
+            List {
+                errorSection
                 if let config = detail.config {
                     GuestHardwareSections(config: config, kind: kind)
                 } else {
                     loadingRow
                 }
-            case .options:
-                if let config = detail.config {
-                    GuestOptionsSection(config: config, kind: kind)
-                } else {
-                    loadingRow
-                }
+                networkSection
             }
+        case .more:
+            GuestMoreList(detail: detail)
         }
-        .navigationTitle(detail.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .overlay {
-            if !detail.hasLoaded && detail.status == nil {
-                ProgressView()
+    }
+
+    @ViewBuilder
+    private var errorSection: some View {
+        if let error = detail.loadError {
+            Section {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
             }
-        }
-        .refreshable { await detail.refresh() }
-        .task { await detail.load() }
-        .task { await detail.keepRefreshing() }
-        .sensoryFeedback(trigger: detail.runningTask?.id) { old, new in
-            old != nil && new == nil ? (detail.actionError == nil ? .success : .error) : nil
-        }
-        .alert(
-            pendingAction?.confirmationTitle(detail.name) ?? "",
-            isPresented: Binding(get: { pendingAction != nil }, set: { if !$0 { pendingAction = nil } }),
-            presenting: pendingAction
-        ) { action in
-            Button("Cancel", role: .cancel) {}
-            Button(action.title, role: action.isForceful ? .destructive : nil) {
-                Task { await detail.perform(action) }
-            }
-            .accessibilityIdentifier("confirm.\(action.rawValue)")
-        } message: { action in
-            Text(action.confirmationMessage)
-        }
-        .alert(
-            "Action Failed",
-            isPresented: Binding(get: { detail.actionError != nil }, set: { if !$0 { detail.dismissActionError() } }),
-            presenting: detail.actionError
-        ) { _ in
-            Button("OK") {}
-        } message: { message in
-            Text(message)
         }
     }
 
@@ -121,25 +136,6 @@ struct GuestDetailView: View {
             .pickerStyle(.segmented)
         } header: {
             Text("Performance")
-        }
-
-        networkSection
-
-        if let notes = detail.config?.description?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-            Section("Notes") {
-                Text(notes)
-                    .textSelection(.enabled)
-            }
-        }
-
-        if !detail.recentTasks.isEmpty {
-            Section("Recent Tasks") {
-                ForEach(detail.recentTasks.prefix(5)) { task in
-                    NavigationLink(value: ServerRoute.task(node: task.node, upid: task.upid)) {
-                        ClusterTaskRow(task: task, showsGuest: false)
-                    }
-                }
-            }
         }
     }
 
@@ -206,73 +202,209 @@ struct GuestDetailView: View {
     }
 }
 
+/// Status at a glance. Name and ID are in the navigation title and subtitle.
 private struct GuestHeader: View {
     let detail: GuestDetail
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: detail.reference.kind == .virtualMachine ? "desktopcomputer" : "shippingbox.fill")
-                    .font(.largeTitle)
-                    .foregroundStyle(detail.powerState == .running ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                    .frame(width: 48)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(detail.name)
-                        .font(.title2.weight(.semibold))
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                PowerStateBadge(state: detail.powerState)
-            }
-            if let task = detail.runningTask {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: detail.reference.kind == .virtualMachine ? "desktopcomputer" : "shippingbox.fill")
+                .font(.system(size: 34))
+                .foregroundStyle(detail.powerState == .running ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .frame(width: 48)
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(task.title)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    PowerStateBadge(state: detail.powerState)
+                    if detail.isTemplate {
+                        TagChip(tag: String(localized: "Template"))
+                    }
+                    if let task = detail.runningTask {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(task.title)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("runningTask")
+                    } else if let status = detail.status, status.powerState == .running {
+                        Text("Up \(Format.uptime(status.uptime))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .accessibilityIdentifier("runningTask")
-            } else if let status = detail.status, status.powerState == .running {
-                Text("Up \(Format.uptime(status.uptime))")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            let tags = detail.status?.tags ?? detail.summary?.tags ?? []
-            if !tags.isEmpty {
-                HStack(spacing: 4) {
-                    ForEach(tags, id: \.self) { TagChip(tag: $0) }
+                let tags = detail.status?.tags ?? detail.summary?.tags ?? []
+                if !tags.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(tags, id: \.self) { TagChip(tag: $0) }
+                    }
+                }
+                if let lock = detail.status?.lock {
+                    Label("Locked: \(lock)", systemImage: "lock.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
                 }
             }
-            if let lock = detail.status?.lock {
-                Label("Locked: \(lock)", systemImage: "lock.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-            }
+            Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
-    }
-
-    private var subtitle: String {
-        let kind = detail.reference.kind == .virtualMachine ? String(localized: "VM") : String(localized: "Container")
-        let template = detail.isTemplate ? " · " + String(localized: "Template") : ""
-        return "\(kind) \(detail.reference.vmid) · \(detail.reference.node)\(template)"
     }
 }
 
 enum GuestTab: String, CaseIterable, Identifiable {
-    case summary, hardware, options
+    case summary, console, hardware, more
 
     var id: String { rawValue }
 
     var title: LocalizedStringKey {
         switch self {
         case .summary: "Summary"
+        case .console: "Console"
         case .hardware: "Hardware"
-        case .options: "Options"
+        case .more: "More"
         }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .summary: "chart.xyaxis.line"
+        case .console: "terminal"
+        case .hardware: "cpu"
+        case .more: "ellipsis"
+        }
+    }
+}
+
+/// Floating Liquid Glass bar for switching between the sections of a guest.
+private struct GuestTabBar: View {
+    @Binding var selection: GuestTab
+    @Namespace private var namespace
+
+    var body: some View {
+        GlassEffectContainer {
+            HStack(spacing: 0) {
+                ForEach(GuestTab.allCases) { tab in
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) { selection = tab }
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: tab.systemImage)
+                                .font(.system(size: 18, weight: .medium))
+                                .frame(height: 22)
+                            Text(tab.title)
+                                .font(.caption2.weight(.medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .foregroundStyle(selection == tab ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                        .background {
+                            if selection == tab {
+                                Capsule()
+                                    .fill(.tint.opacity(0.16))
+                                    .matchedGeometryEffect(id: "selection", in: namespace)
+                            }
+                        }
+                        .contentShape(.capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("tab.\(tab.rawValue)")
+                    .accessibilityAddTraits(selection == tab ? .isSelected : [])
+                }
+            }
+            .padding(4)
+            .glassEffect(.regular.interactive(), in: .capsule)
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+/// Sections that do not fit in the bar, as a Settings-style list.
+private struct GuestMoreList: View {
+    let detail: GuestDetail
+
+    var body: some View {
+        List {
+            Section {
+                if let config = detail.config {
+                    NavigationLink {
+                        List { GuestOptionsSection(config: config, kind: detail.reference.kind) }
+                            .navigationTitle("Options")
+                    } label: {
+                        MoreRow(title: "Options", systemImage: "slider.horizontal.3", color: .gray, hint: config.startsOnBoot ? String(localized: "Starts at boot") : nil)
+                    }
+                    NavigationLink {
+                        NotesView(notes: config.description)
+                    } label: {
+                        MoreRow(title: "Notes", systemImage: "note.text", color: .yellow, hint: config.description?.isEmpty == false ? nil : String(localized: "None"))
+                    }
+                }
+                NavigationLink {
+                    GuestTaskHistory(tasks: detail.recentTasks)
+                } label: {
+                    MoreRow(title: "Task History", systemImage: "list.bullet.rectangle", color: .blue, hint: detail.recentTasks.isEmpty ? nil : "\(detail.recentTasks.count)")
+                }
+                .accessibilityIdentifier("more.tasks")
+            }
+        }
+    }
+}
+
+private struct MoreRow: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let color: Color
+    let hint: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(color.gradient, in: .rect(cornerRadius: 8))
+            Text(title)
+            Spacer()
+            if let hint {
+                Text(hint)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct NotesView: View {
+    let notes: String?
+
+    var body: some View {
+        List {
+            if let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+                Text(notes)
+                    .textSelection(.enabled)
+            } else {
+                Text("No notes.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Notes")
+    }
+}
+
+private struct GuestTaskHistory: View {
+    let tasks: [ClusterTask]
+
+    var body: some View {
+        List {
+            ForEach(tasks) { task in
+                NavigationLink(value: ServerRoute.task(node: task.node, upid: task.upid)) {
+                    ClusterTaskRow(task: task, showsGuest: false)
+                }
+            }
+        }
+        .overlay {
+            if tasks.isEmpty {
+                ContentUnavailableView("No Tasks", systemImage: "list.bullet.rectangle")
+            }
+        }
+        .navigationTitle("Task History")
     }
 }
 
@@ -353,7 +485,7 @@ private struct GuestOptionsSection: View {
     let kind: GuestKind
 
     var body: some View {
-        Section("Options") {
+        Section {
             LabeledContent("Name", value: config.name ?? "—")
             yesNo("Start at Boot", "onboot", default: false)
             LabeledContent("Start/Shutdown Order", value: config["startup"] ?? String(localized: "Default"))
