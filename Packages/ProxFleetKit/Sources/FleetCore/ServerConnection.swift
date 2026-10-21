@@ -223,6 +223,10 @@ public final class ServerConnection: Identifiable {
 
     /// Refreshes periodically until the calling task is cancelled, e.g. when a view disappears.
     public func keepRefreshing(every interval: Duration = .seconds(5)) async {
+        // Catch up right away when the data is older than one interval, e.g. after coming back from another screen.
+        if let fetchedAt = snapshot?.fetchedAt, Date().timeIntervalSince(fetchedAt) > Double(interval.components.seconds) {
+            await refresh()
+        }
         while !Task.isCancelled {
             try? await Task.sleep(for: interval)
             if Task.isCancelled { break }

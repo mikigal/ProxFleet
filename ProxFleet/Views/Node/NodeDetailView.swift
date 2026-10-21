@@ -182,11 +182,11 @@ private struct NodeSummaryList: View {
                 .frame(width: 44)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    StatusDot(color: detail.isOnline ? .green : .red)
-                    Text(detail.isOnline ? "Online" : "Offline")
+                    StatusDot(color: detail.isNotResponding ? .orange : detail.isOnline ? .green : .red)
+                    Text(detail.isNotResponding ? "Not Responding" : detail.isOnline ? "Online" : "Offline")
                         .font(.subheadline.weight(.semibold))
                 }
-                if let status = detail.status, detail.isOnline {
+                if let status = detail.status, detail.isOnline, !detail.isNotResponding {
                     Text("Up \(Format.uptime(status.uptime))")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

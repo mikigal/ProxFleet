@@ -40,6 +40,9 @@ public final class NodeDetail {
 
     public var isOnline: Bool { summary?.isOnline ?? (status != nil) }
 
+    /// The node is listed as online, but its status cannot be read right now, e.g. while it reboots.
+    public var isNotResponding: Bool { isOnline && loadError != nil }
+
     /// Whether the user holds a privilege on `/nodes/{node}`. Unknown privileges count as granted.
     public func can(_ privilege: String) -> Bool {
         privileges?.contains(privilege) ?? true

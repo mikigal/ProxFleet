@@ -149,20 +149,24 @@ private struct NodeHeader: View {
             HStack(alignment: .firstTextBaseline) {
                 Label {
                     Text(node.name)
+                        .lineLimit(1)
                 } icon: {
                     Image(systemName: "server.rack")
                 }
                 .font(.headline)
+                .layoutPriority(1)
                 if let ip = node.ip {
                     Text(ip)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                Spacer()
+                Spacer(minLength: 4)
                 if node.isOnline {
                     Text("Up \(Format.uptime(node.uptime))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             HStack(spacing: 16) {
@@ -209,12 +213,15 @@ private struct NodeRow: View {
                 StatusDot(color: node.isOnline ? .green : .red)
                 Text(node.name)
                     .font(.headline)
+                    .lineLimit(1)
+                    .layoutPriority(1)
                 if let ip = node.ip {
                     Text(ip)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                Spacer()
+                Spacer(minLength: 4)
                 if node.isOnline {
                     Text("Up \(Format.uptime(node.uptime))")
                         .font(.caption)
