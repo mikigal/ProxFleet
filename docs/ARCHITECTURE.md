@@ -42,6 +42,15 @@ Most actions return a task ID (UPID) instead of a result. `TaskCenter`, owned by
 
 `GuestDetail` loads status, configuration, performance history (`rrddata`), IP addresses (QEMU guest agent or container interfaces), the user's privileges on `/vms/{vmid}` and recent tasks in parallel. A paused VM reports `status: running` with `qmpstatus: paused`, so `GuestStatus.powerState` combines both. Power actions are offered according to state and the `VM.PowerMgmt` privilege, as in the web interface.
 
+## Configuration editing
+
+Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys to revert) and `GuestDetail.apply` sends it with the `digest` of the configuration they were based on. A changed digest makes the server refuse with "checksum mismatch", which becomes `ConfigUpdateError.conflict`; validation errors come back per parameter and are shown under the matching field.
+
+- VMs update with `POST .../config` and return a task, which is awaited. Containers update with the synchronous `PUT`.
+- `GET .../config` is called with `current=1`. Without it, Proxmox returns pending values, which made a running VM look already changed.
+- Changes that cannot apply to a running VM (memory and CPU without hotplug, firmware) show up in `GET .../pending` until the next start. The Hardware tab lists them, with a way to revert them.
+- Property-string values such as `net0` or `scsi0` are edited through drafts (`NetworkDeviceDraft`, `DiskOptionsDraft`) that keep options the form does not know.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

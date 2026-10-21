@@ -141,10 +141,11 @@ public struct GuestNIC: Sendable, Equatable, Identifiable {
     public var isLinkDown: Bool
     /// Containers only: `dhcp`, `manual` or an address in CIDR notation.
     public var ipv4: String?
+    public var options: PropertyString
 
     public var id: String { key }
 
-    private static let optionKeys: Set<String> = [
+    static let optionKeys: Set<String> = [
         "bridge", "firewall", "tag", "rate", "link_down", "mtu", "queues", "macaddr", "model", "trunks",
         "name", "hwaddr", "ip", "gw", "ip6", "gw6", "type",
     ]
@@ -152,6 +153,7 @@ public struct GuestNIC: Sendable, Equatable, Identifiable {
     init(key: String, value: String) {
         let property = PropertyString(parsing: value)
         self.key = key
+        options = property
         if let first = property.items.first, let firstKey = first.key, !Self.optionKeys.contains(firstKey) {
             // VM format: `virtio=BC:24:11:..`, the model is the key and the MAC the value.
             model = firstKey

@@ -75,6 +75,46 @@ final class GuestUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Running"].waitForExistence(timeout: 10))
     }
 
+    @MainActor
+    func testEditMemoryAndOptions() {
+        app.launch()
+        let guest = app.buttons["guest.102"]
+        XCTAssertTrue(guest.waitForExistence(timeout: 10))
+        guest.tap()
+
+        app.buttons["tab.hardware"].tap()
+        let memoryRow = app.buttons["hardware.memory"]
+        XCTAssertTrue(memoryRow.waitForExistence(timeout: 10))
+        let before = memoryRow.label
+        memoryRow.tap()
+
+        let save = app.buttons["save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        XCTAssertFalse(save.isEnabled)
+        app.steppers.firstMatch.buttons.element(boundBy: 1).tap()
+        XCTAssertTrue(save.isEnabled)
+        snapshot("20-memory-editor")
+        save.tap()
+
+        XCTAssertTrue(memoryRow.waitForExistence(timeout: 10))
+        expectation(for: NSPredicate(format: "label != %@", before), evaluatedWith: memoryRow)
+        waitForExpectations(timeout: 10)
+        snapshot("21-memory-saved")
+
+        app.buttons["tab.more"].tap()
+        app.buttons["more.options"].tap()
+        let onboot = app.switches["option.onboot"]
+        XCTAssertTrue(onboot.waitForExistence(timeout: 5))
+        let wasOn = (onboot.value as? String) == "1"
+        onboot.switches.firstMatch.tap()
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["more.options"].waitForExistence(timeout: 10))
+        app.buttons["more.options"].tap()
+        XCTAssertTrue(onboot.waitForExistence(timeout: 5))
+        XCTAssertEqual((onboot.value as? String) == "1", !wasOn)
+        snapshot("22-options-saved")
+    }
+
     private func snapshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

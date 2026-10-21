@@ -206,6 +206,55 @@ struct LiveServerTests {
         await client.close()
     }
 
+    /// Edits VM 101 (stopped) and VM 102 (running) from the seed script and puts everything back.
+    @Test func configEditing() async throws {
+        let (session, node) = try await rootSession()
+        func finish(_ upid: String?) async throws {
+            guard let upid else { return }
+            for _ in 0..<60 {
+                if try await !session.send(PVE.taskStatus(node: node, upid: upid)).isRunning { return }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+        }
+
+        // Stopped VM: a new network device applies directly.
+        let stopped = GuestReference(node: node, vmid: 101, kind: .virtualMachine)
+        var config = try await session.send(PVE.guestConfig(stopped))
+        let key = try #require(config.nextFreeKey(prefix: "net", slots: 32))
+        var nic = NetworkDeviceDraft()
+        nic.vlanTag = 42
+        var update = GuestConfigUpdate(digest: config.digest)
+        update.set(key, nic.stringValue)
+        try await finish(try await session.send(PVE.updateConfig(stopped, update)))
+        config = try await session.send(PVE.guestConfig(stopped))
+        #expect(config.networks.first { $0.key == key }?.vlanTag == "42")
+
+        // The old digest is now outdated.
+        var stale = GuestConfigUpdate(digest: update.digest)
+        stale.set("description", "stale")
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PVE.updateConfig(stopped, stale))
+        }
+        var removal = GuestConfigUpdate()
+        removal.set(key, nil)
+        try await finish(try await session.send(PVE.updateConfig(stopped, removal)))
+        #expect(try await session.send(PVE.guestConfig(stopped)).networks.allSatisfy { $0.key != key })
+
+        // Running VM: memory waits for a restart, and can be reverted.
+        let running = GuestReference(node: node, vmid: 102, kind: .virtualMachine)
+        let memory = try #require(try await session.send(PVE.guestConfig(running)).memoryMiB)
+        var change = GuestConfigUpdate()
+        change.set("memory", String(memory + 512))
+        try await finish(try await session.send(PVE.updateConfig(running, change)))
+        #expect(try await session.send(PVE.guestConfig(running)).memoryMiB == memory)
+        let pending = try await session.send(PVE.pendingConfig(running)).first { $0.key == "memory" }
+        #expect(pending?.pending == String(memory + 512))
+        var revert = GuestConfigUpdate()
+        revert.reverts = ["memory"]
+        try await finish(try await session.send(PVE.updateConfig(running, revert)))
+        #expect(try await session.send(PVE.pendingConfig(running)).allSatisfy { !$0.hasPendingChange })
+    }
+
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
     func readOnlyUserLacksPowerManagement() async throws {
         let session = try await trustedSession()

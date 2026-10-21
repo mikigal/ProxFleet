@@ -12,6 +12,8 @@ public final class GuestDetail {
 
     public private(set) var status: GuestStatus?
     public private(set) var config: GuestConfig?
+    /// Changes that wait for the next restart.
+    public private(set) var pendingChanges: [PendingConfigItem] = []
     public private(set) var history: [RRDPoint] = []
     /// nil while unknown, empty when the guest reports no addresses.
     public private(set) var interfaces: [GuestNetworkInterface]?
@@ -104,10 +106,65 @@ public final class GuestDetail {
     }
 
     private func loadConfig() async {
-        if let config = try? await connection.session.send(PVE.guestConfig(reference)) {
-            self.config = config
+        async let config = try? connection.session.send(PVE.guestConfig(reference))
+        async let pending = try? connection.session.send(PVE.pendingConfig(reference))
+        if let config = await config { self.config = config }
+        if let pending = await pending { pendingChanges = pending.filter(\.hasPendingChange) }
+    }
+
+    // MARK: - Editing
+
+    /// Whether the user holds a privilege on this guest. Unknown privileges count as granted.
+    public func can(_ privilege: String) -> Bool {
+        privileges?.contains(privilege) ?? true
+    }
+
+    public func pendingChange(for key: String) -> PendingConfigItem? {
+        pendingChanges.first { $0.key == key }
+    }
+
+    /// Applies a configuration change based on the loaded configuration, waits for its task and reloads.
+    public func apply(_ update: GuestConfigUpdate) async throws(ConfigUpdateError) {
+        var update = update
+        if update.digest == nil { update.digest = config?.digest }
+        do {
+            let upid = try await connection.session.send(PVE.updateConfig(reference, update))
+            try await waitForTask(upid)
+        } catch {
+            await loadConfig()
+            throw ConfigUpdateError(error)
+        }
+        await loadConfig()
+        await loadStatus()
+    }
+
+    /// Grows a disk by a number of GiB.
+    public func growDisk(_ key: String, byGiB amount: Int) async throws(ConfigUpdateError) {
+        do {
+            let upid = try await connection.session.send(PVE.resizeDisk(reference, disk: key, size: "+\(amount)G"))
+            try await waitForTask(upid)
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+        await loadConfig()
+    }
+
+    /// Drops pending changes so the running configuration stays as it is.
+    public func revertPendingChanges() async throws(ConfigUpdateError) {
+        var update = GuestConfigUpdate()
+        update.reverts = Set(pendingChanges.map(\.key))
+        guard !update.reverts.isEmpty else { return }
+        try await apply(update)
+    }
+
+    private func waitForTask(_ upid: String?) async throws {
+        guard let upid else { return }
+        let task = try connection.tasks.track(upid, reportsFailure: false)
+        if case .failed(let message) = await connection.tasks.result(of: task.id) {
+            throw ProxmoxError.api(status: 500, message: message, fieldErrors: [:])
         }
     }
+
 
     private func loadHistory() async {
         if let points = try? await connection.session.send(PVE.guestRRD(reference, timeframe: timeframe)) {
@@ -146,5 +203,37 @@ public final class GuestDetail {
 
     public func dismissActionError() {
         actionError = nil
+    }
+}
+
+/// Why a configuration change failed, in a form the editors can show.
+public enum ConfigUpdateError: Error, Equatable, LocalizedError {
+    /// Validation errors by parameter name.
+    case invalid(message: String?, fields: [String: String])
+    /// Someone else changed the configuration in the meantime.
+    case conflict
+    case failed(String)
+
+    init(_ error: any Error) {
+        switch error {
+        case ProxmoxError.api(_, let message, let fields) where !fields.isEmpty:
+            self = .invalid(message: message, fields: fields)
+        case ProxmoxError.api(_, let message?, _) where message.contains("checksum mismatch") || message.contains("file change by other user"):
+            self = .conflict
+        default:
+            self = .failed(error.localizedDescription)
+        }
+    }
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalid(let message, let fields):
+            let details = fields.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
+            return [message, details].compactMap { $0 }.joined(separator: "\n")
+        case .conflict:
+            return String(localized: "The configuration was changed by someone else. The latest version is loaded; review it and try again.")
+        case .failed(let message):
+            return message
+        }
     }
 }

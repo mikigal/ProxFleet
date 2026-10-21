@@ -192,8 +192,9 @@ extension PVE {
         APIRequest(.get, guest.path + "/status/current")
     }
 
+    /// The configuration in effect. Without `current`, Proxmox returns pending values instead.
     public static func guestConfig(_ guest: GuestReference) -> APIRequest<GuestConfig> {
-        APIRequest(.get, guest.path + "/config")
+        APIRequest(.get, guest.path + "/config", parameters: ["current": true])
     }
 
     public static func guestRRD(_ guest: GuestReference, timeframe: RRDTimeframe) -> APIRequest<[RRDPoint]> {

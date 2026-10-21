@@ -96,6 +96,17 @@ struct GuestDetailView: View {
                         .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                     }
                 }
+                if !detail.pendingChanges.isEmpty {
+                    Section {
+                        Button {
+                            tab = .hardware
+                        } label: {
+                            Label("^[\(detail.pendingChanges.count) change](inflect: true) will apply at the next start", systemImage: "clock.arrow.circlepath")
+                                .foregroundStyle(.orange)
+                        }
+                        .accessibilityIdentifier("pendingHint")
+                    }
+                }
                 errorSection
                 summaryContent
             }
@@ -110,7 +121,7 @@ struct GuestDetailView: View {
             List {
                 errorSection
                 if let config = detail.config {
-                    GuestHardwareSections(config: config, kind: kind)
+                    GuestHardwareSections(detail: detail, config: config)
                 } else {
                     loadingRow
                 }
@@ -366,16 +377,26 @@ private struct GuestMoreList: View {
             Section {
                 if let config = detail.config {
                     NavigationLink {
-                        List { GuestOptionsSection(config: config, kind: detail.reference.kind) }
-                            .navigationTitle("Options")
+                        if detail.can("VM.Config.Options") {
+                            OptionsEditor(detail: detail, config: config)
+                        } else {
+                            List { GuestOptionsSection(config: config, kind: detail.reference.kind) }
+                                .navigationTitle("Options")
+                        }
                     } label: {
                         MoreRow(title: "Options", systemImage: "slider.horizontal.3", color: .gray, hint: config.startsOnBoot ? String(localized: "Starts at boot") : nil)
                     }
+                    .accessibilityIdentifier("more.options")
                     NavigationLink {
-                        NotesView(notes: config.description)
+                        if detail.can("VM.Config.Options") {
+                            NotesEditor(detail: detail, config: config)
+                        } else {
+                            NotesView(notes: config.description)
+                        }
                     } label: {
                         MoreRow(title: "Notes", systemImage: "note.text", color: .yellow, hint: config.description?.isEmpty == false ? nil : String(localized: "None"))
                     }
+                    .accessibilityIdentifier("more.notes")
                 }
                 NavigationLink {
                     GuestTaskHistory(tasks: detail.recentTasks)
@@ -448,67 +469,146 @@ private struct GuestTaskHistory: View {
     }
 }
 
+/// Hardware of a guest. Rows open editors when the user may change them; pending changes are marked.
 private struct GuestHardwareSections: View {
+    let detail: GuestDetail
     let config: GuestConfig
-    let kind: GuestKind
+
+    private var kind: GuestKind { detail.reference.kind }
+    private var isVM: Bool { kind == .virtualMachine }
 
     var body: some View {
+        if !detail.pendingChanges.isEmpty {
+            PendingChangesSection(detail: detail)
+        }
+
         Section("System") {
-            LabeledContent("Processor") {
-                VStack(alignment: .trailing) {
-                    Text(cores)
-                    if let type = config.cpuType {
-                        Text(type).font(.caption).foregroundStyle(.secondary)
+            editable(privilege: "VM.Config.CPU") {
+                CPUEditor(detail: detail, config: config)
+            } label: {
+                LabeledContent("Processor") {
+                    VStack(alignment: .trailing) {
+                        Text(cores)
+                        if let type = config.cpuType {
+                            Text(type).font(.caption).foregroundStyle(.secondary)
+                        }
+                        pendingLabel("cores", "sockets", "cpu")
                     }
                 }
             }
-            if let memory = config.memoryMiB {
-                LabeledContent("Memory", value: Format.bytes(Int64(memory) * 1_048_576))
-            }
-            if kind == .virtualMachine, let balloon = config.balloonMiB {
-                LabeledContent("Minimum Memory", value: balloon == 0 ? String(localized: "Ballooning off") : Format.bytes(Int64(balloon) * 1_048_576))
-            }
-            if kind == .container, let swap = config.swapMiB {
-                LabeledContent("Swap", value: Format.bytes(Int64(swap) * 1_048_576))
-            }
-            if kind == .virtualMachine {
-                LabeledContent("BIOS", value: config.bios == "ovmf" ? "OVMF (UEFI)" : "SeaBIOS")
-                LabeledContent("Machine", value: config.machine ?? "i440fx")
-                if let controller = config["scsihw"] {
-                    LabeledContent("SCSI Controller", value: controller)
+            .accessibilityIdentifier("hardware.cpu")
+            editable(privilege: "VM.Config.Memory") {
+                MemoryEditor(detail: detail, config: config)
+            } label: {
+                LabeledContent("Memory") {
+                    VStack(alignment: .trailing) {
+                        Text(config.memoryMiB.map { Format.bytes(Int64($0) * 1_048_576) } ?? "—")
+                        if isVM, let balloon = config.balloonMiB {
+                            Text(balloon == 0 ? String(localized: "Ballooning off") : String(localized: "Minimum \(Format.bytes(Int64(balloon) * 1_048_576))"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if !isVM, let swap = config.swapMiB {
+                            Text("Swap \(Format.bytes(Int64(swap) * 1_048_576))").font(.caption).foregroundStyle(.secondary)
+                        }
+                        pendingLabel("memory", "balloon", "swap")
+                    }
                 }
-                if let display = config["vga"] {
-                    LabeledContent("Display", value: PropertyString(parsing: display).defaultValue ?? display)
+            }
+            .accessibilityIdentifier("hardware.memory")
+            if isVM {
+                editable(privilege: "VM.Config.HWType") {
+                    VMSystemEditor(detail: detail, config: config)
+                } label: {
+                    LabeledContent("Firmware") {
+                        VStack(alignment: .trailing) {
+                            Text(config.bios == "ovmf" ? "OVMF (UEFI)" : "SeaBIOS")
+                            Text([config.machine ?? "i440fx", config["scsihw"]].compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
+                            pendingLabel("bios", "machine", "scsihw", "vga")
+                        }
+                    }
                 }
             }
         }
 
         let disks = config.disks
-        if !disks.isEmpty {
-            Section(kind == .virtualMachine ? "Disks and Drives" : "Volumes") {
-                ForEach(disks) { disk in
+        Section(isVM ? "Disks and Drives" : "Volumes") {
+            ForEach(disks) { disk in
+                editable(privilege: disk.isCDROM ? "VM.Config.CDROM" : "VM.Config.Disk") {
+                    if disk.isCDROM {
+                        CDROMEditor(detail: detail, config: config, drive: disk)
+                    } else {
+                        DiskEditor(detail: detail, config: config, disk: disk)
+                    }
+                } label: {
                     HardwareRow(
-                        systemImage: disk.isCDROM ? "opticaldisc" : "internaldrive",
-                        title: disk.key,
-                        value: disk.mountPoint.map { "\(disk.volume) → \($0)" } ?? disk.volume,
-                        detail: disk.size
+                        systemImage: disk.isCDROM ? "opticaldisc" : disk.isUnused ? "externaldrive.badge.xmark" : "internaldrive",
+                        title: disk.isUnused ? "\(disk.key) (\(String(localized: "unused")))" : disk.key,
+                        value: disk.isCDROM && disk.volume == "none" ? String(localized: "No disc") : disk.mountPoint.map { "\(disk.volume) → \($0)" } ?? disk.volume,
+                        detail: disk.size,
+                        pending: detail.pendingChange(for: disk.key) != nil
                     )
+                }
+                .accessibilityIdentifier("hardware.\(disk.key)")
+            }
+            if isVM, detail.can("VM.Config.Disk") {
+                NavigationLink {
+                    AddDiskEditor(detail: detail, config: config)
+                } label: {
+                    Label("Add Hard Disk", systemImage: "plus.circle")
+                }
+                .accessibilityIdentifier("hardware.addDisk")
+            }
+            if isVM, detail.can("VM.Config.CDROM") {
+                NavigationLink {
+                    CDROMEditor(detail: detail, config: config, drive: nil)
+                } label: {
+                    Label("Add CD/DVD Drive", systemImage: "plus.circle")
                 }
             }
         }
 
         let networks = config.networks
-        if !networks.isEmpty {
-            Section("Network") {
-                ForEach(networks) { nic in
+        Section("Network") {
+            ForEach(networks) { nic in
+                editable(privilege: "VM.Config.Network", enabled: isVM) {
+                    NetworkDeviceEditor(detail: detail, config: config, nic: nic)
+                } label: {
                     HardwareRow(
                         systemImage: "network",
                         title: nic.key,
                         value: [nic.model, nic.bridge, nic.vlanTag.map { "VLAN \($0)" }].compactMap { $0 }.joined(separator: " · "),
-                        detail: [nic.macAddress, nic.ipv4.map { "IP \($0)" }, nic.firewall ? String(localized: "Firewall") : nil].compactMap { $0 }.joined(separator: " · ")
+                        detail: [nic.macAddress, nic.ipv4.map { "IP \($0)" }, nic.firewall ? String(localized: "Firewall") : nil, nic.isLinkDown ? String(localized: "Disconnected") : nil].compactMap { $0 }.joined(separator: " · "),
+                        pending: detail.pendingChange(for: nic.key) != nil
                     )
                 }
+                .accessibilityIdentifier("hardware.\(nic.key)")
             }
+            if isVM, detail.can("VM.Config.Network") {
+                NavigationLink {
+                    NetworkDeviceEditor(detail: detail, config: config, nic: nil)
+                } label: {
+                    Label("Add Network Device", systemImage: "plus.circle")
+                }
+                .accessibilityIdentifier("hardware.addNetwork")
+            }
+        }
+    }
+
+    /// A navigation row to an editor, or the plain label when editing is not allowed.
+    @ViewBuilder
+    private func editable<Editor: View, Label: View>(privilege: String, enabled: Bool = true, @ViewBuilder editor: @escaping () -> Editor, @ViewBuilder label: () -> Label) -> some View {
+        if enabled, detail.can(privilege) {
+            NavigationLink(destination: editor, label: label)
+        } else {
+            label()
+        }
+    }
+
+    @ViewBuilder
+    private func pendingLabel(_ keys: String...) -> some View {
+        if keys.contains(where: { detail.pendingChange(for: $0) != nil }) {
+            PendingBadge()
         }
     }
 
@@ -516,6 +616,50 @@ private struct GuestHardwareSections: View {
         let total = (config.cores ?? 1) * config.sockets
         let text = Format.cores(total)
         return config.sockets > 1 ? "\(text) (\(config.sockets) × \(config.cores ?? 1))" : text
+    }
+}
+
+/// Changes that wait for the next restart, with a way to drop them.
+private struct PendingChangesSection: View {
+    let detail: GuestDetail
+    @State private var isReverting = false
+    @State private var error: String?
+
+    var body: some View {
+        Section {
+            ForEach(detail.pendingChanges) { item in
+                LabeledContent(item.key) {
+                    if item.isPendingDeletion {
+                        Text("Removed").foregroundStyle(.orange)
+                    } else {
+                        Text("\(item.value ?? "—") → \(item.pending ?? "—")")
+                            .foregroundStyle(.orange)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+            }
+            Button("Revert Pending Changes", role: .destructive) {
+                Task {
+                    isReverting = true
+                    defer { isReverting = false }
+                    do {
+                        try await detail.revertPendingChanges()
+                    } catch {
+                        self.error = error.localizedDescription
+                    }
+                }
+            }
+            .disabled(isReverting)
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        } header: {
+            Label("Pending Changes", systemImage: "clock.arrow.circlepath")
+        } footer: {
+            Text("These changes take effect the next time the guest starts. A reboot from inside the guest is not enough; use Reboot or Stop and Start here.")
+        }
+        .accessibilityIdentifier("pendingChanges")
     }
 }
 
@@ -567,6 +711,7 @@ private struct HardwareRow: View {
     let title: String
     let value: String
     let detail: String?
+    var pending = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -585,7 +730,20 @@ private struct HardwareRow: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
                 }
+                if pending {
+                    PendingBadge()
+                }
             }
         }
+    }
+}
+
+/// Marks a value that changes at the next start.
+private struct PendingBadge: View {
+    var body: some View {
+        (Text(Image(systemName: "clock.arrow.circlepath")) + Text(" ") + Text("Pending restart"))
+            .font(.caption2)
+            .foregroundStyle(.orange)
+            .fixedSize()
     }
 }

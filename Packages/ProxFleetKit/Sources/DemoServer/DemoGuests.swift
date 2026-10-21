@@ -46,6 +46,30 @@ extension DemoState {
             }
         }
 
+        switch (method, Array(parts.dropFirst(2))) {
+        case (.get, ["storage"]):
+            let content = parameters["content"] ?? ""
+            let storages: [JSONValue] = [
+                ["storage": "local", "type": "dir", "content": "iso,vztmpl,backup", "active": 1, "shared": 0, "avail": 82_000_000_000, "total": 107_000_000_000],
+                ["storage": "local-lvm", "type": "lvmthin", "content": "images,rootdir", "active": 1, "shared": 0, "avail": 520_000_000_000, "total": 858_000_000_000],
+            ]
+            return success(.array(storages.filter { storage in
+                guard !content.isEmpty, case .object(let fields) = storage, case .string(let types)? = fields["content"] else { return true }
+                return types.split(separator: ",").contains { $0 == content }
+            }))
+        case (.get, ["storage", "local", "content"]):
+            return success([
+                ["volid": "local:iso/debian-13.1.0-amd64-netinst.iso", "size": 790_626_304, "format": "iso"],
+                ["volid": "local:iso/ubuntu-24.04.3-live-server-amd64.iso", "size": 3_213_064_192, "format": "iso"],
+            ])
+        case (.get, ["network"]):
+            return success([["iface": "vmbr0", "type": "bridge", "comments": "LAN"], ["iface": "vmbr1", "type": "bridge", "comments": "Lab VLANs"]])
+        case (.get, ["capabilities", "qemu", "cpu"]):
+            return success(.array(["host", "x86-64-v2-AES", "x86-64-v3", "kvm64", "qemu64", "EPYC-Rome", "Skylake-Server"].map { ["name": .string($0), "vendor": "default", "custom": 0] }))
+        default:
+            break
+        }
+
         guard ["qemu", "lxc"].contains(parts[2]), let vmid = Int(parts[3]),
               let index = cluster.guests.firstIndex(where: { $0.vmid == vmid && $0.kind.rawValue == parts[2] })
         else { return failure(500, "Configuration file 'nodes/\(node)/\(parts[2])/\(parts[3]).conf' does not exist") }
@@ -59,7 +83,13 @@ extension DemoState {
         case (.get, ["status", "current"]):
             return success(statusJSON(guest))
         case (.get, ["config"]):
-            return success(configJSON(guest))
+            return success(.object(currentConfig(guest).mapValues { JSONValue.string($0) }))
+        case (.get, ["pending"]):
+            return success(pendingJSON(guest))
+        case (.post, ["config"]), (.put, ["config"]):
+            return updateConfig(guest, parameters: parameters, user: user, asTask: method == .post)
+        case (.put, ["resize"]):
+            return resize(guest, parameters: parameters, user: user)
         case (.get, ["rrddata"]):
             return success(rrdJSON(guest, timeframe: parameters["timeframe"] ?? "hour"))
         case (.get, ["agent", "network-get-interfaces"]):
@@ -150,6 +180,9 @@ extension DemoState {
             tasks[index].isApplied = true
             if let apply = tasks[index].apply, let guestIndex = cluster.guests.firstIndex(where: { String($0.vmid) == tasks[index].objectID }) {
                 apply(&cluster.guests[guestIndex])
+                if ["start", "stop", "shutdown", "reboot", "reset"].contains(where: tasks[index].type.hasSuffix), let vmid = Int(tasks[index].objectID) {
+                    applyPendingEdits(of: vmid)
+                }
             }
         }
     }
@@ -202,7 +235,7 @@ extension DemoState {
         let memory = Int(guest.memoryGiB * 1024)
         var data: [String: JSONValue] = [
             "cores": .int(guest.cores), "memory": .string(String(memory)),
-            "digest": .string(String(repeating: String(guest.vmid % 10), count: 40)),
+            "digest": .string(digest(for: guest)),
         ]
         if !guest.tags.isEmpty { data["tags"] = .string(guest.tags.joined(separator: ";")) }
         if guest.isTemplate { data["template"] = 1 }
@@ -281,6 +314,124 @@ extension DemoState {
         guard task.isFinished(at: Date()) else { return [] }
         if let error = task.error { return ["TASK ERROR: \(error)"] }
         return ["TASK OK"]
+    }
+
+    // MARK: - Configuration editing
+
+    private func digest(for guest: DemoCluster.Guest) -> String {
+        let revision = configRevisions[guest.vmid] ?? 0
+        return String(format: "%08x", guest.vmid) + String(repeating: "0", count: 24) + String(format: "%08x", revision)
+    }
+
+    /// Generated configuration with edits applied.
+    func currentConfig(_ guest: DemoCluster.Guest) -> [String: String] {
+        guard case .object(let generated) = configJSON(guest) else { return [:] }
+        var config: [String: String] = [:]
+        for (key, value) in generated {
+            switch value {
+            case .string(let text): config[key] = text
+            case .int(let number): config[key] = String(number)
+            case .double(let number): config[key] = String(number)
+            case .bool(let flag): config[key] = flag ? "1" : "0"
+            default: break
+            }
+        }
+        for (key, value) in configEdits[guest.vmid] ?? [:] {
+            config[key] = value
+        }
+        return config
+    }
+
+    private func pendingJSON(_ guest: DemoCluster.Guest) -> JSONValue {
+        let config = currentConfig(guest)
+        let pending = pendingEdits[guest.vmid] ?? [:]
+        let keys = Set(config.keys).union(pending.keys).subtracting(["digest"])
+        return .array(keys.sorted().map { key in
+            var item: [String: JSONValue] = ["key": .string(key)]
+            if let value = config[key] { item["value"] = .string(value) }
+            if let change = pending[key] {
+                if let change { item["pending"] = .string(change) } else { item["delete"] = 1 }
+            }
+            return .object(item)
+        })
+    }
+
+    private func updateConfig(_ guest: DemoCluster.Guest, parameters: [String: String], user: String, asTask: Bool) -> HTTPResponse {
+        guard privileges(for: user).contains("VM.Config.Options") else {
+            return failure(403, "Permission check failed (/vms/\(guest.vmid), VM.Config.Options)")
+        }
+        if let expected = parameters["digest"], expected != digest(for: guest) {
+            return failure(500, "checksum mismatch (file change by other user?)")
+        }
+        var errors: [String: JSONValue] = [:]
+        for key in ["cores", "sockets"] {
+            if let value = parameters[key], (Int(value) ?? 0) < 1 { errors[key] = "value must have a minimum value of 1" }
+        }
+        if let value = parameters["memory"], (Int(value) ?? 0) < 16 { errors["memory"] = "value must have a minimum value of 16" }
+        if !errors.isEmpty {
+            let body: JSONValue = ["data": nil, "success": 0, "status": "400", "message": "Parameter verification failed.", "errors": .object(errors)]
+            return HTTPResponse(statusCode: 200, body: body.encoded())
+        }
+
+        var changes: [String: String?] = [:]
+        for (key, value) in parameters where !["digest", "delete", "revert"].contains(key) {
+            changes[key] = .some(value)
+        }
+        for key in (parameters["delete"] ?? "").split(separator: ",").map(String.init) {
+            changes[key] = .some(nil)
+        }
+        // Like Proxmox without hotplug for these, a running guest gets them on its next start.
+        let coldKeys: Set<String> = ["memory", "cores", "sockets", "cpu", "bios", "machine"]
+        for (key, value) in changes {
+            if guest.isRunning, coldKeys.contains(key) {
+                pendingEdits[guest.vmid, default: [:]][key] = .some(value)
+            } else {
+                configEdits[guest.vmid, default: [:]][key] = .some(value)
+            }
+        }
+        for key in (parameters["revert"] ?? "").split(separator: ",").map(String.init) {
+            pendingEdits[guest.vmid]?[key] = nil
+        }
+        configRevisions[guest.vmid, default: 0] += 1
+        applySummaryFields(of: guest.vmid)
+        return asTask ? startConfigTask(guest, user: user) : success(nil)
+    }
+
+    private func resize(_ guest: DemoCluster.Guest, parameters: [String: String], user: String) -> HTTPResponse {
+        guard let disk = parameters["disk"], let size = parameters["size"], var value = currentConfig(guest)[disk] else {
+            return failure(500, "disk does not exist")
+        }
+        var property = PropertyString(parsing: value)
+        let current = Int(property["size"]?.dropLast() ?? "0") ?? 0
+        let requested = Int(size.trimmingCharacters(in: CharacterSet(charactersIn: "+G"))) ?? 0
+        property["size"] = "\(size.hasPrefix("+") ? current + requested : requested)G"
+        value = property.stringValue
+        configEdits[guest.vmid, default: [:]][disk] = .some(value)
+        configRevisions[guest.vmid, default: 0] += 1
+        return startConfigTask(guest, user: user, type: "resize")
+    }
+
+    private func startConfigTask(_ guest: DemoCluster.Guest, user: String, type: String = "qmconfig") -> HTTPResponse {
+        let start = Date()
+        let upid = String(format: "UPID:%@:%08X:%08X:%08X:%@:%d:%@:", guest.node, 4000 + tasks.count, 100_000 + tasks.count, Int(start.timeIntervalSince1970), type, guest.vmid, user)
+        tasks.append(DemoTask(upid: upid, node: guest.node, type: type, objectID: String(guest.vmid), user: user, startedAt: start, duration: 0.4, error: nil, apply: nil))
+        return success(.string(upid))
+    }
+
+    /// Keeps the cluster resources in line with edited name, cores and memory.
+    private func applySummaryFields(of vmid: Int) {
+        guard let index = cluster.guests.firstIndex(where: { $0.vmid == vmid }), let edits = configEdits[vmid] else { return }
+        if let name = edits["name"] ?? edits["hostname"], let name { cluster.guests[index].name = name }
+        if let cores = edits["cores"], let cores, let value = Int(cores) { cluster.guests[index].cores = value }
+        if let memory = edits["memory"], let memory, let value = Double(memory) { cluster.guests[index].memoryGiB = value / 1024 }
+    }
+
+    /// Pending changes take effect when a guest starts.
+    func applyPendingEdits(of vmid: Int) {
+        guard let pending = pendingEdits.removeValue(forKey: vmid) else { return }
+        for (key, value) in pending { configEdits[vmid, default: [:]][key] = .some(value) }
+        configRevisions[vmid, default: 0] += 1
+        applySummaryFields(of: vmid)
     }
 
     private func mac(for guest: DemoCluster.Guest) -> String {

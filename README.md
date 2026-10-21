@@ -18,9 +18,10 @@ Early development. What works now:
 - Power actions (start, shut down, reboot, stop, reset, pause, resume, hibernate) with confirmation, hidden without the `VM.PowerMgmt` privilege
 - Task tracking: progress of started actions, recent tasks of the server, task logs
 - Consoles: a native VNC client for VMs (zoom, full screen, special keys, hardware keyboard) and a terminal for containers
+- Configuration editing: processor, memory, firmware, disks (add, grow, detach, delete), CD/DVD drives, network devices, options, boot order and notes, with pending changes shown until the next restart
 - Demo mode with a built-in sample cluster
 
-Next up: configuration editing and creating VMs.
+Next up: creating VMs and containers.
 
 ## Requirements
 

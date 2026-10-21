@@ -44,7 +44,26 @@ public struct PropertyString: Sendable, Equatable {
     }
 
     public subscript(key: String) -> String? {
-        items.first { $0.key == key }?.value
+        get { items.first { $0.key == key }?.value }
+        set {
+            if let index = items.firstIndex(where: { $0.key == key }) {
+                if let newValue {
+                    items[index].value = newValue
+                } else {
+                    items.remove(at: index)
+                }
+            } else if let newValue {
+                items.append((key: key, value: newValue))
+            }
+        }
+    }
+
+    /// The text form, quoting values that contain commas.
+    public var stringValue: String {
+        items.map { item in
+            let value = item.value.contains(",") ? "\"\(item.value)\"" : item.value
+            return item.key.map { "\($0)=\(value)" } ?? value
+        }.joined(separator: ",")
     }
 
     public static func == (lhs: PropertyString, rhs: PropertyString) -> Bool {

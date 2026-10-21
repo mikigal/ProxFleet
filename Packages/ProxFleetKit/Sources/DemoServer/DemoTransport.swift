@@ -24,6 +24,11 @@ public final class DemoTransport: HTTPTransport {
 actor DemoState {
     var cluster: DemoCluster
     var tasks: [DemoTask] = []
+    /// Configuration edits per VMID, applied on top of the generated configuration. nil marks a deleted key.
+    var configEdits: [Int: [String: String?]] = [:]
+    /// Changes of running guests that wait for a restart.
+    var pendingEdits: [Int: [String: String?]] = [:]
+    var configRevisions: [Int: Int] = [:]
     private var ticketCounter = 0
     let started = Date()
 
