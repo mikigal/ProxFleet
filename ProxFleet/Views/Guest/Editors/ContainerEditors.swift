@@ -325,6 +325,19 @@ struct MountPointOptionsSection: View {
                 Text("Shared marks a volume that is available on every node, so it does not block migration. It does not share it by itself.")
             }
         }
+        MountOptionsSection(draft: $draft, error: error, footer: footer)
+    }
+}
+
+/// ACLs, quotas, replication and mount options of a container volume.
+struct MountOptionsSection: View {
+    @Binding var draft: MountPointDraft
+    let error: String?
+    /// Defaults to "Mount Options"; the container wizard names the mount point.
+    var title: String?
+    var footer: LocalizedStringKey
+
+    var body: some View {
         Section {
             Picker("ACLs", selection: $draft.acl) {
                 Text("Default").tag(Bool?.none)
@@ -342,7 +355,7 @@ struct MountPointOptionsSection: View {
             }
             FieldError(message: error)
         } header: {
-            Text("Mount Options")
+            if let title { Text(verbatim: title) } else { Text("Mount Options") }
         } footer: {
             Text(footer)
         }

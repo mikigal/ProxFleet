@@ -112,7 +112,7 @@ struct GuestDetailTests {
         #expect(try await connection.send(PVE.pools()).map(\.id) == ["lab"])
 
         var vm = VMCreationDraft(node: "pve1", vmid: 100)
-        vm.diskStorage = "local-lvm"
+        vm.disks[0].storage = "local-lvm"
         do {
             _ = try await connection.start(PVE.createVM(vm))
             Issue.record("VM 100 exists")

@@ -207,53 +207,30 @@ struct CreateVMView: View {
 
     @ViewBuilder
     private func disks(_ errors: [String: String]) -> some View {
+        let keys = draft.diskKeys
+        ForEach($draft.disks) { $disk in
+            let key = draft.disks.firstIndex { $0.id == disk.id }.map { keys[$0] } ?? ""
+            NewDiskSections(
+                disk: $disk, key: key, error: errors[key], connection: connection, node: draft.node,
+                storages: diskStorages, showsAdvanced: showsAdvanced
+            ) {
+                withAnimation { draft.disks.removeAll { $0.id == disk.id } }
+            }
+        }
         Section {
-            Picker("Bus", selection: $draft.diskBus) {
-                ForEach(DiskBus.allCases) { Text($0.title).tag($0) }
+            Button("Add Disk") {
+                withAnimation { draft.addDisk() }
             }
-            NodeStoragePicker(title: "Storage", connection: connection, node: draft.node, content: "images", selection: $draft.diskStorage)
-            NumberField(title: "Size", value: $draft.diskSizeGiB, range: 1...65_536, unit: "GiB")
-            if let formats = selectedDiskStorage?.diskFormats, formats.count > 1 {
-                Picker("Format", selection: $draft.diskFormat) {
-                    ForEach(formats, id: \.self) { Text(Self.formatTitle($0)).tag(String?.some($0)) }
-                }
+            .accessibilityIdentifier("disk.add")
+        } footer: {
+            if draft.disks.isEmpty {
+                Text("The VM is created without a disk. It boots from the installation media or the network.")
             }
-            FieldError(message: errors[draft.diskKey])
-        } header: {
-            Text(verbatim: draft.diskKey)
         }
         .task(id: draft.node) {
             diskStorages = await connection.load(PVE.storages(node: draft.node, content: "images"))
-            draft.chooseDiskFormat(for: selectedDiskStorage)
-        }
-        .onChange(of: draft.diskStorage) { draft.chooseDiskFormat(for: selectedDiskStorage) }
-        Section("Options") {
-            Picker("Cache", selection: $draft.disk.cache) {
-                Text("Default (No cache)").tag(String?.none)
-                ForEach(DiskOptionsDraft.cacheModes, id: \.self) { Text($0).tag(String?.some($0)) }
-            }
-            Toggle("Discard", isOn: $draft.disk.discard)
-            if draft.diskSupportsIOThread {
-                Toggle("IO Thread", isOn: $draft.disk.ioThread)
-            }
-            if showsAdvanced {
-                if draft.diskSupportsSSDEmulation {
-                    Toggle("SSD Emulation", isOn: $draft.disk.ssdEmulation)
-                }
-                if draft.diskSupportsIOThread {
-                    Toggle("Read Only", isOn: $draft.disk.readOnly)
-                }
-                Toggle("Include in Backups", isOn: $draft.disk.includeInBackup)
-                Toggle("Replicate", isOn: $draft.disk.replicate)
-                Picker("Async IO", selection: $draft.disk.asyncIO) {
-                    Text("Default (io_uring)").tag(String?.none)
-                    ForEach(DiskOptionsDraft.asyncIOModes, id: \.self) { Text($0).tag(String?.some($0)) }
-                }
-                NavigationLink {
-                    DiskLimitsEditor(limits: $draft.disk.limits)
-                } label: {
-                    LabeledContent("Bandwidth Limits", value: draft.disk.limits.values.contains { !$0.isEmpty } ? String(localized: "Set") : String(localized: "Unlimited"))
-                }
+            for index in draft.disks.indices {
+                draft.disks[index].chooseFormat(for: diskStorages.first { $0.storage == draft.disks[index].storage })
             }
         }
     }
@@ -332,16 +309,6 @@ struct CreateVMView: View {
 
     private var totalCores: Int { draft.cpu.sockets * draft.cpu.cores }
 
-    private var selectedDiskStorage: StorageInfo? { diskStorages.first { $0.storage == draft.diskStorage } }
-
-    private static func formatTitle(_ format: String) -> String {
-        switch format {
-        case "raw": String(localized: "Raw Disk Image (raw)")
-        case "qcow2": String(localized: "QEMU Image (qcow2)")
-        case "vmdk": String(localized: "VMware Image (vmdk)")
-        default: format
-        }
-    }
 
     @ViewBuilder
     private func memory(_ errors: [String: String]) -> some View {
@@ -423,5 +390,82 @@ struct CreateVMView: View {
                 .accessibilityIdentifier("startAfterCreation")
         }
         CreationSummary(parameters: draft.parameters)
+    }
+}
+
+/// One disk of the VM wizard: bus, storage, size and format, then its options.
+private struct NewDiskSections: View {
+    @Binding var disk: NewVMDisk
+    /// `scsi0`, `sata1`…
+    let key: String
+    let error: String?
+    let connection: ServerConnection
+    let node: String
+    /// The node's storages for disk images, with their formats.
+    let storages: [StorageInfo]
+    let showsAdvanced: Bool
+    let onRemove: () -> Void
+
+    var body: some View {
+        Section {
+            Picker("Bus", selection: $disk.bus) {
+                ForEach(DiskBus.allCases) { Text($0.title).tag($0) }
+            }
+            NodeStoragePicker(title: "Storage", connection: connection, node: node, content: "images", selection: $disk.storage)
+            NumberField(title: "Size", value: $disk.sizeGiB, range: 1...65_536, unit: "GiB")
+            if let formats = storage?.diskFormats, formats.count > 1 {
+                Picker("Format", selection: $disk.format) {
+                    ForEach(formats, id: \.self) { Text(Self.formatTitle($0)).tag(String?.some($0)) }
+                }
+            }
+            FieldError(message: error)
+        } header: {
+            Text(verbatim: key)
+        }
+        .onChange(of: disk.storage) { disk.chooseFormat(for: storage) }
+        Section {
+            Picker("Cache", selection: $disk.options.cache) {
+                Text("Default (No cache)").tag(String?.none)
+                ForEach(DiskOptionsDraft.cacheModes, id: \.self) { Text($0).tag(String?.some($0)) }
+            }
+            Toggle("Discard", isOn: $disk.options.discard)
+            if disk.supportsIOThread {
+                Toggle("IO Thread", isOn: $disk.options.ioThread)
+            }
+            if showsAdvanced {
+                if disk.supportsSSDEmulation {
+                    Toggle("SSD Emulation", isOn: $disk.options.ssdEmulation)
+                }
+                if disk.supportsIOThread {
+                    Toggle("Read Only", isOn: $disk.options.readOnly)
+                }
+                Toggle("Include in Backups", isOn: $disk.options.includeInBackup)
+                Toggle("Replicate", isOn: $disk.options.replicate)
+                Picker("Async IO", selection: $disk.options.asyncIO) {
+                    Text("Default (io_uring)").tag(String?.none)
+                    ForEach(DiskOptionsDraft.asyncIOModes, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                NavigationLink {
+                    DiskLimitsEditor(limits: $disk.options.limits)
+                } label: {
+                    LabeledContent("Bandwidth Limits", value: disk.options.limits.values.contains { !$0.isEmpty } ? String(localized: "Set") : String(localized: "Unlimited"))
+                }
+            }
+            Button("Remove Disk", role: .destructive, action: onRemove)
+                .accessibilityIdentifier("disk.remove.\(key)")
+        } header: {
+            Text("Options")
+        }
+    }
+
+    private var storage: StorageInfo? { storages.first { $0.storage == disk.storage } }
+
+    private static func formatTitle(_ format: String) -> String {
+        switch format {
+        case "raw": String(localized: "Raw Disk Image (raw)")
+        case "qcow2": String(localized: "QEMU Image (qcow2)")
+        case "vmdk": String(localized: "VMware Image (vmdk)")
+        default: format
+        }
     }
 }

@@ -286,17 +286,21 @@ struct LiveServerTests {
         vm.name = "creation-test"
         vm.applyDefaults(for: "win11")
         vm.isoVolume = iso
-        vm.diskStorage = storage
+        vm.disks[0].storage = storage
         vm.efiStorage = storage
         vm.tpmStorage = storage
-        vm.diskSizeGiB = 1
+        vm.disks[0].sizeGiB = 1
+        vm.addDisk()
+        vm.disks[1].bus = .scsi
+        vm.disks[1].sizeGiB = 1
+        vm.disks[1].options.includeInBackup = false
         // Options of the wizard's advanced mode.
         vm.startup.order = "5"
         vm.tags = ["creation-test"]
         vm.display = "virtio"
-        vm.disk.cache = "writeback"
-        vm.disk.includeInBackup = false
-        vm.disk.limits = ["mbps_rd": "200"]
+        vm.disks[0].options.cache = "writeback"
+        vm.disks[0].options.includeInBackup = false
+        vm.disks[0].options.limits = ["mbps_rd": "200"]
         vm.cpu.flags = ["aes": true]
         vm.cpu.limit = 1.5
         vm.cpu.units = "200"
@@ -314,6 +318,7 @@ struct LiveServerTests {
         #expect(vmConfig.bios == "ovmf")
         #expect(vmConfig["efidisk0"] != nil && vmConfig["tpmstate0"] != nil && vmConfig["sata0"] != nil)
         #expect(vmConfig.bootOrder.first == "sata0")
+        #expect(vmConfig["scsi0"]?.contains("size=1G") == true && vmConfig["scsi0"]?.contains("backup=0") == true)
         #expect(vmConfig["startup"] == "order=5")
         #expect(vmConfig["tags"] == "creation-test")
         #expect(vmConfig["vga"] == "virtio")
@@ -345,6 +350,9 @@ struct LiveServerTests {
         container.cpuUnits = "50"
         container.network.mtu = 1450
         container.network.rateLimit = 10
+        container.addMountPoint()
+        container.mountPoints[0].sizeGiB = 1
+        container.mountPoints[0].options.path = "/data"
         #expect(container.problems.isEmpty)
         let createdContainer = try await finish(try await session.send(PVE.createContainer(container)))
         #expect(createdContainer.succeeded, "\(createdContainer.exitStatus ?? "")")
@@ -359,6 +367,7 @@ struct LiveServerTests {
         #expect(containerConfig["cpulimit"] == "1")
         #expect(containerConfig["cpuunits"] == "50")
         #expect(containerConfig["net0"]?.contains("mtu=1450") == true)
+        #expect(containerConfig["mp0"]?.contains("mp=/data") == true && containerConfig["mp0"]?.contains("backup=1") == true)
         #expect(try await session.send(PVE.guestStatus(containerReference)).powerState == .running)
         _ = try await finish(try await session.send(PVE.powerAction(.stop, on: containerReference)))
         try await destroy(containerReference)

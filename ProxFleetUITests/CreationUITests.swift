@@ -44,6 +44,23 @@ final class CreationUITests: XCTestCase {
     }
 
     @MainActor
+    func testVMWithTwoDisks() {
+        app.launch()
+        open("create.vm")
+        XCTAssertTrue(app.textFields["vmid"].waitForExistence(timeout: 5))
+        for _ in 0..<3 { app.buttons["next"].tap() }
+        tapScrolling(app.buttons["disk.add"])
+        // The form loads rows lazily, so the new disk exists only once it is scrolled into view.
+        XCTAssertTrue(scroll(to: app.buttons["disk.remove.scsi1"]))
+        snapshot("37-create-vm-disks")
+
+        nextUntilConfirm()
+        XCTAssertTrue(scroll(to: app.staticTexts["scsi1"]))
+        app.buttons["create"].tap()
+        XCTAssertTrue(app.staticTexts["Stopped"].waitForExistence(timeout: 15))
+    }
+
+    @MainActor
     func testInvalidNameStopsOnItsStep() {
         app.launch()
         open("create.vm")
@@ -90,8 +107,18 @@ final class CreationUITests: XCTestCase {
         expectation(for: NSPredicate(format: "value BEGINSWITH 'alpine-3.22'"), evaluatedWith: template)
         waitForExpectations(timeout: 20)
 
+        // A mount point needs a path before the wizard goes on.
+        app.buttons["next"].tap()
+        tapScrolling(app.buttons["mountPoint.add"])
+        app.buttons["next"].tap()
+        XCTAssertTrue(scroll(to: app.staticTexts["Enter a path in the container, e.g. /data."]))
+        let path = app.textFields["mountPoint.path.mp0"]
+        XCTAssertTrue(scroll(to: path))
+        type("/data", into: path)
+
         nextUntilConfirm()
         XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
+        XCTAssertTrue(scroll(to: app.staticTexts["mp0"]))
         snapshot("36-create-container-confirm")
         app.buttons["create"].tap()
         XCTAssertTrue(app.staticTexts["alpine-01"].firstMatch.waitForExistence(timeout: 15))
@@ -134,6 +161,26 @@ final class CreationUITests: XCTestCase {
             if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { break }
         }
         field.typeText(text)
+    }
+
+    /// Scrolls the form down until the element is visible above the Back/Next bar.
+    @discardableResult
+    private func scroll(to element: XCUIElement) -> Bool {
+        let bar = app.buttons["create"].exists ? app.buttons["create"] : app.buttons["next"]
+        func isVisible() -> Bool {
+            element.exists && element.isHittable && (!bar.exists || element.frame.maxY < bar.frame.minY - 8)
+        }
+        for _ in 0..<12 where !isVisible() {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+        }
+        return isVisible()
+    }
+
+    /// Scrolls the form until the element is visible, then taps it.
+    private func tapScrolling(_ element: XCUIElement) {
+        XCTAssertTrue(scroll(to: element))
+        element.tap()
     }
 
     /// Scrolls the form until the switch is visible, then flips it.

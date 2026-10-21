@@ -24,7 +24,7 @@ nonisolated enum ContainerCreationStep: CreationStep {
         switch self {
         case .general: ["vmid", "hostname", "pool", "ha-managed", "unprivileged", "features", "password", "ssh-public-keys", "onboot", "startup", "tags"].contains(parameter)
         case .template: parameter == "ostemplate"
-        case .disks: parameter == "rootfs"
+        case .disks: parameter == "rootfs" || parameter.hasPrefix("mp")
         case .cpu: ["cores", "cpulimit", "cpuunits"].contains(parameter)
         case .memory: ["memory", "swap"].contains(parameter)
         case .network: parameter.hasPrefix("net")
@@ -183,11 +183,46 @@ struct CreateContainerView: View {
             FieldError(message: errors["rootfs"])
         } header: {
             Text("Root Disk")
-        } footer: {
-            Text("Add mount points after creating the container.")
         }
         if showsAdvanced {
             MountPointOptionsSection(draft: $draft.rootFS, error: errors["rootfs"], footer: "Quotas need a privileged container.")
+        }
+        ForEach($draft.mountPoints) { $mountPoint in
+            let key = draft.mountPoints.firstIndex { $0.id == mountPoint.id }.map { "mp\($0)" } ?? ""
+            Section {
+                NodeStoragePicker(title: "Storage", connection: connection, node: draft.node, content: "rootdir", selection: $mountPoint.storage)
+                NumberField(title: "Size", value: $mountPoint.sizeGiB, range: 1...65_536, unit: "GiB")
+                LabeledContent("Path in Container") {
+                    TextField("/data", text: $mountPoint.options.path)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .accessibilityIdentifier("mountPoint.path.\(key)")
+                }
+                Toggle("Include in Backups", isOn: $mountPoint.options.includeInBackup)
+                if showsAdvanced {
+                    Toggle("Read Only", isOn: $mountPoint.options.readOnly)
+                }
+                FieldError(message: errors[key])
+                Button("Remove Mount Point", role: .destructive) {
+                    withAnimation { draft.mountPoints.removeAll { $0.id == mountPoint.id } }
+                }
+            } header: {
+                Text(verbatim: key)
+            }
+            if showsAdvanced {
+                MountOptionsSection(draft: $mountPoint.options, error: nil, title: String(localized: "\(key) Mount Options"), footer: "Quotas need a privileged container.")
+            }
+        }
+        Section {
+            Button("Add Mount Point") {
+                withAnimation { draft.addMountPoint() }
+            }
+            .disabled(draft.mountPoints.count >= ContainerCreationDraft.maximumMountPoints)
+            .accessibilityIdentifier("mountPoint.add")
+        } footer: {
+            Text("Mount points are further volumes at a path inside the container.")
         }
     }
 

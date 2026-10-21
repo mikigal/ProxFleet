@@ -8,7 +8,7 @@ struct GuestCreationTests {
         var draft = VMCreationDraft(node: "pve", vmid: 120)
         draft.name = "debian"
         draft.isoVolume = "local:iso/debian-13.1.0-amd64-netinst.iso"
-        draft.diskStorage = "local-lvm"
+        draft.disks[0].storage = "local-lvm"
         #expect(draft.problems.isEmpty)
         let request = PVE.createVM(draft)
         #expect(request.method == .post)
@@ -25,7 +25,7 @@ struct GuestCreationTests {
     @Test func windows11GetsUEFIAndTPM() {
         var draft = VMCreationDraft(node: "pve", vmid: 121)
         draft.applyDefaults(for: "win11")
-        draft.diskStorage = "local-lvm"
+        draft.disks[0].storage = "local-lvm"
         #expect(draft.problems.keys.sorted() == ["efidisk0", "tpmstate0"])
         draft.efiStorage = "local-lvm"
         draft.tpmStorage = "local-lvm"
@@ -44,13 +44,13 @@ struct GuestCreationTests {
         #expect(parameters["start"] == .bool(true))
 
         draft.applyDefaults(for: "l26")
-        #expect(draft.bios == "seabios" && !draft.addTPM && draft.diskBus == .scsi && draft.driversISOVolume == nil)
+        #expect(draft.bios == "seabios" && !draft.addTPM && draft.disks[0].bus == .scsi && draft.driversISOVolume == nil)
         #expect(draft.network.model == "virtio")
     }
 
     @Test func ballooning() {
         var draft = VMCreationDraft(node: "pve", vmid: 100)
-        draft.diskStorage = "local-lvm"
+        draft.disks[0].storage = "local-lvm"
         draft.minimumMemoryMiB = 1024
         #expect(draft.parameters["balloon"] == .int(1024))
         draft.ballooning = false
@@ -59,20 +59,20 @@ struct GuestCreationTests {
 
     @Test func vmAdvancedOptions() {
         var draft = VMCreationDraft(node: "pve", vmid: 130)
-        draft.diskStorage = "local-lvm"
+        draft.disks[0].storage = "local-lvm"
         draft.isHAManaged = true
         draft.startOnBoot = true
         draft.startup.order = "2"
         draft.startup.startDelay = "30"
         draft.tags = ["web", "prod"]
         draft.display = "virtio"
-        draft.disk.cache = "writeback"
-        draft.disk.asyncIO = "native"
-        draft.disk.readOnly = true
-        draft.disk.ssdEmulation = true
-        draft.disk.includeInBackup = false
-        draft.disk.replicate = false
-        draft.disk.limits = ["mbps_rd": "100", "iops_wr": "500"]
+        draft.disks[0].options.cache = "writeback"
+        draft.disks[0].options.asyncIO = "native"
+        draft.disks[0].options.readOnly = true
+        draft.disks[0].options.ssdEmulation = true
+        draft.disks[0].options.includeInBackup = false
+        draft.disks[0].options.replicate = false
+        draft.disks[0].options.limits = ["mbps_rd": "100", "iops_wr": "500"]
         draft.cpu.sockets = 2
         draft.cpu.cores = 4
         draft.cpu.vcpus = 6
@@ -108,9 +108,9 @@ struct GuestCreationTests {
         #expect(parameters["net0"] == "virtio=BC:24:11:00:00:01,bridge=vmbr0,firewall=1,link_down=1,rate=12.5,mtu=1400,queues=4")
 
         // VirtIO Block disks have no SSD emulation; SATA disks have neither IO threads nor read-only mode.
-        draft.diskBus = .virtio
+        draft.disks[0].bus = .virtio
         #expect(draft.parameters["virtio0"]?.encoded.contains("ssd=1") == false)
-        draft.diskBus = .sata
+        draft.disks[0].bus = .sata
         #expect(draft.parameters["sata0"]?.encoded.contains("iothread") == false)
         #expect(draft.parameters["sata0"]?.encoded.contains("ro=1") == false)
         // Shares only apply with ballooning.
@@ -123,14 +123,44 @@ struct GuestCreationTests {
         let storages = try JSONDecoder().decode([StorageInfo].self, from: Data(json.utf8))
         #expect(storages[0].diskFormats == ["raw", "qcow2", "vmdk"])
         var draft = VMCreationDraft(node: "pve", vmid: 140)
-        draft.diskStorage = "local"
-        draft.chooseDiskFormat(for: storages[0])
-        #expect(draft.diskFormat == "qcow2")
+        draft.disks[0].storage = "local"
+        draft.disks[0].chooseFormat(for: storages[0])
+        #expect(draft.disks[0].format == "qcow2")
         #expect(draft.parameters["scsi0"] == "local:32,format=qcow2,discard=on,iothread=1")
-        draft.diskStorage = "local-lvm"
-        draft.chooseDiskFormat(for: storages[1])
-        #expect(draft.diskFormat == nil)
+        draft.disks[0].storage = "local-lvm"
+        draft.disks[0].chooseFormat(for: storages[1])
+        #expect(draft.disks[0].format == nil)
         #expect(draft.parameters["scsi0"] == "local-lvm:32,discard=on,iothread=1")
+    }
+
+    @Test func severalDisks() {
+        var draft = VMCreationDraft(node: "pve", vmid: 150)
+        draft.isoVolume = "local:iso/debian.iso"
+        draft.disks[0].storage = "local-lvm"
+        draft.addDisk()
+        draft.disks[1].sizeGiB = 100
+        draft.disks[1].options.includeInBackup = false
+        #expect(draft.disks[1].bus == .scsi && draft.disks[1].storage == "local-lvm")
+        #expect(draft.diskKeys == ["scsi0", "scsi1"])
+        var parameters = draft.parameters
+        #expect(parameters["scsi1"] == "local-lvm:100,discard=on,iothread=1,backup=0")
+        #expect(parameters["boot"] == "order=scsi0;ide2;net0")
+
+        // IDE disks skip the CD drives; the OS type moves every disk to its bus.
+        draft.applyDefaults(for: "wxp")
+        draft.driversISOVolume = "local:iso/virtio-win.iso"
+        draft.addDisk()
+        #expect(draft.diskKeys == ["ide1", "ide3", "ide4"])
+        #expect(draft.problems["ide4"] != nil)
+        draft.disks.removeLast()
+        #expect(draft.problems.isEmpty)
+        parameters = draft.parameters
+        #expect(parameters["ide0"] == "local:iso/virtio-win.iso,media=cdrom")
+        #expect(parameters["ide1"] == "local-lvm:32,discard=on")
+
+        // A VM can also have no disk.
+        draft.disks = []
+        #expect(draft.parameters["boot"] == "order=ide2;net0")
     }
 
     @Test func vmValidation() {
@@ -193,6 +223,30 @@ struct GuestCreationTests {
         #expect(parameters["cpulimit"] == "1.5")
         #expect(parameters["cpuunits"] == "50")
         #expect(parameters["net0"] == "name=eth0,hwaddr=BC:24:11:00:00:02,bridge=vmbr0,firewall=1,link_down=1,ip=dhcp,rate=10.0,mtu=1450,host-managed=1,type=veth")
+    }
+
+    @Test func containerMountPoints() {
+        var draft = ContainerCreationDraft(node: "pve", vmid: 212)
+        draft.template = "local:vztmpl/alpine.tar.xz"
+        draft.rootStorage = "local-lvm"
+        draft.password = "secret"
+        draft.passwordConfirmation = "secret"
+        draft.addMountPoint()
+        draft.addMountPoint()
+        #expect(draft.mountPoints.map(\.storage) == ["local-lvm", "local-lvm"])
+        #expect(draft.problems.keys.sorted() == ["mp0", "mp1"])
+        draft.mountPoints[0].options.path = "/data"
+        draft.mountPoints[1].options.path = "/data"
+        #expect(draft.problems.keys.sorted() == ["mp1"])
+        draft.mountPoints[1].options.path = " /srv/www "
+        draft.mountPoints[1].sizeGiB = 20
+        draft.mountPoints[1].options.includeInBackup = false
+        draft.mountPoints[1].options.readOnly = true
+        draft.mountPoints[1].options.mountOptions = ["noatime"]
+        #expect(draft.problems.isEmpty)
+        let parameters = draft.parameters
+        #expect(parameters["mp0"] == "local-lvm:8,mp=/data,backup=1")
+        #expect(parameters["mp1"] == "local-lvm:20,mp=/srv/www,ro=1,mountoptions=noatime")
     }
 
     @Test func containerWithSSHKeyNeedsNoPassword() {

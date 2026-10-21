@@ -35,18 +35,8 @@ public struct VMCreationDraft: Sendable, Equatable {
     /// Graphic card, empty for the default.
     public var display = ""
 
-    public var diskBus: DiskBus = .scsi
-    public var diskStorage = ""
-    public var diskSizeGiB = 32
-    /// Image format such as `qcow2`, nil for the storage's default.
-    public var diskFormat: String?
-    /// Options of the system disk; the bus decides which of them apply.
-    public var disk: DiskOptionsDraft = {
-        var options = DiskOptionsDraft()
-        options.discard = true
-        options.ioThread = true
-        return options
-    }()
+    /// The disks to create; the first one boots. Empty for a VM without disks.
+    public var disks = [NewVMDisk()]
 
     /// Sockets, cores, type, flags and scheduling. Its model is empty for the Proxmox default (kvm64).
     public var cpu = CPUDraft(GuestConfig(values: ["cores": "2", "cpu": "x86-64-v2-AES"]), isVM: true)
@@ -79,39 +69,46 @@ public struct VMCreationDraft: Sendable, Equatable {
         self.osType = osType
         if Self.isWindows(osType) {
             let isLegacy = ["wxp", "w2k", "w2k3", "wvista"].contains(osType)
-            diskBus = isLegacy ? .ide : .sata
             network.model = isLegacy ? "e1000" : "e1000e"
             machine = isLegacy ? "i440fx" : "q35"
             let needsUEFI = osType == "win11"
             bios = needsUEFI ? "ovmf" : "seabios"
             addTPM = needsUEFI
         } else {
-            diskBus = .scsi
             network.model = "virtio"
             machine = "i440fx"
             bios = "seabios"
             addTPM = false
             driversISOVolume = nil
         }
+        for index in disks.indices { disks[index].bus = defaultDiskBus }
     }
 
-    /// The key of the system disk, e.g. `scsi0`.
-    public var diskKey: String { "\(diskBus.rawValue)0" }
+    /// The bus the web interface uses for the OS type: IDE for old Windows versions, SATA for newer ones, SCSI otherwise.
+    public var defaultDiskBus: DiskBus {
+        guard isWindows else { return .scsi }
+        return ["wxp", "w2k", "w2k3", "wvista"].contains(osType) ? .ide : .sata
+    }
 
-    /// Picks the format the web interface picks for a storage: qcow2 where it can, otherwise raw.
-    /// Storages with a single format get no explicit one.
-    public mutating func chooseDiskFormat(for storage: StorageInfo?) {
-        guard let formats = storage?.diskFormats, formats.count > 1 else {
-            diskFormat = nil
-            return
+    /// Adds a disk on the bus and storage of the last one.
+    public mutating func addDisk() {
+        var disk = NewVMDisk(bus: disks.last?.bus ?? defaultDiskBus, storage: disks.last?.storage ?? "")
+        disk.format = disks.last?.format
+        disks.append(disk)
+    }
+
+    /// Keys of the disks in their order, e.g. `scsi0` and `scsi1`. The CD drives keep `ide2` and, with Windows drivers, `ide0`.
+    /// A key past the last slot of its bus means the bus is full.
+    public var diskKeys: [String] {
+        var used: Set<String> = ["ide2"]
+        if isWindows, driversISOVolume != nil { used.insert("ide0") }
+        return disks.map { disk in
+            let prefix = disk.bus.rawValue
+            let key = (0..<disk.bus.slots).lazy.map { "\(prefix)\($0)" }.first { !used.contains($0) } ?? "\(prefix)\(disk.bus.slots)"
+            used.insert(key)
+            return key
         }
-        diskFormat = ["qcow2", "raw"].first(where: formats.contains) ?? storage?.defaultDiskFormat ?? formats[0]
     }
-
-    /// IO threads and read-only disks need SCSI or VirtIO Block.
-    public var diskSupportsIOThread: Bool { diskBus == .scsi || diskBus == .virtio }
-    /// VirtIO Block disks report themselves as rotational or not on their own.
-    public var diskSupportsSSDEmulation: Bool { diskBus != .virtio }
 
     /// Problems to fix before the request can be sent, by parameter name.
     public var problems: [String: String] {
@@ -120,7 +117,13 @@ public struct VMCreationDraft: Sendable, Equatable {
         if !name.isEmpty, !Self.isValidDNSName(name) {
             problems["name"] = String(localized: "Use letters, digits, hyphens and dots only.")
         }
-        if diskStorage.isEmpty { problems[diskKey] = String(localized: "Choose a storage.") }
+        for (disk, key) in zip(disks, diskKeys) {
+            if key == "\(disk.bus.rawValue)\(disk.bus.slots)" {
+                problems[key] = String(localized: "\(disk.bus.title) has no free slot left. Choose another bus.")
+            } else if disk.storage.isEmpty {
+                problems[key] = String(localized: "Choose a storage.")
+            }
+        }
         if bios == "ovmf", efiStorage.isEmpty { problems["efidisk0"] = String(localized: "Choose a storage for the EFI disk.") }
         if addTPM, tpmStorage.isEmpty { problems["tpmstate0"] = String(localized: "Choose a storage for the TPM state.") }
         return problems
@@ -148,14 +151,11 @@ public struct VMCreationDraft: Sendable, Equatable {
         if guestAgent { parameters["agent"] = "1" }
         if !display.isEmpty { parameters["vga"] = .string(display) }
 
-        var disk = disk
-        disk.ioThread = disk.ioThread && diskSupportsIOThread
-        disk.readOnly = disk.readOnly && diskSupportsIOThread
-        disk.ssdEmulation = disk.ssdEmulation && diskSupportsSSDEmulation
-        var diskValue = PropertyString(parsing: disk.newDiskValue(storage: diskStorage, sizeGiB: diskSizeGiB))
-        if let diskFormat { diskValue.items.insert((key: "format", value: diskFormat), at: 1) }
-        parameters[diskKey] = .string(diskValue.stringValue)
-        var bootOrder = [diskKey]
+        let diskKeys = diskKeys
+        for (disk, key) in zip(disks, diskKeys) {
+            parameters[key] = .string(disk.value)
+        }
+        var bootOrder = Array(diskKeys.prefix(1))
         if let isoVolume {
             parameters["ide2"] = .string(GuestConfig.cdromValue(isoVolume: isoVolume))
             bootOrder.append("ide2")
@@ -202,6 +202,52 @@ public struct VMCreationDraft: Sendable, Equatable {
     }
 }
 
+/// A disk the VM wizard creates, with the options of the web interface's Disks tab.
+public struct NewVMDisk: Sendable, Equatable, Identifiable {
+    public let id = UUID()
+    public var bus: DiskBus
+    public var storage: String
+    public var sizeGiB = 32
+    /// Image format such as `qcow2`, nil for the storage's default.
+    public var format: String?
+    /// The bus decides which of these apply.
+    public var options: DiskOptionsDraft
+
+    public init(bus: DiskBus = .scsi, storage: String = "") {
+        self.bus = bus
+        self.storage = storage
+        options = DiskOptionsDraft()
+        options.discard = true
+        options.ioThread = true
+    }
+
+    /// IO threads and read-only disks need SCSI or VirtIO Block.
+    public var supportsIOThread: Bool { bus == .scsi || bus == .virtio }
+    /// VirtIO Block disks report themselves as rotational or not on their own.
+    public var supportsSSDEmulation: Bool { bus != .virtio }
+
+    /// Picks the format the web interface picks for a storage: qcow2 where it can, otherwise raw.
+    /// Storages with a single format get no explicit one.
+    public mutating func chooseFormat(for storage: StorageInfo?) {
+        guard let formats = storage?.diskFormats, formats.count > 1 else {
+            format = nil
+            return
+        }
+        format = ["qcow2", "raw"].first(where: formats.contains) ?? storage?.defaultDiskFormat ?? formats[0]
+    }
+
+    /// The disk's parameter value, e.g. `local-lvm:32,discard=on,iothread=1`.
+    public var value: String {
+        var options = options
+        options.ioThread = options.ioThread && supportsIOThread
+        options.readOnly = options.readOnly && supportsIOThread
+        options.ssdEmulation = options.ssdEmulation && supportsSSDEmulation
+        var value = PropertyString(parsing: options.newDiskValue(storage: storage, sizeGiB: sizeGiB))
+        if let format { value.items.insert((key: "format", value: format), at: 1) }
+        return value.stringValue
+    }
+}
+
 /// Settings of a new container. `parameters` builds the create request.
 public struct ContainerCreationDraft: Sendable, Equatable {
     public var node: String
@@ -230,6 +276,8 @@ public struct ContainerCreationDraft: Sendable, Equatable {
     public var rootSizeGiB = 8
     /// ACLs, quotas, replication and mount options of the root file system.
     public var rootFS = MountPointDraft.newRootFS()
+    /// Further volumes, `mp0` and up.
+    public var mountPoints: [NewMountPoint] = []
 
     public var cores = 1
     /// CPU time limit in cores, 0 for none.
@@ -268,7 +316,26 @@ public struct ContainerCreationDraft: Sendable, Equatable {
         }
         if template == nil { problems["ostemplate"] = String(localized: "Choose a template.") }
         if rootStorage.isEmpty { problems["rootfs"] = String(localized: "Choose a storage.") }
+        for (index, mountPoint) in mountPoints.enumerated() {
+            let path = mountPoint.options.path.trimmingCharacters(in: .whitespaces)
+            if !path.hasPrefix("/") || path == "/" {
+                problems["mp\(index)"] = String(localized: "Enter a path in the container, e.g. /data.")
+            } else if mountPoints.prefix(index).contains(where: { $0.options.path.trimmingCharacters(in: .whitespaces) == path }) {
+                problems["mp\(index)"] = String(localized: "Another mount point uses this path.")
+            } else if mountPoint.storage.isEmpty {
+                problems["mp\(index)"] = String(localized: "Choose a storage.")
+            }
+        }
         return problems
+    }
+
+    /// Proxmox allows `mp0` to `mp255`.
+    public static let maximumMountPoints = 256
+
+    /// Adds a mount point on the storage of the root disk.
+    public mutating func addMountPoint() {
+        guard mountPoints.count < Self.maximumMountPoints else { return }
+        mountPoints.append(NewMountPoint(storage: mountPoints.last?.storage ?? rootStorage))
     }
 
     private var sshKeyLines: [String] {
@@ -286,6 +353,9 @@ public struct ContainerCreationDraft: Sendable, Equatable {
         if !password.isEmpty { parameters["password"] = .string(password) }
         if !sshKeyLines.isEmpty { parameters["ssh-public-keys"] = .string(sshKeyLines.joined(separator: "\n")) }
         parameters["rootfs"] = .string(rootFS.newVolumeValue(storage: rootStorage, sizeGiB: rootSizeGiB))
+        for (index, mountPoint) in mountPoints.enumerated() {
+            parameters["mp\(index)"] = .string(mountPoint.value)
+        }
         parameters["cores"] = .int(cores)
         if cpuLimit > 0 { parameters["cpulimit"] = .string(CPUDraft.number(cpuLimit)) }
         if !cpuUnits.trimmed.isEmpty { parameters["cpuunits"] = .string(cpuUnits.trimmed) }
@@ -298,6 +368,28 @@ public struct ContainerCreationDraft: Sendable, Equatable {
         }
         addCommonOptions(to: &parameters, startOnBoot: startOnBoot, startup: startup, tags: tags, startAfterCreation: startAfterCreation)
         return parameters
+    }
+}
+
+/// A volume the container wizard creates besides the root disk.
+public struct NewMountPoint: Sendable, Equatable, Identifiable {
+    public let id = UUID()
+    public var storage: String
+    public var sizeGiB = 8
+    /// Path, backup, read-only and mount options. New mount points are backed up, as in the web interface.
+    public var options: MountPointDraft
+
+    public init(storage: String = "") {
+        self.storage = storage
+        options = MountPointDraft(GuestDisk(key: "mp0", value: ""))
+        options.includeInBackup = true
+    }
+
+    /// The mount point's parameter value, e.g. `local-lvm:8,mp=/data,backup=1`.
+    public var value: String {
+        var options = options
+        options.path = options.path.trimmingCharacters(in: .whitespaces)
+        return options.newVolumeValue(storage: storage, sizeGiB: sizeGiB)
     }
 }
 
