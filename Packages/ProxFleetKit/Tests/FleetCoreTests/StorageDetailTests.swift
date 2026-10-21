@@ -67,4 +67,58 @@ struct StorageDetailTests {
         let iso = try #require(detail.volumes(of: .iso).first)
         await #expect(throws: ConfigUpdateError.self) { try await detail.delete(iso) }
     }
+
+    @Test func datacenterStorageDefinitions() async throws {
+        let connection = try await connection()
+        let storage = DatacenterStorage(connection: connection)
+        await storage.load()
+        #expect(storage.configs?.map(\.storage) == ["local", "local-lvm", "nas", "pbs"])
+        #expect(storage.canModify && storage.scanNode == "pve1")
+
+        let exports = try await storage.scan(PVE.scanNFS(node: "pve1", server: "10.0.10.5"))
+        #expect(exports.map(\.name) == ["/mnt/tank/proxmox", "/mnt/tank/media"])
+        var nfs = StorageConfigDraft(type: .nfs)
+        nfs.storage = "media"
+        nfs.server = "10.0.10.5"
+        nfs.export = exports[1].name
+        nfs.content = ["iso"]
+        try await storage.create(nfs)
+        #expect(storage.configs?.contains { $0.storage == "media" } == true)
+        #expect(connection.snapshot?.storages.filter { $0.name == "media" }.count == 3)
+
+        let created = try #require(storage.configs?.first { $0.storage == "media" })
+        let original = try #require(StorageConfigDraft(created))
+        var edit = original
+        edit.nodes = ["pve1"]
+        edit.isEnabled = false
+        try await storage.update("media", edit.changes(from: original), digest: created.digest)
+        #expect(storage.configs?.first { $0.storage == "media" }?.isDisabled == true)
+        #expect(connection.snapshot?.storages.contains { $0.name == "media" } == false)
+        // The first update changed the digest, so a form opened before it is refused.
+        await #expect(throws: ConfigUpdateError.conflict) {
+            try await storage.update("media", edit.changes(from: original), digest: created.digest)
+        }
+
+        var pbs = StorageConfigDraft(type: .pbs)
+        pbs.storage = "offsite"
+        pbs.server = "10.0.10.6"
+        pbs.datastore = "offsite"
+        pbs.username = "backup@pbs"
+        pbs.password = "wrong"
+        await #expect(throws: ConfigUpdateError.self) { try await storage.create(pbs) }
+        await #expect(throws: (any Error).self) {
+            _ = try await storage.scan(PVE.scanPBS(node: "pve1", server: "10.0.10.6", username: "backup@pbs", password: "wrong", fingerprint: nil, port: nil))
+        }
+        #expect(try await storage.scan(PVE.scanPBS(node: "pve1", server: "10.0.10.6", username: "backup@pbs", password: "secret", fingerprint: nil, port: nil)).map(\.name) == ["main", "offsite"])
+
+        try await storage.delete("media")
+        #expect(storage.configs?.contains { $0.storage == "media" } == false)
+    }
+
+    @Test func auditorCannotChangeStorageDefinitions() async throws {
+        let storage = DatacenterStorage(connection: try await connection(username: "auditor"))
+        await storage.load()
+        #expect(!storage.canModify)
+        await #expect(throws: ConfigUpdateError.self) { try await storage.delete("nas") }
+    }
 }

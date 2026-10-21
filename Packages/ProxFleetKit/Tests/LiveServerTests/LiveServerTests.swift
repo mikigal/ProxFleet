@@ -713,6 +713,57 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.storageVolumes(node: node, storage: "local", content: .iso)).contains { $0.fileName.hasPrefix("proxfleet-live") })
     }
 
+    /// A directory storage and an LVM storage on a volume group of a spare disk: created, changed and removed again.
+    @Test(.timeLimit(.minutes(2))) func storageDefinitions() async throws {
+        let (session, node) = try await rootSession()
+        let configs = try await session.send(PVE.storageConfigs())
+        #expect(configs.contains { $0.storage == "local" && $0.location == "/var/lib/vz" })
+        try #require(!configs.contains { $0.storage.hasPrefix("pflive") }, "left over from an earlier run")
+
+        var dir = StorageConfigDraft(type: .dir)
+        dir.storage = "pflive-dir"
+        dir.path = "/var/lib/vz/pflive"
+        dir.content = ["iso", "backup"]
+        dir.nodes = [node]
+        dir.prune.counts = ["keep-last": "2"]
+        _ = try await session.send(PVE.createStorage(dir))
+        let created = try #require(try await session.send(PVE.storageConfig("pflive-dir")))
+        let original = try #require(StorageConfigDraft(created))
+        #expect(original.prune.serialized == "keep-last=2" && original.nodes == [node] && original.content == ["iso", "backup"])
+        #expect(try await session.send(PVE.storageStatus(node: node, storage: "pflive-dir")).isActive)
+
+        var edit = original
+        edit.content = ["iso"]
+        edit.nodes = []
+        edit.isEnabled = false
+        var update = edit.changes(from: original)
+        update.digest = created.digest
+        _ = try await session.send(PVE.updateStorage("pflive-dir", update))
+        let changed = try await session.send(PVE.storageConfig("pflive-dir"))
+        #expect(changed.isDisabled && changed.content == ["iso"] && changed.nodes.isEmpty && changed.values["prune-backups"] == nil)
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.updateStorage("pflive-dir", update)) }
+        _ = try await session.send(PVE.deleteStorage("pflive-dir"))
+
+        // LVM on a volume group created without a storage entry, found by the scan.
+        let spare = try #require(try await spareDisks(session, node: node).first, "the test server has no spare disks")
+        var group = DiskStorageDraft(kind: .lvm)
+        group.name = "pflivevg"
+        group.devices = [spare.path]
+        group.addStorage = false
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.createDiskStorage(node: node, group)))?.succeeded == true)
+        #expect(try await session.send(PVE.scanVolumeGroups(node: node)).contains { $0.name == "pflivevg" })
+        var lvm = StorageConfigDraft(type: .lvm)
+        lvm.storage = "pflive-lvm"
+        lvm.volumeGroup = "pflivevg"
+        lvm.isShared = false
+        _ = try await session.send(PVE.createStorage(lvm))
+        #expect(try await session.send(PVE.storageStatus(node: node, storage: "pflive-lvm")).contentTypes == [.images, .rootdir])
+        _ = try await session.send(PVE.deleteStorage("pflive-lvm"))
+        let removal = PVE.deleteDiskStorage(node: node, kind: .lvm, name: "pflivevg", cleanupConfig: false, wipeDisks: true)
+        #expect(try await finishTask(session, node: node, try await session.send(removal))?.succeeded == true)
+        #expect(try await !session.send(PVE.storageConfigs()).contains { $0.storage.hasPrefix("pflive") })
+    }
+
     /// Disables and enables the Ceph repository again, and reads the subscription.
     @Test func repositories() async throws {
         let (session, node) = try await rootSession()

@@ -23,33 +23,34 @@ extension DemoState {
         ]
     }
 
-    private static let storageTypes: [String: (type: String, content: String, totalGiB: Double, usedGiB: Double)] = [
-        "local": ("dir", "iso,vztmpl,backup,snippets,import", 100, 23),
-        "local-lvm": ("lvmthin", "images,rootdir", 800, 310),
-    ]
-
     /// Routes below `/nodes/{node}/storage/{storage}` other than backups, and `query-url-metadata`. nil for other paths.
     func handleStorage(_ method: HTTPMethod, node: String, rest: [String], parameters: [String: String], user: String) -> HTTPResponse? {
         if method == .get, rest == ["query-url-metadata"] {
             let name = URLComponents(string: parameters["url"] ?? "")?.path.split(separator: "/").last.map(String.init) ?? ""
             return success(["filename": .string(name), "size": 734_003_200, "mimetype": "application/octet-stream"])
         }
-        guard rest.count >= 2, rest[0] == "storage", let kind = Self.storageTypes[rest[1]] else { return nil }
+        if method == .get, rest == ["storage"] {
+            return nodeStorageList(node: node, content: parameters["content"])
+        }
+        guard rest.count >= 2, rest[0] == "storage", let config = storageConfigs.first(where: { $0.id == rest[1] }) else { return nil }
         let storage = rest[1]
         let isOnline = cluster.nodes.first { $0.name == node }?.isOnline ?? false
         guard isOnline else { return failure(595, "Connection refused: node '\(node)' seems to be offline") }
+        guard config.isAvailable(on: node) else { return failure(500, "storage '\(storage)' is not available on node '\(node)'") }
 
         switch (method, Array(rest.dropFirst(2))) {
         case (.get, ["status"]):
+            let usage = config.usageGiB
             return success([
-                "type": .string(kind.type), "content": .string(kind.content), "active": 1, "enabled": 1, "shared": 0,
-                "total": .int(Int(kind.totalGiB * 1_073_741_824)), "used": .int(Int(kind.usedGiB * 1_073_741_824)),
-                "avail": .int(Int((kind.totalGiB - kind.usedGiB) * 1_073_741_824)),
+                "type": .string(config.type), "content": .string(config.content.joined(separator: ",")), "active": 1, "enabled": 1,
+                "shared": .int(config.isShared ? 1 : 0), "total": .int(Int(usage.total * 1_073_741_824)),
+                "used": .int(Int(usage.used * 1_073_741_824)), "avail": .int(Int((usage.total - usage.used) * 1_073_741_824)),
             ])
         case (.get, ["content"]):
             // Backups have their own route, which also serves the guests' backup screens.
             if parameters["content"] == "backup" { return nil }
-            var volumes = storage == "local" ? fileVolumes(content: parameters["content"]) : diskVolumes(node: node, content: parameters["content"])
+            var volumes = storage == "local" ? fileVolumes(content: parameters["content"])
+                : storage == "local-lvm" ? diskVolumes(node: node, content: parameters["content"]) : []
             if storage == "local", parameters["content"] == nil {
                 volumes += backupVolumes(storage: storage, vmid: nil)
             }

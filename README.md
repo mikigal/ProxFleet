@@ -27,9 +27,10 @@ Early development. What works now:
 - Disks: list with partitions, SMART values, wipe and GPT initialization; LVM, LVM-thin, ZFS (with pool status) and directories, created on unused disks or removed
 - APT repositories (status, enable and disable, add standard ones) and certificates (view, upload a custom one, remove it)
 - Storage: usage and content by type (ISO images, templates, backups, VM disks, CT volumes, snippets), upload from Files with progress and checksum, download from a URL (also from the VM wizard), delete
+- Datacenter storage: add, edit, disable, restrict to nodes and remove storage definitions (Directory, NFS, SMB/CIFS, Proxmox Backup Server, LVM, LVM-Thin, ZFS, Btrfs), with scans for exports, shares, datastores and pools, and backup retention
 - Demo mode with a built-in sample cluster, including working demo consoles
 
-Next up: datacenter settings (storage configuration, backup jobs, users and permissions, ACME).
+Next up: more datacenter settings (backup jobs, users and permissions, ACME).
 
 ## Requirements
 

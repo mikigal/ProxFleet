@@ -59,6 +59,45 @@ final class StorageUITests: XCTestCase {
         snapshot("72-storage-disks")
     }
 
+    @MainActor
+    func testAddNFSStorageAndDisableOne() {
+        app.launch()
+        let entry = app.buttons["datacenter.storage"]
+        XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
+        for _ in 0..<10 where !entry.isHittable { app.swipeUp() }
+        entry.tap()
+        XCTAssertTrue(app.buttons["storageconfig.nas"].waitForExistence(timeout: 10))
+        snapshot("73-datacenter-storage")
+
+        app.buttons["storageconfig.add"].tap()
+        app.buttons["NFS"].firstMatch.tap()
+        let id = app.textFields["storageconfig.id"]
+        XCTAssertTrue(id.waitForExistence(timeout: 5))
+        id.tap()
+        id.typeText("media")
+        let server = app.textFields["storage.server"]
+        server.tap()
+        server.typeText("10.0.10.5")
+        app.buttons["storage.scan"].tap()
+        let export = app.buttons["scan.export"]
+        XCTAssertTrue(export.waitForExistence(timeout: 10))
+        export.tap()
+        app.buttons["/mnt/tank/media (10.0.10.0/24)"].firstMatch.tap()
+        snapshot("74-datacenter-storage-nfs")
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["storageconfig.media"].waitForExistence(timeout: 10))
+
+        app.buttons["storageconfig.nas"].tap()
+        let enabled = app.switches["Enabled"]
+        XCTAssertTrue(enabled.waitForExistence(timeout: 5))
+        enabled.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        app.buttons["save"].tap()
+        let nas = app.buttons["storageconfig.nas"]
+        XCTAssertTrue(nas.waitForExistence(timeout: 10))
+        expectation(for: NSPredicate(format: "label CONTAINS 'Disabled'"), evaluatedWith: nas)
+        waitForExpectations(timeout: 10)
+    }
+
     private func snapshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

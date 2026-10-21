@@ -120,6 +120,15 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
   - The file part is named `filename`; a separate `filename` field must not be sent.
 - After the upload, the node copies the file into place as a task (`imgcopy`), which also checks the checksum.
 
+## Datacenter
+
+The overview has a Datacenter section for settings that apply to all nodes; it shows for standalone nodes too, as Proxmox keeps them the same way.
+
+- Storage definitions (`/storage`) use `StorageConfigDraft`, which serializes like `OptionsDraft` and sends only changes, with `delete` for cleared settings and the `digest` of the list the form was opened with. `PUT` refuses the settings that locate the data (path, server, export, share, datastore, volume group, thin pool, pool), so those are only editable when adding a storage. Passwords are write-only: an empty field keeps the stored one.
+- Directory, NFS, SMB/CIFS, Proxmox Backup Server, LVM, LVM-Thin, ZFS and Btrfs storages can be added and edited; others are shown read-only. The `scan` endpoints fill in NFS exports, SMB shares, PBS datastores, volume groups, thin pools and ZFS pools; scans run on the first online node.
+- A disabled storage disappears from `/cluster/resources`, so the overview only lists it under Datacenter → Storage.
+- Backup retention (`prune-backups`) is set per storage; with nothing set, all backups are kept.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

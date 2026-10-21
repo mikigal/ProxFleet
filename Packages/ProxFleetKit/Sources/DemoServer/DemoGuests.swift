@@ -23,7 +23,8 @@ extension DemoState {
     func handleGuestOrTask(_ method: HTTPMethod, path: String, parameters: [String: String], user: String) -> HTTPResponse? {
         settleTasks()
         let parts = path.split(separator: "/").map(String.init)
-        if let response = handleCreation(method, parts: parts, parameters: parameters, user: user) {
+        if let response = handleCreation(method, parts: parts, parameters: parameters, user: user)
+            ?? handleStorageConfig(method, parts: parts, parameters: parameters, user: user) {
             return response
         }
 
@@ -64,16 +65,6 @@ extension DemoState {
         }
 
         switch (method, Array(parts.dropFirst(2))) {
-        case (.get, ["storage"]):
-            let content = parameters["content"] ?? ""
-            let storages: [JSONValue] = [
-                ["storage": "local", "type": "dir", "content": "iso,vztmpl,backup,snippets", "active": 1, "shared": 0, "avail": 82_000_000_000, "total": 107_000_000_000],
-                ["storage": "local-lvm", "type": "lvmthin", "content": "images,rootdir", "active": 1, "shared": 0, "avail": 520_000_000_000, "total": 858_000_000_000],
-            ]
-            return success(.array(storages.filter { storage in
-                guard !content.isEmpty, case .object(let fields) = storage, case .string(let types)? = fields["content"] else { return true }
-                return types.split(separator: ",").contains { $0 == content }
-            }))
         case (.get, ["capabilities", "qemu", "machines"]):
             return success(.array(["10.0+pve1", "9.2+pve1", "9.0", "8.1"].flatMap { version in
                 ["q35", "i440fx"].map { type in ["id": .string("pc-\(type)-\(version)"), "type": .string(type), "version": .string(version)] }
@@ -226,7 +217,7 @@ extension DemoState {
         return audit + [
             "VM.PowerMgmt", "VM.Console", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.CDROM",
             "VM.Config.Network", "VM.Config.HWType", "VM.Config.Options", "VM.Config.Cloudinit", "VM.Allocate", "VM.Clone",
-            "VM.Snapshot", "VM.Snapshot.Rollback", "VM.Backup", "VM.Migrate", "Datastore.AllocateSpace", "Sys.Modify", "Sys.PowerMgmt", "Sys.Console",
+            "VM.Snapshot", "VM.Snapshot.Rollback", "VM.Backup", "VM.Migrate", "Datastore.AllocateSpace", "Datastore.Allocate", "Datastore.AllocateTemplate", "Sys.Modify", "Sys.PowerMgmt", "Sys.Console",
         ]
     }
 

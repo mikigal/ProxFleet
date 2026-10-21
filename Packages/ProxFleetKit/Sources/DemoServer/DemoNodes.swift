@@ -24,7 +24,8 @@ extension DemoState {
         settleNodeReboots()
         if let response = handleNodeSystem(method, node: node, rest: rest, parameters: parameters, user: user)
             ?? handleDisks(method, node: node, rest: rest, parameters: parameters, user: user)
-            ?? handleNodeAdministration(method, node: node, rest: rest, parameters: parameters, user: user) {
+            ?? handleNodeAdministration(method, node: node, rest: rest, parameters: parameters, user: user)
+            ?? (method == .get ? handleScan(node: node, rest: rest, parameters: parameters) : nil) {
             return response
         }
         let isOnline = cluster.nodes.first { $0.name == node }?.isOnline ?? false

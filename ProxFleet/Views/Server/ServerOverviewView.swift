@@ -38,6 +38,14 @@ struct ServerOverviewView: View {
                 guestSection("Containers", guests: snapshot.containers.filter { !$0.isTemplate }, showsNode: showsNode)
                 guestSection("Templates", guests: snapshot.guests.filter(\.isTemplate), showsNode: showsNode)
                 StorageSection(connection: connection, snapshot: snapshot)
+                Section("Datacenter") {
+                    NavigationLink {
+                        DatacenterStorageView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Storage", systemImage: "externaldrive.badge.plus", color: .purple)
+                    }
+                    .accessibilityIdentifier("datacenter.storage")
+                }
             }
         }
         .refreshable { await connection.refresh() }

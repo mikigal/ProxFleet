@@ -64,6 +64,8 @@ actor DemoState {
     var pendingNetworks: [String: [DemoInterface]] = [:]
     /// Disks and storage built on them, by node, once changed in demo mode.
     var diskLayouts: [String: DemoDiskLayout] = [:]
+    /// The datacenter's storage definitions.
+    var storageConfigs: [DemoStorageConfig]
     /// Repositories enabled or disabled by `path#index`, and standard repositories added, by node.
     var repositoryStates: [String: [String: Bool]] = [:]
     var addedRepositories: [String: [String]] = [:]
@@ -78,6 +80,7 @@ actor DemoState {
         self.cluster = cluster
         backups = Self.sampleBackups(for: cluster, now: started)
         files = Self.sampleFiles(now: started)
+        storageConfigs = DemoStorageConfig.defaults(for: cluster)
     }
 
     func takeConsole(ticket: String) -> DemoConsoleRequest? {
@@ -237,15 +240,13 @@ actor DemoState {
         }
 
         for node in cluster.nodes {
-            for (storage, plugin, content, total, used) in [
-                ("local", "dir", "iso,vztmpl,backup", 100.0, 23.0),
-                ("local-lvm", "lvmthin", "images,rootdir", 800.0, 310.0),
-            ] {
+            for config in storageConfigs where config.isAvailable(on: node.name) {
+                let usage = config.usageGiB
                 items.append([
-                    "id": .string("storage/\(node.name)/\(storage)"), "type": "storage", "storage": .string(storage),
-                    "node": .string(node.name), "status": node.isOnline ? "available" : "unknown", "plugintype": .string(plugin),
-                    "content": .string(content), "shared": 0,
-                    "maxdisk": .int(Int(total * gib)), "disk": .int(Int(used * gib)),
+                    "id": .string("storage/\(node.name)/\(config.id)"), "type": "storage", "storage": .string(config.id),
+                    "node": .string(node.name), "status": node.isOnline ? "available" : "unknown", "plugintype": .string(config.type),
+                    "content": .string(config.content.joined(separator: ",")), "shared": .int(config.isShared ? 1 : 0),
+                    "maxdisk": .int(Int(usage.total * gib)), "disk": .int(Int(usage.used * gib)),
                 ])
             }
         }
