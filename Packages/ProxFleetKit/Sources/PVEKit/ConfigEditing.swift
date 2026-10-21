@@ -86,10 +86,19 @@ public struct StorageInfo: Decodable, Sendable, Equatable, Identifiable, Hashabl
     }
 }
 
-/// A volume on a storage, e.g. an ISO image.
+/// A volume on a storage, e.g. an ISO image, from `GET /nodes/{node}/storage/{storage}/content`.
 public struct StorageVolume: Decodable, Sendable, Equatable, Identifiable, Hashable {
     public var volumeID: String
     public var size: Int64?
+    /// `iso`, `vztmpl`, `backup`, `images`, `rootdir`, `snippets` or `import`.
+    public var content: String?
+    /// `iso`, `raw`, `qcow2`, `subvol`, `tzst`…
+    public var format: String?
+    public var created: Date?
+    /// The guest a disk image or backup belongs to.
+    public var vmid: Int?
+    public var notes: String?
+    public var isProtected: Bool
 
     public var id: String { volumeID }
     /// The file name without the storage prefix: `local:iso/x.iso` → `x.iso`.
@@ -100,7 +109,14 @@ public struct StorageVolume: Decodable, Sendable, Equatable, Identifiable, Hasha
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
         volumeID = container.lossyString(AnyCodingKey("volid")) ?? ""
-        size = container.lossyDouble(AnyCodingKey("size")).map { Int64($0) }
+        // Some storages only know an upper bound.
+        size = (container.lossyDouble(AnyCodingKey("size")) ?? container.lossyDouble(AnyCodingKey("approximate-size"))).map { Int64($0) }
+        content = container.lossyString(AnyCodingKey("content"))
+        format = container.lossyString(AnyCodingKey("format"))
+        created = container.lossyInt(AnyCodingKey("ctime")).map { Date(timeIntervalSince1970: TimeInterval($0)) }
+        vmid = container.lossyInt(AnyCodingKey("vmid"))
+        notes = container.lossyString(AnyCodingKey("notes"))?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        isProtected = container.lossyBool(AnyCodingKey("protected")) ?? false
     }
 }
 

@@ -107,6 +107,19 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
 - Repositories: `GET .../apt/repositories` returns the parsed files plus `infos` (origin and warnings by file and index) and the standard repositories with a `status` (enabled, disabled, or absent when not configured). Repositories can only be enabled or disabled (`POST`, by path and index) or added from the standard list (`PUT` with a handle), both with the common `digest`. The status at the top follows the web interface: a missing Proxmox repository, or the enterprise repository without a subscription (`GET .../subscription`).
 - Certificates: uploading a custom certificate (`POST .../certificates/custom` with `force` and `restart`) makes pveproxy serve it right away, which would break the pinned connection. The response carries the new SHA-256 fingerprint, received over the connection that is still trusted, so the app pins it before the restart completes (`ServerConnection.trustFingerprint`). Removing the custom certificate pins the default `pve-ssl.pem` the same way. pveproxy restarts gracefully, so for a few seconds some connections still get the previous certificate; the app keeps trusting both. A live test replaces the test server's certificate with a throwaway one and back.
 
+## Storage
+
+`StorageDetail` (FleetCore) loads `GET .../storage/{storage}/status` and the whole content list once, and the screen filters it by content type. Shared storages are listed once in the overview, through the first node that has them.
+
+- Deleting a volume is a task. Disks still used by a guest fail with the server's message; backups have their own screen with protection and restore.
+- Download from URL: `GET .../query-url-metadata` fills in the file name and size, `POST .../download-url` starts a task on the node. The VM wizard offers it next to the ISO picker and selects the image once the task finishes.
+- Upload: `ProxmoxSession.upload` writes a `multipart/form-data` body to a temporary file (`MultipartBody`), copying the source in chunks so ISO images are never held in memory, and `FileUploadTransport` sends it with progress. pveproxy is strict about the request:
+  - It needs `Content-Length`; chunked bodies are not accepted.
+  - URLSession upload tasks add the headers of resumable uploads (`Upload-Draft-Interop-Version`, `Upload-Complete`), which pveproxy answers with 400 or a stalled request, so the body goes as the stream of a data task instead.
+  - Fields are read in order: `checksum-algorithm` must come before `checksum`, or the upload fails with 400 and no message.
+  - The file part is named `filename`; a separate `filename` field must not be sent.
+- After the upload, the node copies the file into place as a task (`imgcopy`), which also checks the checksum.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

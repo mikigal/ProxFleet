@@ -365,6 +365,12 @@ private struct NodeMoreList: View {
                 }
                 .accessibilityIdentifier("more.disks")
                 NavigationLink {
+                    NodeStorageList(detail: detail)
+                } label: {
+                    MoreRow(title: "Storage", systemImage: "externaldrive", color: .purple)
+                }
+                .accessibilityIdentifier("more.storage")
+                NavigationLink {
                     NodeSettingLoader(detail: detail, value: detail.dns) { NodeDNSEditor(detail: detail, dns: $0) }
                 } label: {
                     MoreRow(title: "DNS", systemImage: "globe", color: .teal, hint: detail.dns?.servers.first { !$0.isEmpty })
@@ -615,5 +621,25 @@ private struct NodeTaskHistory: View {
         .navigationTitle("Task History")
         .refreshable { errorMessage = await detail.loadTasks() }
         .task { errorMessage = await detail.loadTasks() }
+    }
+}
+
+/// The storages available on this node.
+private struct NodeStorageList: View {
+    let detail: NodeDetail
+
+    var body: some View {
+        List {
+            if let snapshot = detail.connection.snapshot {
+                StorageSection(connection: detail.connection, snapshot: snapshot, node: detail.node)
+            }
+        }
+        .overlay {
+            if detail.connection.snapshot?.storages.contains(where: { $0.node == detail.node }) != true {
+                ContentUnavailableView("No Storage", systemImage: "externaldrive")
+            }
+        }
+        .navigationTitle("Storage")
+        .refreshable { await detail.connection.refresh() }
     }
 }

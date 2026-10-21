@@ -44,6 +44,9 @@ extension DemoState {
         }
         guard parts.count >= 3, parts[0] == "nodes" else { return nil }
         let node = parts[1]
+        if let response = handleStorage(method, node: node, rest: Array(parts.dropFirst(2)), parameters: parameters, user: user) {
+            return response
+        }
         if let response = handleBackups(method, node: node, rest: Array(parts.dropFirst(2)), parameters: parameters, user: user) {
             return response
         }
@@ -71,16 +74,6 @@ extension DemoState {
                 guard !content.isEmpty, case .object(let fields) = storage, case .string(let types)? = fields["content"] else { return true }
                 return types.split(separator: ",").contains { $0 == content }
             }))
-        case (.get, ["storage", "local", "content"]):
-            let volumes: [(content: String, volume: JSONValue)] = [
-                ("iso", ["volid": "local:iso/debian-13.1.0-amd64-netinst.iso", "size": 790_626_304, "format": "iso"]),
-                ("iso", ["volid": "local:iso/ubuntu-24.04.3-live-server-amd64.iso", "size": 3_213_064_192, "format": "iso"]),
-                ("vztmpl", ["volid": "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst", "size": 128_974_848, "format": "tzst"]),
-                ("snippets", ["volid": "local:snippets/hookscript.pl", "size": 1_204, "format": "snippet"]),
-                ("snippets", ["volid": "local:snippets/user-data.yaml", "size": 512, "format": "snippet"]),
-            ]
-            let content = parameters["content"] ?? "iso"
-            return success(.array(volumes.filter { $0.content == content }.map(\.volume) + (content == "vztmpl" ? downloadedTemplateVolumes() : [])))
         case (.get, ["capabilities", "qemu", "machines"]):
             return success(.array(["10.0+pve1", "9.2+pve1", "9.0", "8.1"].flatMap { version in
                 ["q35", "i440fx"].map { type in ["id": .string("pc-\(type)-\(version)"), "type": .string(type), "version": .string(version)] }

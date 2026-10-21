@@ -1,0 +1,70 @@
+import DemoServer
+@testable import FleetCore
+import Foundation
+import ProxmoxCore
+import PVEKit
+import Testing
+
+@MainActor
+struct StorageDetailTests {
+    private func connection(username: String = "root") async throws -> ServerConnection {
+        let transport = DemoTransport(cluster: .homelab)
+        let environment = FleetEnvironment(profiles: InMemoryServerProfileStore(), credentials: InMemoryCredentialStore()) { _ in transport }
+        let fleet = Fleet(environment: environment)
+        let profile = fleet.addSaved(ServerProfile(name: "lab", addresses: [ServerAddress(host: "demo", port: 8006)], username: username, realm: "pve"), password: "pw")
+        let connection = try #require(fleet.connection(for: profile.id))
+        await connection.connect()
+        try #require(connection.state == .connected)
+        return connection
+    }
+
+    @Test func browsesContentByType() async throws {
+        let detail = StorageDetail(node: "pve1", storage: "local", connection: try await connection())
+        await detail.load()
+        #expect(detail.status?.contentTypes == [.iso, .vztmpl, .backup, .snippets, .import])
+        #expect(detail.volumes(of: .iso).map(\.fileName) == ["debian-13.1.0-amd64-netinst.iso", "ubuntu-24.04.3-live-server-amd64.iso"])
+        #expect(detail.volumes(of: .backup).map(\.vmid) == [100, 100, 101, 200, 202])
+        #expect(detail.volumes(of: .backup).contains { $0.isProtected })
+
+        let disks = StorageDetail(node: "pve1", storage: "local-lvm", connection: detail.connection)
+        await disks.load()
+        #expect(disks.volumes(of: .images).map(\.vmid) == [100, 101, 104, 9000])
+        #expect(disks.volumes(of: .rootdir).map(\.vmid) == [200, 202])
+        let disk = try #require(disks.volumes(of: .images).first)
+        await #expect(throws: ConfigUpdateError.self) { try await disks.delete(disk) }
+    }
+
+    @Test func downloadsUploadsAndDeletes() async throws {
+        let detail = StorageDetail(node: "pve1", storage: "local", connection: try await connection())
+        await detail.load()
+        var draft = StorageFileDraft(content: .iso)
+        draft.url = "https://cdimage.example.org/debian-13.2.0-amd64-netinst.iso"
+        draft.fileName = try await detail.metadata(of: draft.url, verifyCertificates: true).fileName ?? ""
+        #expect(draft.fileName == "debian-13.2.0-amd64-netinst.iso")
+        let task = try #require(try await detail.download(draft))
+        #expect(await detail.connection.tasks.result(of: task.id) == .succeeded)
+        await detail.load()
+        #expect(detail.volumes(of: .iso).contains { $0.fileName == "debian-13.2.0-amd64-netinst.iso" })
+
+        let file = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).iso")
+        try Data(repeating: 7, count: 2048).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        var upload = StorageFileDraft(content: .iso)
+        upload.fileName = "uploaded tools.iso"
+        try await detail.upload(file, as: upload)
+        #expect(detail.upload == nil)
+        let uploaded = try #require(detail.volumes(of: .iso).first { $0.fileName == "uploaded tools.iso" })
+        await #expect(throws: ConfigUpdateError.self) { try await detail.upload(file, as: upload) }
+
+        try await detail.delete(uploaded)
+        #expect(!detail.volumes(of: .iso).contains { $0.fileName == "uploaded tools.iso" })
+    }
+
+    @Test func auditorCannotChangeContent() async throws {
+        let detail = StorageDetail(node: "pve1", storage: "local", connection: try await connection(username: "auditor"))
+        await detail.load()
+        #expect(!detail.can("Datastore.AllocateSpace"))
+        let iso = try #require(detail.volumes(of: .iso).first)
+        await #expect(throws: ConfigUpdateError.self) { try await detail.delete(iso) }
+    }
+}

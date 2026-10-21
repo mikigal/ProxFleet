@@ -32,14 +32,6 @@ extension DemoState {
         }
     }
 
-    /// Templates downloaded in this session, available once their download task finished.
-    func downloadedTemplateVolumes() -> [JSONValue] {
-        let now = Date()
-        return downloadedTemplates.filter { $0.availableAt <= now }.map { download in
-            ["volid": .string(download.volume), "size": 134_217_728, "format": "tzst"]
-        }
-    }
-
     private static let applianceTemplates: [(file: String, section: String, headline: String, description: String)] = [
         ("debian-13-standard_13.1-2_amd64.tar.zst", "system", "Debian 13 (Standard)", "A small Debian Trixie system including all standard packages."),
         ("ubuntu-24.04-standard_24.04-2_amd64.tar.zst", "system", "Ubuntu 24.04 (Standard)", "A small Ubuntu 24.04 Noble Numbat system including all standard packages."),

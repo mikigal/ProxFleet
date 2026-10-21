@@ -41,23 +41,27 @@ extension DemoState {
         return "local:backup/vzdump-\(kind.rawValue)-\(vmid)-\(formatter.string(from: date)).\(kind == .qemu ? "vma" : "tar").zst"
     }
 
+    /// Finished backups on a storage, as `GET .../content` lists them.
+    func backupVolumes(storage: String, vmid: Int?) -> [JSONValue] {
+        let now = Date()
+        return backups.filter { $0.availableAt <= now && $0.volume.hasPrefix(storage + ":") && (vmid == nil || $0.vmid == vmid) }.map { backup in
+            var entry: [String: JSONValue] = [
+                "volid": .string(backup.volume), "vmid": .int(backup.vmid), "subtype": .string(backup.kind.rawValue),
+                "ctime": .int(Int(backup.date.timeIntervalSince1970)), "size": .int(backup.size), "content": "backup",
+                "format": .string(backup.kind == .qemu ? "vma.zst" : "tar.zst"),
+            ]
+            if !backup.notes.isEmpty { entry["notes"] = .string(backup.notes) }
+            if backup.isProtected { entry["protected"] = 1 }
+            return .object(entry)
+        }
+    }
+
     /// Node-level backup routes: `vzdump`, `extractconfig` and the backup volumes of the storage. nil for other paths.
     func handleBackups(_ method: HTTPMethod, node: String, rest: [String], parameters: [String: String], user: String) -> HTTPResponse? {
         let now = Date()
         switch (method, rest) {
         case (.get, let path) where path.count == 3 && path[0] == "storage" && path[2] == "content" && parameters["content"] == "backup":
-            let vmid = parameters["vmid"].flatMap(Int.init)
-            let visible = backups.filter { $0.availableAt <= now && $0.volume.hasPrefix(path[1] + ":") && (vmid == nil || $0.vmid == vmid) }
-            return success(.array(visible.map { backup in
-                var entry: [String: JSONValue] = [
-                    "volid": .string(backup.volume), "vmid": .int(backup.vmid), "subtype": .string(backup.kind.rawValue),
-                    "ctime": .int(Int(backup.date.timeIntervalSince1970)), "size": .int(backup.size), "content": "backup",
-                    "format": .string(backup.kind == .qemu ? "vma.zst" : "tar.zst"),
-                ]
-                if !backup.notes.isEmpty { entry["notes"] = .string(backup.notes) }
-                if backup.isProtected { entry["protected"] = 1 }
-                return .object(entry)
-            }))
+            return success(.array(backupVolumes(storage: path[1], vmid: parameters["vmid"].flatMap(Int.init))))
 
         case (_, let path) where path.count >= 4 && path[0] == "storage" && path[2] == "content":
             // The volume ID contains a slash, so it arrives split over several path segments.

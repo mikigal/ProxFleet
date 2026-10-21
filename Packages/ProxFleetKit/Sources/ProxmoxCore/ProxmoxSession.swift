@@ -7,7 +7,7 @@ import Foundation
 public actor ProxmoxSession {
     public nonisolated let address: ServerAddress
     public nonisolated let product: ProxmoxProduct
-    private let transport: any HTTPTransport
+    let transport: any HTTPTransport
     nonisolated let transportForWebSockets: (any WebSocketTransport)?
     private let now: @Sendable () -> Date
 
@@ -103,6 +103,17 @@ public actor ProxmoxSession {
 
     /// Sends an authenticated API request, renewing the ticket first when it is due.
     public func send<Response>(_ request: APIRequest<Response>) async throws -> Response {
+        try await prepareAuthenticatedRequest()
+        do {
+            return try await perform(request, authenticated: true)
+        } catch ProxmoxError.unauthorized(let message) {
+            ticket = nil
+            throw ProxmoxError.unauthorized(message)
+        }
+    }
+
+    /// Checks the ticket before an authenticated request and renews it when it is due.
+    func prepareAuthenticatedRequest() async throws {
         guard let current = ticket else { throw ProxmoxError.notAuthenticated }
         if current.isExpired(at: now()) {
             ticket = nil
@@ -115,12 +126,6 @@ public actor ProxmoxSession {
             } catch ProxmoxError.unauthorized(let message) {
                 throw ProxmoxError.unauthorized(message)
             } catch {}
-        }
-        do {
-            return try await perform(request, authenticated: true)
-        } catch ProxmoxError.unauthorized(let message) {
-            ticket = nil
-            throw ProxmoxError.unauthorized(message)
         }
     }
 

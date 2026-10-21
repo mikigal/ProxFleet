@@ -221,3 +221,63 @@ final class URLSessionWebSocket: WebSocketConnection {
         return error
     }
 }
+
+extension URLSessionTransport: FileUploadTransport {
+    /// Streams the body from a file. Certificate checks go through the session's trust delegate as usual.
+    public func upload(_ request: HTTPRequest, bodyFile: URL, progress: @escaping @Sendable (Int64, Int64) -> Void) async throws -> HTTPResponse {
+        var urlRequest = URLRequest(url: request.url)
+        urlRequest.httpMethod = request.method.rawValue
+        urlRequest.httpShouldHandleCookies = false
+        for (name, value) in request.headers {
+            urlRequest.setValue(value, forHTTPHeaderField: name)
+        }
+        // A data task with a body stream, not an upload task: upload tasks add the headers of resumable uploads
+        // (`Upload-Draft-Interop-Version`, `Upload-Complete`), which pveproxy answers with 400 or a stalled request.
+        // pveproxy does not accept chunked bodies either, so the length goes up front.
+        guard let size = try? FileManager.default.attributesOfItem(atPath: bodyFile.path)[.size] as? Int64 else {
+            throw ProxmoxError.transport("The file to upload could not be read.")
+        }
+        urlRequest.setValue(String(size), forHTTPHeaderField: "Content-Length")
+        urlRequest.httpBodyStream = InputStream(url: bodyFile)
+        let host = request.url.host ?? ""
+        do {
+            let (data, response) = try await session.data(for: urlRequest, delegate: UploadProgressDelegate(file: bodyFile, progress: progress))
+            guard let http = response as? HTTPURLResponse else {
+                throw ProxmoxError.invalidResponse("not an HTTP response")
+            }
+            var headers: [String: String] = [:]
+            for (key, value) in http.allHeaderFields {
+                headers[String(describing: key)] = String(describing: value)
+            }
+            return HTTPResponse(statusCode: http.statusCode, headers: headers, body: data)
+        } catch let error as URLError {
+            if let rejected = trust.takeRejection(for: host) {
+                throw ProxmoxError.untrustedCertificate(rejected)
+            }
+            if error.code == .cancelled, Task.isCancelled {
+                throw CancellationError()
+            }
+            throw ProxmoxError.transport(Self.describe(error))
+        }
+    }
+}
+
+/// Reports the bytes sent by one upload and reopens the body when the system needs to send it again.
+/// Authentication challenges fall through to the session's delegate.
+private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+    private let file: URL
+    private let progress: @Sendable (Int64, Int64) -> Void
+
+    init(file: URL, progress: @escaping @Sendable (Int64, Int64) -> Void) {
+        self.file = file
+        self.progress = progress
+    }
+
+    func urlSession(_ session: URLSession, needNewBodyStreamForTask task: URLSessionTask) async -> InputStream? {
+        InputStream(url: file)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        progress(totalBytesSent, totalBytesExpectedToSend)
+    }
+}

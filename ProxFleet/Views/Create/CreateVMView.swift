@@ -46,6 +46,7 @@ struct CreateVMView: View {
     let onCreated: (GuestReference) -> Void
     @State private var pools: [ResourcePool] = []
     @State private var draft: VMCreationDraft
+    @State private var isoReloadID = 0
     @State private var cpuModels: [CPUModel] = []
 
     init(connection: ServerConnection, onCreated: @escaping (GuestReference) -> Void) {
@@ -102,12 +103,19 @@ struct CreateVMView: View {
     @ViewBuilder
     private func operatingSystem(_ errors: [String: String]) -> some View {
         Section {
-            VolumePicker(title: "ISO Image", noneTitle: "No Media", connection: connection, node: draft.node, content: "iso", selection: $draft.isoVolume)
+            VolumePicker(title: "ISO Image", noneTitle: "No Media", connection: connection, node: draft.node, content: "iso", selection: $draft.isoVolume, reloadID: isoReloadID)
             FieldError(message: errors["ide2"])
+            NavigationLink("Download from URL") {
+                ISODownloadView(connection: connection, node: draft.node) { volume in
+                    isoReloadID += 1
+                    draft.isoVolume = volume
+                }
+            }
+            .accessibilityIdentifier("iso.download")
         } header: {
             Text("Installation Media")
         } footer: {
-            Text("Upload ISO images in the web interface or download them to a storage with ISO content.")
+            Text("The node downloads the image itself and selects it here when done. Uploads from this device are on the storage screen.")
         }
         Section {
             OSTypePicker(connection: connection, kind: .virtualMachine, selection: Binding(get: { draft.osType }, set: { draft.applyDefaults(for: $0) }))

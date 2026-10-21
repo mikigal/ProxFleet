@@ -37,6 +37,7 @@ struct ServerOverviewView: View {
                 guestSection("Virtual Machines", guests: snapshot.virtualMachines.filter { !$0.isTemplate }, showsNode: showsNode)
                 guestSection("Containers", guests: snapshot.containers.filter { !$0.isTemplate }, showsNode: showsNode)
                 guestSection("Templates", guests: snapshot.guests.filter(\.isTemplate), showsNode: showsNode)
+                StorageSection(connection: connection, snapshot: snapshot)
             }
         }
         .refreshable { await connection.refresh() }

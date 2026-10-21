@@ -26,9 +26,10 @@ Early development. What works now:
 - Node settings: network interfaces (bridges, bonds, VLANs; pending changes with apply and revert), DNS, hosts and time zone
 - Disks: list with partitions, SMART values, wipe and GPT initialization; LVM, LVM-thin, ZFS (with pool status) and directories, created on unused disks or removed
 - APT repositories (status, enable and disable, add standard ones) and certificates (view, upload a custom one, remove it)
+- Storage: usage and content by type (ISO images, templates, backups, VM disks, CT volumes, snippets), upload from Files with progress and checksum, download from a URL (also from the VM wizard), delete
 - Demo mode with a built-in sample cluster, including working demo consoles
 
-Next up: datacenter settings (storage, backup jobs, users and permissions, ACME).
+Next up: datacenter settings (storage configuration, backup jobs, users and permissions, ACME).
 
 ## Requirements
 

@@ -4,6 +4,7 @@ import ProxmoxCore
 import ProxmoxURLSession
 import ProxmoxConsole
 import PVEKit
+import Synchronization
 import Testing
 
 /// Settings from the env file named by `PROXFLEET_TEST_SERVER_ENV` (see `Config/TestServer.example.env`).
@@ -663,6 +664,53 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.directoryMounts(node: node)).contains { $0.name == "pflivedir" })
         #expect(try await spareDisks(session, node: node).count == spares.count)
         #expect(try await !session.send(PVE.storages(node: node)).contains { $0.storage.hasPrefix("pflive") })
+    }
+
+    /// Downloads a 2.5 MB ISO from the internet to `local`, uploads a generated one with a checksum, and deletes both.
+    @Test func storageDownloadUploadAndDelete() async throws {
+        let (session, node) = try await rootSession()
+        let status = try await session.send(PVE.storageStatus(node: node, storage: "local"))
+        #expect(status.isActive && status.contentTypes.contains(.iso))
+        let disks = try await session.send(PVE.storageVolumes(node: node, storage: "local-lvm", content: .images))
+        #expect(disks.contains { $0.vmid == 100 && $0.format == "raw" })
+
+        var download = StorageFileDraft(content: .iso)
+        download.url = "https://boot.netboot.xyz/ipxe/netboot.xyz.iso"
+        let metadata = try await session.send(PVE.urlMetadata(node: node, url: download.url))
+        #expect(metadata.fileName == "netboot.xyz.iso" && (metadata.size ?? 0) > 0)
+        download.fileName = "proxfleet-live-download.iso"
+        #expect(download.problems().isEmpty)
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.downloadURL(node: node, storage: "local", download)))?.succeeded == true)
+
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appending(path: "source.iso")
+        let payload = Data((0..<3_000_000).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+        try payload.write(to: file)
+        var upload = StorageFileDraft(content: .iso)
+        upload.fileName = "proxfleet-live-upload.iso"
+        upload.checksum = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+        let progress = Mutex<Int64>(0)
+        let upid = try await session.upload(PVE.uploadFile(node: node, storage: "local", upload), fileField: "filename",
+                                            fileName: upload.fileName, source: file) { sent, _ in progress.withLock { $0 = sent } }
+        #expect(progress.withLock { $0 } > 3_000_000)
+        #expect(try await finishTask(session, node: node, upid)?.succeeded == true)
+
+        let isos = try await session.send(PVE.storageVolumes(node: node, storage: "local", content: .iso))
+        #expect(isos.first { $0.fileName == "proxfleet-live-upload.iso" }?.size == 3_000_000)
+        #expect(isos.contains { $0.fileName == "proxfleet-live-download.iso" })
+        // A wrong checksum is refused once the upload arrived.
+        upload.checksum = String(repeating: "0", count: 64)
+        upload.fileName = "proxfleet-live-bad.iso"
+        let bad = try await session.upload(PVE.uploadFile(node: node, storage: "local", upload), fileField: "filename",
+                                           fileName: upload.fileName, source: file) { _, _ in }
+        #expect(try await finishTask(session, node: node, bad)?.succeeded == false)
+
+        for name in ["proxfleet-live-upload.iso", "proxfleet-live-download.iso"] {
+            #expect(try await finishTask(session, node: node, try await session.send(PVE.deleteVolume(node: node, storage: "local", volume: "local:iso/\(name)")))?.succeeded == true)
+        }
+        #expect(try await !session.send(PVE.storageVolumes(node: node, storage: "local", content: .iso)).contains { $0.fileName.hasPrefix("proxfleet-live") })
     }
 
     /// Disables and enables the Ceph repository again, and reads the subscription.

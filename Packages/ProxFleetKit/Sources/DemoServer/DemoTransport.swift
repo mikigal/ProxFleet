@@ -48,6 +48,8 @@ actor DemoState {
     var snapshots: [Int: [DemoSnapshot]] = [:]
     var currentSnapshot: [Int: String] = [:]
     var backups: [DemoBackup]
+    /// ISO images, templates, snippets and uploads on `local`.
+    var files: [DemoFile]
     /// Services started or stopped in demo mode, by `node/service`.
     var serviceStates: [String: Bool] = [:]
     /// Nodes rebooting until a time, and when they last booted.
@@ -75,6 +77,7 @@ actor DemoState {
     init(cluster: DemoCluster) {
         self.cluster = cluster
         backups = Self.sampleBackups(for: cluster, now: started)
+        files = Self.sampleFiles(now: started)
     }
 
     func takeConsole(ticket: String) -> DemoConsoleRequest? {
