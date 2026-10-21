@@ -42,6 +42,13 @@ Most actions return a task ID (UPID) instead of a result. `TaskCenter`, owned by
 
 `GuestDetail` loads status, configuration, performance history (`rrddata`), IP addresses (QEMU guest agent or container interfaces), the user's privileges on `/vms/{vmid}` and recent tasks in parallel. A paused VM reports `status: running` with `qmpstatus: paused`, so `GuestStatus.powerState` combines both. Power actions are offered according to state and the `VM.PowerMgmt` privilege, as in the web interface.
 
+## Consoles
+
+Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.
+
+- **Containers and node shells** use `termproxy`. After `user:ticket\n` and the server's `OK`, input goes as `0:<bytes>:<data>`, resizes as `1:<cols>:<rows>:`, keep-alives as `2`, all in text frames. Output is raw terminal bytes, rendered by SwiftTerm. SwiftTerm is pinned to 1.11.x because later versions need a build plugin approval and the Metal toolchain.
+- **VMs** use `vncproxy` with `generate-password`, then RFB 3.8 with VNC authentication (DES, implemented in `DES.swift` to keep the module portable). `VNCClient` asks for 32-bit BGRX pixels and the Raw, CopyRect and DesktopSize encodings, which QEMU always supports. All input goes through one queue so keys and clicks keep their order. Characters that need Shift on a US layout are sent with Shift held.
+
 ## Secrets
 
 - Passwords (only when the user chooses to remember them) and tickets are stored in the Keychain with `WhenUnlockedThisDeviceOnly`.
@@ -61,4 +68,4 @@ Verified on Proxmox VE 9.2: `extjs` errors return HTTP 200 with `success: 0` and
 
 - Generating endpoint definitions and parameter types from the Proxmox API schema (`apidoc.js`), and a generic form that can edit any endpoint from its schema. Hand-made screens for the important flows, generated forms for everything else.
 - Task tracking (UPID) shared by all long-running actions.
-- Console: SwiftTerm for container and node shells, noVNC for virtual machines at first.
+- Compressed VNC encodings (ZRLE or Tight) for slow connections.

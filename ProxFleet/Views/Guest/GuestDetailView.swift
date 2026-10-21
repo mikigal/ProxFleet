@@ -10,6 +10,7 @@ struct GuestDetailView: View {
     @State private var metric: PerformanceMetric = .cpu
     @State private var tab: GuestTab = .summary
     @State private var terminal: TerminalConsoleModel?
+    @State private var vnc: VNCConsoleModel?
     @State private var isKeyboardVisible = false
 
     init(reference: GuestReference, connection: ServerConnection) {
@@ -33,7 +34,10 @@ struct GuestDetailView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 isKeyboardVisible = false
             }
-            .onDisappear { terminal?.disconnect() }
+            .onDisappear {
+                terminal?.disconnect()
+                vnc?.disconnect()
+            }
             .navigationTitle(detail.name)
             .navigationSubtitle(subtitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -134,8 +138,13 @@ struct GuestDetailView: View {
                         terminal = TerminalConsoleModel(target: .container(detail.reference), session: detail.connection.apiSession)
                     }
             }
+        } else if let vnc {
+            VNCConsoleView(model: vnc)
         } else {
-            ContentUnavailableView("Console", systemImage: "display", description: Text("The VM console is coming next."))
+            Color.black
+                .onAppear {
+                    vnc = VNCConsoleModel(guest: detail.reference, session: detail.connection.apiSession)
+                }
         }
     }
 

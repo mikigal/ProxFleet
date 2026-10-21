@@ -17,9 +17,10 @@ Early development. What works now:
 - VM and container details: usage, performance charts, IP addresses, hardware and options
 - Power actions (start, shut down, reboot, stop, reset, pause, resume, hibernate) with confirmation, hidden without the `VM.PowerMgmt` privilege
 - Task tracking: progress of started actions, recent tasks of the server, task logs
+- Consoles: a native VNC client for VMs (zoom, full screen, special keys, hardware keyboard) and a terminal for containers
 - Demo mode with a built-in sample cluster
 
-Next up: console, configuration editing and creating VMs.
+Next up: configuration editing and creating VMs.
 
 ## Requirements
 
@@ -50,7 +51,7 @@ xcodebuild test -project ProxFleet.xcodeproj -scheme ProxFleet -destination 'pla
 Use a disposable Proxmox VE installation, for example a nested VM. Never a production server: the tools create and delete users and guests.
 
 1. Copy `Config/TestServer.example.env` to `Config/TestServer.local.env` (ignored by git) and fill in the address and root credentials.
-2. Run `python3 -I scripts/seed-test-server.py Config/TestServer.local.env`. It creates a TOTP user, a read-only user and a few VMs and containers, and appends the generated credentials to the env file.
+2. Run `python3 -I scripts/seed-test-server.py Config/TestServer.local.env`. It creates a TOTP user, a read-only user and a few VMs and containers, and appends the generated credentials to the env file. For the VM console test, attach an ISO with an operating system to VM 100 (the Alpine virt ISO works well) and start it.
 3. Run the live tests:
 
 ```sh

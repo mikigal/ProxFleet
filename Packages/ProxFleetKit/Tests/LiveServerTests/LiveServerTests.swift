@@ -179,20 +179,31 @@ struct LiveServerTests {
         #expect(text.contains("shell-42"), "shell output: \(text.suffix(300))")
     }
 
-    /// Records what the VNC proxy sends at the start, to verify the RFB handshake assumptions.
-    @Test func vncHandshakeProbe() async throws {
+    /// VM 100 boots the Alpine ISO (see README). Connects, waits for a screen and types into it.
+    @Test func vmConsole() async throws {
         let (session, node) = try await rootSession()
         let vm = GuestReference(node: node, vmid: 100, kind: .virtualMachine)
-        let proxy = try await session.send(APIRequest<ConsoleProxy>(.post, vm.path + "/vncproxy", parameters: ["websocket": true, "generate-password": true]))
-        let socket = try await session.openWebSocket(path: vm.path + "/vncwebsocket", parameters: ["port": .int(proxy.port), "vncticket": .string(proxy.ticket)])
-        defer { socket.close() }
-        let version = try await socket.receive().bytes
-        print("VNC version: \(String(decoding: version, as: UTF8.self).debugDescription), password set: \(proxy.password != nil)")
-        #expect(String(decoding: version, as: UTF8.self).hasPrefix("RFB 003."))
-        try await socket.send(.data(Data("RFB 003.008\n".utf8)))
-        let security = try await socket.receive().bytes
-        print("VNC security types: \(Array(security))")
-        #expect(!security.isEmpty)
+        try #require(try await session.send(PVE.guestStatus(vm)).powerState == .running)
+
+        let client = try await VNCClient.open(vm, session: session)
+        var updates = 0
+        var sawPixels = false
+        for try await event in client.events {
+            if case .updated = event {
+                updates += 1
+                let framebuffer = await client.framebuffer
+                sawPixels = framebuffer.pixels.contains { $0 != 0 }
+                if updates == 1 {
+                    await client.type("root\n")
+                }
+                if sawPixels && updates >= 2 { break }
+            }
+        }
+        let framebuffer = await client.framebuffer
+        print("VNC screen \(framebuffer.width)x\(framebuffer.height), name \(await client.name), updates \(updates)")
+        #expect(framebuffer.width > 0 && framebuffer.height > 0)
+        #expect(sawPixels)
+        await client.close()
     }
 
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
