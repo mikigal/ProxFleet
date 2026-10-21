@@ -33,7 +33,7 @@ struct ConfigEditor<Content: View>: View {
             if isReadOnly, let privilege {
                 Section {
                     Label {
-                        Text("Read only. Changing this needs the \(privilege) privilege on /vms/\(detail.reference.vmid).")
+                        Text("Read only. Changing this needs the \(privilege) privilege on /vms/\(String(detail.reference.vmid)).")
                     } icon: {
                         Image(systemName: "lock.fill").foregroundStyle(.secondary)
                     }

@@ -61,7 +61,7 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
                     Section {
                         HStack(spacing: 12) {
                             ProgressView()
-                            Text("Creating \(kindName) \(reference.vmid)…")
+                            Text("Creating \(kindName) \(String(reference.vmid))…")
                         }
                         NavigationLink("Show Task Log", value: ServerRoute.task(node: task.upid.node, upid: task.upid.rawValue))
                     } footer: {
@@ -80,7 +80,10 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
                 removal: .move(edge: movesForward ? .leading : .trailing)
             ))
         }
-        .safeAreaBar(edge: .top, spacing: 0) { stepBar }
+        .safeAreaBar(edge: .top, spacing: 0) {
+            // A single page, such as cloning, needs no step bar.
+            if steps.count > 1 { stepBar }
+        }
         .safeAreaBar(edge: .bottom, spacing: 0) { buttons }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
@@ -362,11 +365,17 @@ struct NodeStoragePicker: View {
     /// `images` for VM disks, `rootdir` for containers, `vztmpl` for templates.
     let content: String
     @Binding var selection: String
+    /// Label of an empty choice that leaves the storage to the server, e.g. "Same as Source".
+    /// Without it, the first storage is picked.
+    var defaultTitle: LocalizedStringKey?
     @State private var storages: [StorageInfo] = []
 
     var body: some View {
         Picker(title, selection: $selection) {
-            if !storages.contains(where: { $0.storage == selection }) {
+            if let defaultTitle {
+                Text(defaultTitle).tag("")
+            }
+            if !storages.contains(where: { $0.storage == selection }), !(defaultTitle != nil && selection.isEmpty) {
                 Text(selection.isEmpty ? "None" : selection).tag(selection)
             }
             ForEach(storages) { info in
@@ -375,7 +384,7 @@ struct NodeStoragePicker: View {
         }
         .task(id: node) {
             storages = await connection.load(PVE.storages(node: node, content: content)).filter(\.isActive)
-            if !storages.contains(where: { $0.storage == selection }) {
+            if defaultTitle == nil, !storages.contains(where: { $0.storage == selection }) {
                 selection = storages.first?.storage ?? ""
             }
         }

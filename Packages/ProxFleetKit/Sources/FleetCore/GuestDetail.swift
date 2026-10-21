@@ -19,6 +19,8 @@ public final class GuestDetail {
     public private(set) var interfaces: [GuestNetworkInterface]?
     public private(set) var privileges: Set<String>?
     public private(set) var recentTasks: [ClusterTask] = []
+    /// nil until the snapshot screen loads them; includes `current`.
+    public private(set) var snapshots: [GuestSnapshot]?
     public private(set) var loadError: String?
     public private(set) var actionError: String?
     public private(set) var hasLoaded = false
@@ -153,6 +155,55 @@ public final class GuestDetail {
             throw ConfigUpdateError(error)
         }
         await loadConfig()
+    }
+
+    // MARK: - Snapshots, templates and deletion
+
+    /// Loads the snapshots. Errors keep the previous list and are returned for the snapshot screen to show.
+    @discardableResult
+    public func loadSnapshots() async -> String? {
+        do {
+            snapshots = try await connection.session.send(PVE.snapshots(reference))
+            return nil
+        } catch is CancellationError {
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Runs a snapshot request (take, roll back, delete), waits for its task and reloads.
+    public func runSnapshotAction(_ request: APIRequest<String?>) async throws(ConfigUpdateError) {
+        do {
+            try await run(request)
+        } catch {
+            await loadSnapshots()
+            throw error
+        }
+        await loadSnapshots()
+        await loadStatus()
+    }
+
+    /// Turns the stopped guest into a template. Containers convert in the background without a task ID,
+    /// so their configuration is checked until it shows the change.
+    public func convertToTemplate() async throws(ConfigUpdateError) {
+        try await run(PVE.convertToTemplate(reference))
+        for _ in 0..<40 where !isTemplate {
+            try? await Task.sleep(for: .milliseconds(500))
+            await loadConfig()
+        }
+        await connection.refresh()
+    }
+
+    /// Deletes the stopped guest and waits until it is gone.
+    public func destroy(purge: Bool, destroyUnreferencedDisks: Bool) async throws(ConfigUpdateError) {
+        do {
+            let upid = try await connection.session.send(PVE.destroy(reference, purge: purge, destroyUnreferencedDisks: destroyUnreferencedDisks))
+            try await waitForTask(upid)
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+        await connection.refresh()
     }
 
     /// Drops pending changes so the running configuration stays as it is.

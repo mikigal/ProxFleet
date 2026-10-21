@@ -44,6 +44,9 @@ actor DemoState {
     /// Configurations of guests created in demo mode, used instead of the generated ones.
     var createdConfigs: [Int: [String: String]] = [:]
     var downloadedTemplates: [(volume: String, availableAt: Date)] = []
+    /// Snapshots per VMID, oldest first, and the snapshot each guest's current state is based on.
+    var snapshots: [Int: [DemoSnapshot]] = [:]
+    var currentSnapshot: [Int: String] = [:]
     /// Console proxies started but not yet connected, by ticket.
     var consoles: [String: DemoConsoleRequest] = [:]
     private var ticketCounter = 0

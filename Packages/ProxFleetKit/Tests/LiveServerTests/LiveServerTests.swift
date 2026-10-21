@@ -324,6 +324,72 @@ struct LiveServerTests {
         try await destroy(containerReference)
     }
 
+    /// Snapshots of container 202, clones of template 9000 and container 202, conversion to a template and deletion.
+    @Test func snapshotsClonesAndDeletion() async throws {
+        let (session, node) = try await rootSession()
+        func finish(_ upid: String?) async throws {
+            guard let upid else { return }
+            for _ in 0..<80 {
+                let status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+                if !status.isRunning {
+                    #expect(status.succeeded, "\(status.type): \(status.exitStatus ?? "")")
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            throw ProxmoxError.invalidResponse("task did not finish")
+        }
+
+        // Snapshots of a stopped container.
+        let container = GuestReference(node: node, vmid: 202, kind: .container)
+        let name = "live\(Int(Date().timeIntervalSince1970) % 100_000)"
+        try await finish(try await session.send(PVE.createSnapshot(container, name: name, description: "from the live test", includeRAM: false)))
+        var snapshots = try await session.send(PVE.snapshots(container))
+        #expect(snapshots.first { $0.name == name }?.description == "from the live test")
+        #expect(snapshots.first(where: \.isCurrent)?.parent == name)
+        #expect(GuestSnapshot.tree(snapshots).last?.snapshot.isCurrent == true)
+        try await finish(try await session.send(PVE.updateSnapshotDescription(container, name: name, description: "edited")))
+        try await finish(try await session.send(PVE.rollbackSnapshot(container, name: name, start: false)))
+        snapshots = try await session.send(PVE.snapshots(container))
+        #expect(snapshots.first { $0.name == name }?.description == "edited")
+
+        // A full clone from that snapshot, converted to a template, then deleted.
+        var clone = CloneDraft(source: container, isTemplate: false, vmid: try await session.send(PVE.nextVMID()).value)
+        clone.name = "clone-test"
+        clone.snapshot = name
+        try await finish(try await session.send(PVE.clone(clone)))
+        let cloned = GuestReference(node: node, vmid: clone.vmid, kind: .container)
+        #expect(try await session.send(PVE.guestConfig(cloned)).name == "clone-test")
+        // Containers answer without a task ID and convert in the background.
+        #expect(try await session.send(PVE.convertToTemplate(cloned)) == nil)
+        var isTemplate = false
+        for _ in 0..<40 where !isTemplate {
+            try await Task.sleep(for: .milliseconds(500))
+            isTemplate = try await session.send(PVE.guestConfig(cloned))["template"] == "1"
+        }
+        #expect(isTemplate)
+        try await finish(try await session.send(PVE.destroy(cloned, purge: true, destroyUnreferencedDisks: true)))
+        try await finish(try await session.send(PVE.deleteSnapshot(container, name: name)))
+        #expect(try await session.send(PVE.snapshots(container)).allSatisfy { $0.name != name })
+
+        // A linked clone of the VM template.
+        let template = GuestReference(node: node, vmid: 9000, kind: .virtualMachine)
+        var linked = CloneDraft(source: template, isTemplate: true, vmid: try await session.send(PVE.nextVMID()).value)
+        linked.name = "linked-test"
+        try await finish(try await session.send(PVE.clone(linked)))
+        let linkedVM = GuestReference(node: node, vmid: linked.vmid, kind: .virtualMachine)
+        #expect(try await session.send(PVE.guestConfig(linkedVM)).name == "linked-test")
+        try await finish(try await session.send(PVE.destroy(linkedVM, purge: true, destroyUnreferencedDisks: true)))
+
+        // A running guest cannot be deleted.
+        do {
+            _ = try await session.send(PVE.destroy(GuestReference(node: node, vmid: 100, kind: .virtualMachine), purge: false, destroyUnreferencedDisks: false))
+            Issue.record("deleting a running VM should fail")
+        } catch ProxmoxError.api(_, let message, _) {
+            #expect(message?.contains("running") == true)
+        }
+    }
+
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
     func readOnlyUserLacksPowerManagement() async throws {
         let session = try await trustedSession()

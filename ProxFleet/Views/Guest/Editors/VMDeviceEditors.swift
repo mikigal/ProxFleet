@@ -576,7 +576,7 @@ private struct IVSHMEMEditor: View {
             Section {
                 NumberField(title: "Size", value: $draft.sizeMiB, range: 1...65_536, step: 32, unit: "MiB")
                 LabeledContent("Name") {
-                    TextField("pve-shm-\(detail.reference.vmid)", text: $draft.name)
+                    TextField("pve-shm-\(String(detail.reference.vmid))", text: $draft.name)
                         .multilineTextAlignment(.trailing)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()

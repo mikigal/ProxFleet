@@ -100,6 +100,9 @@ extension DemoState {
         }
         let guest = cluster.guests[index]
         let rest = Array(parts.dropFirst(4))
+        if let response = handleLifecycle(method, rest: rest, guest: guest, parameters: parameters, user: user) {
+            return response
+        }
 
         switch (method, rest) {
         case (.get, ["status", "current"]):
@@ -226,7 +229,7 @@ extension DemoState {
         return audit + [
             "VM.PowerMgmt", "VM.Console", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.CDROM",
             "VM.Config.Network", "VM.Config.HWType", "VM.Config.Options", "VM.Config.Cloudinit", "VM.Allocate", "VM.Clone",
-            "VM.Snapshot", "VM.Backup", "VM.Migrate", "Datastore.AllocateSpace", "Sys.Modify", "Sys.PowerMgmt", "Sys.Console",
+            "VM.Snapshot", "VM.Snapshot.Rollback", "VM.Backup", "VM.Migrate", "Datastore.AllocateSpace", "Sys.Modify", "Sys.PowerMgmt", "Sys.Console",
         ]
     }
 

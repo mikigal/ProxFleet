@@ -12,6 +12,13 @@ struct GuestDetailView: View {
     @State private var terminal: TerminalConsoleModel?
     @State private var vnc: VNCConsoleModel?
     @State private var isKeyboardVisible = false
+    @State private var showsClone = false
+    @State private var showsDelete = false
+    /// Set by the clone sheet; opened once the sheet is gone, as pushing while it closes is unreliable.
+    @State private var newClone: GuestReference?
+    @State private var openedClone: GuestReference?
+    @State private var wasDeleted = false
+    @Environment(\.dismiss) private var dismiss
 
     init(reference: GuestReference, connection: ServerConnection) {
         _detail = State(initialValue: GuestDetail(reference: reference, connection: connection))
@@ -61,6 +68,25 @@ struct GuestDetailView: View {
             } message: { action in
                 Text(action.confirmationMessage)
             }
+            .sheet(isPresented: $showsClone, onDismiss: {
+                openedClone = newClone
+                newClone = nil
+            }) {
+                NavigationStack {
+                    CloneView(detail: detail) { newClone = $0 }
+                }
+                .serverDestinations(detail.connection)
+            }
+            .sheet(isPresented: $showsDelete, onDismiss: {
+                if wasDeleted { dismiss() }
+            }) {
+                NavigationStack {
+                    DeleteGuestView(detail: detail) { wasDeleted = true }
+                }
+            }
+            .navigationDestination(item: $openedClone) { reference in
+                GuestDetailView(reference: reference, connection: detail.connection)
+            }
             .alert(
                 "Action Failed",
                 isPresented: Binding(get: { detail.actionError != nil }, set: { if !$0 { detail.dismissActionError() } }),
@@ -84,6 +110,19 @@ struct GuestDetailView: View {
             List {
                 Section {
                     GuestHeader(detail: detail)
+                    if detail.isTemplate, detail.can("VM.Clone") {
+                        Button {
+                            showsClone = true
+                        } label: {
+                            Label("Clone Template", systemImage: "plus.square.on.square")
+                                .frame(maxWidth: .infinity, minHeight: 40)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.roundedRectangle(radius: 14))
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .accessibilityIdentifier("template.clone")
+                    }
                     if !detail.availableActions.isEmpty {
                         PowerControls(actions: detail.availableActions, isBusy: detail.runningTask != nil) { action in
                             if action.needsConfirmation {
@@ -128,7 +167,7 @@ struct GuestDetailView: View {
                 networkSection
             }
         case .more:
-            GuestMoreList(detail: detail)
+            GuestMoreList(detail: detail, onClone: { showsClone = true }, onDelete: { showsDelete = true })
         }
     }
 
@@ -371,6 +410,14 @@ private struct GuestTabBar: View {
 /// Sections that do not fit in the bar, as a Settings-style list.
 private struct GuestMoreList: View {
     let detail: GuestDetail
+    let onClone: () -> Void
+    let onDelete: () -> Void
+    @State private var confirmsTemplate = false
+    @State private var isConverting = false
+    @State private var errorMessage: String?
+
+    private var kindName: String { detail.reference.kind == .virtualMachine ? String(localized: "VM") : String(localized: "CT") }
+    private var isStopped: Bool { detail.powerState == .stopped }
 
     var body: some View {
         List {
@@ -410,6 +457,67 @@ private struct GuestMoreList: View {
                 }
                 .accessibilityIdentifier("more.tasks")
             }
+            Section {
+                NavigationLink {
+                    SnapshotsView(detail: detail)
+                } label: {
+                    MoreRow(title: "Snapshots", systemImage: "camera", color: .green, hint: nil)
+                }
+                .accessibilityIdentifier("more.snapshots")
+                Button(action: onClone) {
+                    MoreRow(title: "Clone", systemImage: "plus.square.on.square", color: .teal, hint: nil)
+                }
+                .foregroundStyle(.primary)
+                .disabled(!detail.can("VM.Clone"))
+                .accessibilityIdentifier("more.clone")
+                if !detail.isTemplate {
+                    Button {
+                        confirmsTemplate = true
+                    } label: {
+                        MoreRow(title: "Convert to Template", systemImage: "doc.on.doc", color: .orange, hint: isConverting ? String(localized: "Converting…") : isStopped ? nil : String(localized: "Stop first"))
+                    }
+                    .foregroundStyle(.primary)
+                    .disabled(!isStopped || !detail.can("VM.Allocate") || isConverting)
+                    .accessibilityIdentifier("more.template")
+                }
+            } footer: {
+                if !detail.isTemplate {
+                    Text("Templates cannot be started; clone them to create new guests, also as quick linked clones.")
+                }
+            }
+            Section {
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete \(kindName)", systemImage: "trash")
+                }
+                .disabled(!detail.can("VM.Allocate"))
+                .accessibilityIdentifier("more.delete")
+            } footer: {
+                if !detail.can("VM.Allocate") {
+                    Text("Converting and deleting need the VM.Allocate privilege on /vms/\(String(detail.reference.vmid)).")
+                }
+            }
+        }
+        .alert("Convert \(detail.name) to a template?", isPresented: $confirmsTemplate) {
+            Button("Cancel", role: .cancel) {}
+            Button("Convert") { Task { await convert() } }
+                .accessibilityIdentifier("template.confirm")
+        } message: {
+            Text("A template cannot be started or turned back into a normal guest. Clone it to create new guests.")
+        }
+        .alert("Conversion Failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private func convert() async {
+        isConverting = true
+        defer { isConverting = false }
+        do {
+            try await detail.convertToTemplate()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

@@ -153,4 +153,46 @@ struct GuestDetailTests {
         await connection.refresh()
         #expect(connection.snapshot?.containers.contains { $0.vmid == container.vmid && $0.state == .stopped } == true)
     }
+
+    @Test func snapshotsTemplatesClonesAndDeletion() async throws {
+        let connection = try await connection()
+        // Container 200 runs on pve1.
+        let container = GuestDetail(reference: GuestReference(node: "pve1", vmid: 200, kind: .container), connection: connection)
+        await container.load()
+        #expect(await container.loadSnapshots() == nil)
+        #expect(container.snapshots?.map(\.name) == ["current"])
+        try await container.runSnapshotAction(PVE.createSnapshot(container.reference, name: "first", description: "before changes", includeRAM: false))
+        try await container.runSnapshotAction(PVE.createSnapshot(container.reference, name: "second", description: "", includeRAM: false))
+        let tree = GuestSnapshot.tree(container.snapshots ?? []).map { "\($0.snapshot.name):\($0.depth)" }
+        #expect(tree == ["first:0", "second:1", "current:2"])
+        #expect(container.snapshots?.first?.description == "before changes")
+
+        // Rolling back stops the container unless asked to start it, and moves "current" under the snapshot.
+        try await container.runSnapshotAction(PVE.rollbackSnapshot(container.reference, name: "first", start: false))
+        #expect(container.powerState == .stopped)
+        #expect(container.snapshots?.first(where: \.isCurrent)?.parent == "first")
+        try await container.runSnapshotAction(PVE.deleteSnapshot(container.reference, name: "first"))
+        #expect(GuestSnapshot.tree(container.snapshots ?? []).map(\.snapshot.name) == ["second", "current"])
+
+        // A stopped container becomes a template; it can be cloned, the clone deleted.
+        try await container.convertToTemplate()
+        #expect(container.isTemplate)
+        var draft = CloneDraft(source: container.reference, isTemplate: true, vmid: try await connection.send(PVE.nextVMID()).value)
+        draft.name = "pihole-2"
+        let task = try await connection.start(PVE.clone(draft))
+        #expect(await connection.tasks.result(of: task.id) == .succeeded)
+        let clone = GuestDetail(reference: GuestReference(node: "pve1", vmid: draft.vmid, kind: .container), connection: connection)
+        await clone.load()
+        #expect(clone.name == "pihole-2")
+        #expect(clone.config?["rootfs"]?.hasPrefix("local-lvm:vm-\(draft.vmid)-disk-0") == true)
+        #expect(!clone.isTemplate)
+        try await clone.destroy(purge: true, destroyUnreferencedDisks: true)
+        #expect(connection.snapshot?.guests.contains { $0.vmid == draft.vmid } == false)
+
+        // A running guest cannot be deleted.
+        let running = GuestDetail(reference: vm(100), connection: connection)
+        await #expect(throws: ConfigUpdateError.self) {
+            try await running.destroy(purge: false, destroyUnreferencedDisks: false)
+        }
+    }
 }

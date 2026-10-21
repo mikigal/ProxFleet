@@ -63,6 +63,16 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
 - Creation returns a task. `ServerConnection.start` tracks it without reporting failures, since the form shows them; if the form closes while the task runs, `TaskCenter.reportFailure(of:)` hands the outcome back so a failure still shows up.
 - Container templates come from storages with `vztmpl` content. `GET /nodes/{node}/aplinfo` lists what the node can download and `POST` to it starts the download.
 
+## Snapshots, clones and deletion
+
+`GuestLifecycle.swift` (PVEKit) has the requests and `CloneDraft`; `GuestDetail` runs them as tasks and reloads.
+
+- `GET .../snapshot` lists the snapshots plus `current`, whose `parent` is the snapshot the running state is based on. `GuestSnapshot.tree` orders them like the web interface's tree. Descriptions come back with a trailing newline, which is trimmed.
+- Only templates can be cloned linked (`full=0`); for other guests Proxmox always copies and rejects `full=0`. `storage` only applies to full clones, `snapname` only to guests that are not templates.
+- Converting a VM to a template returns a task. A container returns `null` and converts in the background, so its configuration is polled until `template` is set.
+- Deleting needs a stopped guest; Proxmox refuses a running one with an error message. The app asks the user to type the ID, as the web interface does, with `purge` and `destroy-unreferenced-disks` on by default.
+- Migration is not done yet: there is no cluster to test it on.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

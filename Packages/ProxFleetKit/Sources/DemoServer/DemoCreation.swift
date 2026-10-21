@@ -131,14 +131,14 @@ extension DemoState {
         return ["rockylinux", "almalinux"].contains(match) ? "centos" : match
     }
 
-    private func startTask(node: String, type: String, objectID: String, user: String, duration: TimeInterval, apply: (@Sendable (inout DemoCluster.Guest) -> Void)? = nil) -> HTTPResponse {
+    func startTask(node: String, type: String, objectID: String, user: String, duration: TimeInterval, apply: (@Sendable (inout DemoCluster.Guest) -> Void)? = nil) -> HTTPResponse {
         let start = Date()
         let upid = String(format: "UPID:%@:%08X:%08X:%08X:%@:%@:%@:", node, 4000 + tasks.count, 100_000 + tasks.count, Int(start.timeIntervalSince1970), type, objectID, user)
         tasks.append(DemoTask(upid: upid, node: node, type: type, objectID: objectID, user: user, startedAt: start, duration: duration, error: nil, apply: apply))
         return success(.string(upid))
     }
 
-    private func fieldFailure(_ errors: [String: String]) -> HTTPResponse {
+    func fieldFailure(_ errors: [String: String]) -> HTTPResponse {
         let body: JSONValue = [
             "data": nil, "success": 0, "status": "400", "message": "Parameter verification failed.",
             "errors": .object(errors.mapValues { .string($0) }),

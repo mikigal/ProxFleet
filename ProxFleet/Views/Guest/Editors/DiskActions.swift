@@ -105,7 +105,7 @@ struct ReassignDiskView: View {
                 Picker("Target Guest", selection: $target) {
                     Text("Choose").tag(Int?.none)
                     ForEach(candidates) { guest in
-                        Text("\(guest.vmid) – \(guest.name)").tag(Int?.some(guest.vmid))
+                        Text(verbatim: "\(guest.vmid) – \(guest.name)").tag(Int?.some(guest.vmid))
                     }
                 }
                 if isVM, !disk.isUnused {
