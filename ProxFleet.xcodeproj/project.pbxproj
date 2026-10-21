@@ -10,6 +10,8 @@
 		A1F000000000000000000101 /* FleetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000201 /* FleetCore */; };
 		A1F000000000000000000102 /* PVEKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000202 /* PVEKit */; };
 		A1F000000000000000000103 /* ProxmoxCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000203 /* ProxmoxCore */; };
+		A1F000000000000000000104 /* ProxmoxConsole in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000204 /* ProxmoxConsole */; };
+		A1F000000000000000000105 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000205 /* SwiftTerm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +51,8 @@
 				A1F000000000000000000101 /* FleetCore in Frameworks */,
 				A1F000000000000000000102 /* PVEKit in Frameworks */,
 				A1F000000000000000000103 /* ProxmoxCore in Frameworks */,
+				A1F000000000000000000104 /* ProxmoxConsole in Frameworks */,
+				A1F000000000000000000105 /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +116,8 @@
 				A1F000000000000000000201 /* FleetCore */,
 				A1F000000000000000000202 /* PVEKit */,
 				A1F000000000000000000203 /* ProxmoxCore */,
+				A1F000000000000000000204 /* ProxmoxConsole */,
+				A1F000000000000000000205 /* SwiftTerm */,
 			);
 			productName = ProxFleet;
 			productReference = A1F000000000000000000301 /* ProxFleet.app */;
@@ -168,6 +174,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A1F000000000000000001001 /* XCLocalSwiftPackageReference "Packages/ProxFleetKit" */,
+				A1F000000000000000001002 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A1F000000000000000000603 /* Products */;
@@ -356,6 +363,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A1F000000000000000001002 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 1.11.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		A1F000000000000000000201 /* FleetCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -368,6 +386,15 @@
 		A1F000000000000000000203 /* ProxmoxCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ProxmoxCore;
+		};
+		A1F000000000000000000204 /* ProxmoxConsole */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ProxmoxConsole;
+		};
+		A1F000000000000000000205 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1F000000000000000001002 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

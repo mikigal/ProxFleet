@@ -8,6 +8,7 @@ public actor ProxmoxSession {
     public nonisolated let address: ServerAddress
     public nonisolated let product: ProxmoxProduct
     private let transport: any HTTPTransport
+    nonisolated let transportForWebSockets: (any WebSocketTransport)?
     private let now: @Sendable () -> Date
 
     public private(set) var ticket: AuthTicket?
@@ -26,6 +27,7 @@ public actor ProxmoxSession {
         self.address = address
         self.product = product
         self.transport = transport
+        self.transportForWebSockets = transport as? any WebSocketTransport
         self.ticket = ticket
         self.now = now
     }

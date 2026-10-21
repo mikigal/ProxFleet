@@ -1,4 +1,5 @@
 import FleetCore
+import ProxmoxConsole
 import ProxmoxCore
 import PVEKit
 import SwiftUI
@@ -8,6 +9,8 @@ struct GuestDetailView: View {
     @State private var pendingAction: PowerAction?
     @State private var metric: PerformanceMetric = .cpu
     @State private var tab: GuestTab = .summary
+    @State private var terminal: TerminalConsoleModel?
+    @State private var isKeyboardVisible = false
 
     init(reference: GuestReference, connection: ServerConnection) {
         _detail = State(initialValue: GuestDetail(reference: reference, connection: connection))
@@ -18,9 +21,19 @@ struct GuestDetailView: View {
     var body: some View {
         tabContent
             .safeAreaInset(edge: .bottom) {
-                GuestTabBar(selection: $tab)
-                    .padding(.bottom, 6)
+                // The console needs the space while typing.
+                if !(tab == .console && isKeyboardVisible) {
+                    GuestTabBar(selection: $tab)
+                        .padding(.bottom, 6)
+                }
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                isKeyboardVisible = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                isKeyboardVisible = false
+            }
+            .onDisappear { terminal?.disconnect() }
             .navigationTitle(detail.name)
             .navigationSubtitle(subtitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -88,11 +101,7 @@ struct GuestDetailView: View {
                 }
             }
         case .console:
-            ContentUnavailableView(
-                "Console",
-                systemImage: "terminal",
-                description: Text("The console is coming in the next update.")
-            )
+            consoleContent
         case .hardware:
             List {
                 errorSection
@@ -105,6 +114,28 @@ struct GuestDetailView: View {
             }
         case .more:
             GuestMoreList(detail: detail)
+        }
+    }
+
+    @ViewBuilder
+    private var consoleContent: some View {
+        if detail.powerState != .running {
+            ContentUnavailableView(
+                "Console Unavailable",
+                systemImage: "terminal",
+                description: Text(detail.powerState == .paused ? "Resume the guest to use its console." : "Start the guest to use its console.")
+            )
+        } else if kind == .container {
+            if let terminal {
+                TerminalConsoleView(model: terminal)
+            } else {
+                Color.black
+                    .onAppear {
+                        terminal = TerminalConsoleModel(target: .container(detail.reference), session: detail.connection.apiSession)
+                    }
+            }
+        } else {
+            ContentUnavailableView("Console", systemImage: "display", description: Text("The VM console is coming next."))
         }
     }
 

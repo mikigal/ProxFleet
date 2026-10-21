@@ -252,6 +252,9 @@ public final class ServerConnection: Identifiable {
         return try tasks.track(upid, reportsFailure: reportsFailure)
     }
 
+    /// The authenticated session, for features such as consoles that talk to the API directly.
+    public var apiSession: ProxmoxSession { session }
+
     /// Direct API access for feature screens.
     public func send<Response>(_ request: APIRequest<Response>) async throws -> Response {
         try await session.send(request)

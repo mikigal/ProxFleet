@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import ProxmoxCore
 import ProxmoxURLSession
+import ProxmoxConsole
 import PVEKit
 import Testing
 
@@ -27,7 +28,7 @@ private struct LiveServer {
     subscript(key: String) -> String? { values[key].flatMap { $0.isEmpty ? nil : $0 } }
 }
 
-@Suite(.enabled(if: LiveServer.current != nil, "Set PROXFLEET_TEST_SERVER_ENV to run against a real server"), .serialized)
+@Suite(.enabled(if: LiveServer.current != nil, "Set PROXFLEET_TEST_SERVER_ENV to run against a real server"), .serialized, .timeLimit(.minutes(1)))
 struct LiveServerTests {
     private let server = LiveServer.current!
 
@@ -137,6 +138,61 @@ struct LiveServerTests {
         let history = try await session.send(PVE.guestRRD(vm, timeframe: .hour))
         #expect(!history.isEmpty)
         #expect(try await session.privileges(on: vm.aclPath).contains("VM.PowerMgmt"))
+    }
+
+    private func rootSession() async throws -> (ProxmoxSession, String) {
+        let session = try await trustedSession()
+        _ = try await session.login(username: try #require(server["USER"]), password: try #require(server["PASSWORD"]), realm: server["REALM"])
+        let node = try #require(try await session.fetchClusterSnapshot().nodes.first?.name)
+        return (session, node)
+    }
+
+    /// Container 200 from the seed script shows a login prompt on its console after Enter.
+    @Test func containerTerminal() async throws {
+        let (session, node) = try await rootSession()
+        let terminal = try await TerminalConnection.open(.container(GuestReference(node: node, vmid: 200, kind: .container)), session: session)
+        defer { terminal.close() }
+        try await terminal.resize(columns: 80, rows: 24)
+        try await Task.sleep(for: .seconds(1))
+        try await terminal.send("\r")
+
+        var text = ""
+        for try await chunk in terminal.output {
+            text += String(decoding: chunk, as: UTF8.self)
+            if text.contains("login:") { break }
+        }
+        #expect(text.contains("login:"), "terminal output: \(text.suffix(300))")
+    }
+
+    @Test func nodeShell() async throws {
+        let (session, node) = try await rootSession()
+        let terminal = try await TerminalConnection.open(.node(node), session: session)
+        defer { terminal.close() }
+        try await terminal.resize(columns: 100, rows: 30)
+        try await terminal.send("hostname; echo shell-$((6*7))\n")
+        var text = ""
+        let deadline = Date().addingTimeInterval(15)
+        for try await chunk in terminal.output {
+            text += String(decoding: chunk, as: UTF8.self)
+            if text.contains("shell-42") || Date() > deadline { break }
+        }
+        #expect(text.contains("shell-42"), "shell output: \(text.suffix(300))")
+    }
+
+    /// Records what the VNC proxy sends at the start, to verify the RFB handshake assumptions.
+    @Test func vncHandshakeProbe() async throws {
+        let (session, node) = try await rootSession()
+        let vm = GuestReference(node: node, vmid: 100, kind: .virtualMachine)
+        let proxy = try await session.send(APIRequest<ConsoleProxy>(.post, vm.path + "/vncproxy", parameters: ["websocket": true, "generate-password": true]))
+        let socket = try await session.openWebSocket(path: vm.path + "/vncwebsocket", parameters: ["port": .int(proxy.port), "vncticket": .string(proxy.ticket)])
+        defer { socket.close() }
+        let version = try await socket.receive().bytes
+        print("VNC version: \(String(decoding: version, as: UTF8.self).debugDescription), password set: \(proxy.password != nil)")
+        #expect(String(decoding: version, as: UTF8.self).hasPrefix("RFB 003."))
+        try await socket.send(.data(Data("RFB 003.008\n".utf8)))
+        let security = try await socket.receive().bytes
+        print("VNC security types: \(Array(security))")
+        #expect(!security.isEmpty)
     }
 
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
