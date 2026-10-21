@@ -53,6 +53,7 @@ struct CreateVMView: View {
     @State private var draft: VMCreationDraft
     @State private var isoReloadID = 0
     @State private var cpuModels: [CPUModel] = []
+    @State private var diskStorages: [StorageInfo] = []
     @AppStorage(AdvancedCreationOptions.storageKey) private var showsAdvanced = false
 
     init(connection: ServerConnection, onCreated: @escaping (GuestReference) -> Void) {
@@ -212,10 +213,20 @@ struct CreateVMView: View {
             }
             NodeStoragePicker(title: "Storage", connection: connection, node: draft.node, content: "images", selection: $draft.diskStorage)
             NumberField(title: "Size", value: $draft.diskSizeGiB, range: 1...65_536, unit: "GiB")
+            if let formats = selectedDiskStorage?.diskFormats, formats.count > 1 {
+                Picker("Format", selection: $draft.diskFormat) {
+                    ForEach(formats, id: \.self) { Text(Self.formatTitle($0)).tag(String?.some($0)) }
+                }
+            }
             FieldError(message: errors[draft.diskKey])
         } header: {
             Text(verbatim: draft.diskKey)
         }
+        .task(id: draft.node) {
+            diskStorages = await connection.load(PVE.storages(node: draft.node, content: "images"))
+            draft.chooseDiskFormat(for: selectedDiskStorage)
+        }
+        .onChange(of: draft.diskStorage) { draft.chooseDiskFormat(for: selectedDiskStorage) }
         Section("Options") {
             Picker("Cache", selection: $draft.disk.cache) {
                 Text("Default (No cache)").tag(String?.none)
@@ -320,6 +331,17 @@ struct CreateVMView: View {
     }
 
     private var totalCores: Int { draft.cpu.sockets * draft.cpu.cores }
+
+    private var selectedDiskStorage: StorageInfo? { diskStorages.first { $0.storage == draft.diskStorage } }
+
+    private static func formatTitle(_ format: String) -> String {
+        switch format {
+        case "raw": String(localized: "Raw Disk Image (raw)")
+        case "qcow2": String(localized: "QEMU Image (qcow2)")
+        case "vmdk": String(localized: "VMware Image (vmdk)")
+        default: format
+        }
+    }
 
     @ViewBuilder
     private func memory(_ errors: [String: String]) -> some View {

@@ -118,6 +118,21 @@ struct GuestCreationTests {
         #expect(draft.parameters["shares"] == nil)
     }
 
+    @Test func diskFormatFollowsTheStorage() throws {
+        let json = #"[{"storage":"local","type":"dir","formats":{"supported":["raw","qcow2","vmdk","subvol"],"default":"raw"}},{"storage":"local-lvm","type":"lvmthin","formats":{"supported":["raw"],"default":"raw"}}]"#
+        let storages = try JSONDecoder().decode([StorageInfo].self, from: Data(json.utf8))
+        #expect(storages[0].diskFormats == ["raw", "qcow2", "vmdk"])
+        var draft = VMCreationDraft(node: "pve", vmid: 140)
+        draft.diskStorage = "local"
+        draft.chooseDiskFormat(for: storages[0])
+        #expect(draft.diskFormat == "qcow2")
+        #expect(draft.parameters["scsi0"] == "local:32,format=qcow2,discard=on,iothread=1")
+        draft.diskStorage = "local-lvm"
+        draft.chooseDiskFormat(for: storages[1])
+        #expect(draft.diskFormat == nil)
+        #expect(draft.parameters["scsi0"] == "local-lvm:32,discard=on,iothread=1")
+    }
+
     @Test func vmValidation() {
         var draft = VMCreationDraft(node: "pve", vmid: 99)
         draft.name = "bad name"

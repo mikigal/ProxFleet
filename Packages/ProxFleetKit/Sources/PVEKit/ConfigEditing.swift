@@ -71,6 +71,9 @@ public struct StorageInfo: Decodable, Sendable, Equatable, Identifiable, Hashabl
     public var isShared: Bool
     public var available: Int64?
     public var total: Int64?
+    /// Image formats for new disks, e.g. `raw` and `qcow2` on a directory; empty when the server did not say.
+    public var diskFormats: [String] = []
+    public var defaultDiskFormat: String?
 
     public var id: String { storage }
 
@@ -83,6 +86,11 @@ public struct StorageInfo: Decodable, Sendable, Equatable, Identifiable, Hashabl
         isShared = container.lossyBool(AnyCodingKey("shared")) ?? false
         available = container.lossyDouble(AnyCodingKey("avail")).map { Int64($0) }
         total = container.lossyDouble(AnyCodingKey("total")).map { Int64($0) }
+        if let formats = try? container.nestedContainer(keyedBy: AnyCodingKey.self, forKey: AnyCodingKey("formats")) {
+            // `subvol` is only for container volumes.
+            diskFormats = ((try? formats.decode([String].self, forKey: AnyCodingKey("supported"))) ?? []).filter { $0 != "subvol" }
+            defaultDiskFormat = formats.lossyString(AnyCodingKey("default"))
+        }
     }
 }
 
@@ -172,6 +180,8 @@ extension PVE {
         var parameters: APIParameters = [:]
         if let content { parameters["content"] = .string(content) }
         parameters["enabled"] = true
+        // Adds the supported disk formats.
+        parameters["format"] = true
         return APIRequest(.get, "/nodes/\(node)/storage", parameters: parameters)
     }
 

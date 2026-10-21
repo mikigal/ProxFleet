@@ -168,6 +168,8 @@ extension DemoState {
                 "storage": .string(config.id), "type": .string(config.type), "content": .string(config.content.joined(separator: ",")),
                 "active": 1, "enabled": 1, "shared": .int(config.isShared ? 1 : 0),
                 "total": .int(Int(usage.total * gib)), "used": .int(Int(usage.used * gib)), "avail": .int(Int((usage.total - usage.used) * gib)),
+                // File-based storages hold images in several formats; block storages only raw ones.
+                "formats": ["supported": ["dir", "nfs", "cifs", "cephfs", "btrfs"].contains(config.type) ? ["raw", "qcow2", "vmdk"] : ["raw"], "default": "raw"],
             ]
         }))
     }

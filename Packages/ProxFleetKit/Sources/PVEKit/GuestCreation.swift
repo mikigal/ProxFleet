@@ -38,6 +38,8 @@ public struct VMCreationDraft: Sendable, Equatable {
     public var diskBus: DiskBus = .scsi
     public var diskStorage = ""
     public var diskSizeGiB = 32
+    /// Image format such as `qcow2`, nil for the storage's default.
+    public var diskFormat: String?
     /// Options of the system disk; the bus decides which of them apply.
     public var disk: DiskOptionsDraft = {
         var options = DiskOptionsDraft()
@@ -96,6 +98,16 @@ public struct VMCreationDraft: Sendable, Equatable {
     /// The key of the system disk, e.g. `scsi0`.
     public var diskKey: String { "\(diskBus.rawValue)0" }
 
+    /// Picks the format the web interface picks for a storage: qcow2 where it can, otherwise raw.
+    /// Storages with a single format get no explicit one.
+    public mutating func chooseDiskFormat(for storage: StorageInfo?) {
+        guard let formats = storage?.diskFormats, formats.count > 1 else {
+            diskFormat = nil
+            return
+        }
+        diskFormat = ["qcow2", "raw"].first(where: formats.contains) ?? storage?.defaultDiskFormat ?? formats[0]
+    }
+
     /// IO threads and read-only disks need SCSI or VirtIO Block.
     public var diskSupportsIOThread: Bool { diskBus == .scsi || diskBus == .virtio }
     /// VirtIO Block disks report themselves as rotational or not on their own.
@@ -140,7 +152,9 @@ public struct VMCreationDraft: Sendable, Equatable {
         disk.ioThread = disk.ioThread && diskSupportsIOThread
         disk.readOnly = disk.readOnly && diskSupportsIOThread
         disk.ssdEmulation = disk.ssdEmulation && diskSupportsSSDEmulation
-        parameters[diskKey] = .string(disk.newDiskValue(storage: diskStorage, sizeGiB: diskSizeGiB))
+        var diskValue = PropertyString(parsing: disk.newDiskValue(storage: diskStorage, sizeGiB: diskSizeGiB))
+        if let diskFormat { diskValue.items.insert((key: "format", value: diskFormat), at: 1) }
+        parameters[diskKey] = .string(diskValue.stringValue)
         var bootOrder = [diskKey]
         if let isoVolume {
             parameters["ide2"] = .string(GuestConfig.cdromValue(isoVolume: isoVolume))
