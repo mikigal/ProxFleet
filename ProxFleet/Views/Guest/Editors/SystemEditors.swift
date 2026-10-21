@@ -3,62 +3,93 @@ import ProxmoxCore
 import PVEKit
 import SwiftUI
 
-/// Sockets, cores, CPU type and limits.
+/// Sockets, cores, CPU type, flags and scheduling limits.
 struct CPUEditor: View {
     let detail: GuestDetail
-    let config: GuestConfig
-    @State private var sockets: Int
-    @State private var cores: Int
-    @State private var cpuType: String
-    @State private var limit: Double
-    @State private var numa: Bool
+    let original: CPUDraft
+    @State private var draft: CPUDraft
     @State private var models: [CPUModel] = []
 
     private var isVM: Bool { detail.reference.kind == .virtualMachine }
 
     init(detail: GuestDetail, config: GuestConfig) {
         self.detail = detail
-        self.config = config
-        _sockets = State(initialValue: config.sockets)
-        _cores = State(initialValue: config.cores ?? 1)
-        _cpuType = State(initialValue: config.cpuType ?? "")
-        _limit = State(initialValue: config["cpulimit"].flatMap(Double.init) ?? 0)
-        _numa = State(initialValue: config["numa"] == "1")
+        let draft = CPUDraft(config, isVM: detail.reference.kind == .virtualMachine)
+        original = draft
+        _draft = State(initialValue: draft)
     }
 
     var body: some View {
-        ConfigEditor(title: "Processor", detail: detail, makeUpdate: update) { errors in
+        ConfigEditor(title: "Processor", detail: detail, makeUpdate: update, privilege: "VM.Config.CPU") { errors in
             Section {
                 if isVM {
-                    NumberField(title: "Sockets", value: $sockets, range: 1...16)
+                    NumberField(title: "Sockets", value: $draft.sockets, range: 1...16)
                     FieldError(message: errors["sockets"])
+                    NumberField(title: "Cores", value: $draft.cores, range: 1...512)
+                } else {
+                    Toggle("Limit Cores", isOn: Binding(get: { draft.cores > 0 }, set: { draft.cores = $0 ? 1 : 0 }))
+                    if draft.cores > 0 {
+                        NumberField(title: "Cores", value: $draft.cores, range: 1...8192)
+                    }
                 }
-                NumberField(title: "Cores", value: $cores, range: 1...512)
                 FieldError(message: errors["cores"])
+                if isVM {
+                    Picker("vCPUs at Start", selection: $draft.vcpus) {
+                        Text("All").tag(0)
+                        ForEach(1...max(1, draft.sockets * draft.cores), id: \.self) { Text("\($0)").tag($0) }
+                    }
+                    FieldError(message: errors["vcpus"])
+                }
             } footer: {
-                if isVM { Text("Total: \(Format.cores(sockets * cores))") }
+                if isVM {
+                    Text("Total: \(Format.cores(draft.sockets * draft.cores)). With CPU hotplug, fewer vCPUs can be active at start.")
+                } else {
+                    Text("Without a limit the container can use all cores of the host.")
+                }
             }
             if isVM {
                 Section {
-                    Picker("Type", selection: $cpuType) {
-                        Text("Default").tag("")
+                    Picker("Type", selection: $draft.model) {
+                        Text("Default (kvm64)").tag("")
                         ForEach(modelNames, id: \.self) { Text($0).tag($0) }
                     }
                     FieldError(message: errors["cpu"])
-                    Toggle("NUMA", isOn: $numa)
+                    NavigationLink {
+                        CPUFlagsEditor(flags: $draft.flags)
+                    } label: {
+                        LabeledContent("Extra CPU Flags", value: draft.flags.isEmpty ? String(localized: "None") : "\(draft.flags.count)")
+                    }
+                    Toggle("NUMA", isOn: $draft.numa)
                 } footer: {
                     Text("“host” gives the best performance but prevents live migration to nodes with a different CPU.")
                 }
             }
             Section {
                 LabeledContent("CPU Limit") {
-                    TextField("Unlimited", value: $limit, format: .number)
+                    TextField("Unlimited", value: Binding(get: { draft.limit > 0 ? draft.limit : nil }, set: { draft.limit = $0 ?? 0 }), format: .number)
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                 }
                 FieldError(message: errors["cpulimit"])
+                LabeledContent("CPU Units") {
+                    TextField("100", text: $draft.units)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                FieldError(message: errors["cpuunits"])
+                if isVM {
+                    LabeledContent("CPU Affinity") {
+                        TextField("All Cores", text: $draft.affinity)
+                            .keyboardType(.numbersAndPunctuation)
+                            .multilineTextAlignment(.trailing)
+                            .autocorrectionDisabled()
+                    }
+                    FieldError(message: errors["affinity"])
+                }
+            } header: {
+                Text("Scheduling")
             } footer: {
-                Text("Maximum CPU time in cores, 0 for no limit.")
+                Text("Limit is in cores, 0 for none. Units weigh this guest against others when the host is busy. Affinity pins the guest to host cores, e.g. 0-3,8.")
             }
         }
         .task {
@@ -69,35 +100,63 @@ struct CPUEditor: View {
     private var modelNames: [String] {
         var names = Set(models.map(\.name))
         names.formUnion(["host", "x86-64-v2-AES", "x86-64-v3", "kvm64"])
-        if !cpuType.isEmpty { names.insert(cpuType) }
+        if !draft.model.isEmpty { names.insert(draft.model) }
         let preferred = ["host", "x86-64-v2-AES", "x86-64-v3", "x86-64-v4", "kvm64", "qemu64"]
         return preferred.filter(names.contains) + names.subtracting(preferred).sorted()
     }
 
     private func update() -> GuestConfigUpdate? {
-        var update = GuestConfigUpdate()
-        if isVM, sockets != config.sockets { update.set("sockets", String(sockets)) }
-        if cores != (config.cores ?? 1) { update.set("cores", String(cores)) }
-        if isVM, cpuType != (config.cpuType ?? "") {
-            if cpuType.isEmpty {
-                update.set("cpu", nil)
-            } else {
-                // Keep flags and other CPU options, only replace the model.
-                var property = PropertyString(parsing: config["cpu"] ?? "")
-                if property.items.first?.key == nil, !property.items.isEmpty {
-                    property.items[0].value = cpuType
-                } else if property["cputype"] != nil {
-                    property["cputype"] = cpuType
-                } else {
-                    property.items.insert((key: nil, value: cpuType), at: 0)
+        let update = draft.changes(from: original)
+        return update.isEmpty ? nil : update
+    }
+}
+
+/// CPU flags set on top of the CPU type.
+private struct CPUFlagsEditor: View {
+    @Binding var flags: [String: Bool]
+
+    private static let descriptions: [String: LocalizedStringKey] = [
+        "md-clear": "MDS mitigation, needed on Intel CPUs",
+        "pcid": "Meltdown fix cost reduction on Westmere, Sandy and Ivy Bridge",
+        "spec-ctrl": "Spectre v1 and v2 protection, needed on Intel CPUs",
+        "ssbd": "Spectre V4 protection on Intel CPUs",
+        "ibpb": "Spectre v1 and v2 protection on AMD CPUs",
+        "virt-ssbd": "Basis for Spectre V4 protection on AMD CPUs",
+        "amd-ssbd": "Spectre V4 protection on AMD CPUs",
+        "amd-no-ssb": "Tells the guest it is not affected by Spectre V4",
+        "pdpe1gb": "1 GiB huge pages in the guest",
+        "hv-tlbflush": "Faster TLB flushes for Windows guests",
+        "hv-evmcs": "Faster nested virtualization for Windows guests on Intel",
+        "aes": "Hardware AES, needed for fast encryption",
+    ]
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(CPUDraft.knownFlags + flags.keys.filter { !CPUDraft.knownFlags.contains($0) }.sorted(), id: \.self) { flag in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(flag).font(.body.monospaced())
+                            if let description = Self.descriptions[flag] {
+                                Text(description).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        Picker(flag, selection: Binding(get: { flags[flag] }, set: { flags[flag] = $0 })) {
+                            Text("Default").tag(Bool?.none)
+                            Text("On").tag(Bool?.some(true))
+                            Text("Off").tag(Bool?.some(false))
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
                 }
-                update.set("cpu", property.stringValue)
+            } footer: {
+                Text("Default uses what the CPU type provides. Flags the host CPU lacks stop the VM from starting.")
             }
         }
-        let currentLimit = config["cpulimit"].flatMap(Double.init) ?? 0
-        if limit != currentLimit { update.set("cpulimit", limit > 0 ? String(limit) : nil) }
-        if isVM, numa != (config["numa"] == "1") { update.set("numa", numa) }
-        return update.isEmpty ? nil : update
+        .navigationTitle("CPU Flags")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -109,6 +168,7 @@ struct MemoryEditor: View {
     @State private var ballooning: Bool
     @State private var minimum: Int
     @State private var swap: Int
+    @State private var shares: String
 
     private var isVM: Bool { detail.reference.kind == .virtualMachine }
 
@@ -120,10 +180,11 @@ struct MemoryEditor: View {
         _ballooning = State(initialValue: config.balloonMiB != 0)
         _minimum = State(initialValue: config.balloonMiB.flatMap { $0 > 0 ? $0 : nil } ?? memory)
         _swap = State(initialValue: config.swapMiB ?? 512)
+        _shares = State(initialValue: config["shares"] ?? "")
     }
 
     var body: some View {
-        ConfigEditor(title: "Memory", detail: detail, makeUpdate: update) { errors in
+        ConfigEditor(title: "Memory", detail: detail, makeUpdate: update, privilege: "VM.Config.Memory") { errors in
             Section {
                 NumberField(title: "Memory", value: $memory, range: 16...4_194_304, step: 512, unit: "MiB")
                 FieldError(message: errors["memory"])
@@ -136,9 +197,15 @@ struct MemoryEditor: View {
                     if ballooning {
                         NumberField(title: "Minimum", value: $minimum, range: 16...memory, step: 256, unit: "MiB")
                         FieldError(message: errors["balloon"])
+                        LabeledContent("Shares") {
+                            TextField("1000", text: $shares)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        FieldError(message: errors["shares"])
                     }
                 } footer: {
-                    Text("With ballooning, the host can reclaim memory down to the minimum when it runs low. Needs the balloon driver in the guest.")
+                    Text("With ballooning, the host can reclaim memory down to the minimum when it runs low. Shares weigh this VM against others when memory is reclaimed. Needs the balloon driver in the guest.")
                 }
             } else {
                 Section {
@@ -158,6 +225,8 @@ struct MemoryEditor: View {
             let followsMemory = config.balloonMiB == nil && minimum == (config.memoryMiB ?? 512)
             let target: String? = !ballooning ? "0" : (followsMemory || minimum >= memory ? nil : String(minimum))
             if target != config["balloon"] { update.set("balloon", target) }
+            let newShares = shares.trimmingCharacters(in: .whitespaces)
+            if newShares != (config["shares"] ?? "") { update.set("shares", newShares.isEmpty ? nil : newShares) }
         } else if swap != config.swapMiB {
             update.set("swap", String(swap))
         }
@@ -168,61 +237,88 @@ struct MemoryEditor: View {
 /// BIOS, machine type, SCSI controller and display of a VM.
 struct VMSystemEditor: View {
     let detail: GuestDetail
-    let config: GuestConfig
-    @State private var bios: String
-    @State private var machineFamily: String
-    @State private var scsiController: String
-    @State private var display: String
-
-    static let scsiControllers = ["virtio-scsi-single", "virtio-scsi-pci", "lsi", "lsi53c810", "megasas", "pvscsi"]
-    static let displays = ["": "Default", "std": "Standard VGA", "virtio": "VirtIO-GPU", "qxl": "SPICE (qxl)", "vmware": "VMware compatible", "serial0": "Serial terminal 0", "none": "None"]
+    let original: VMSystemDraft
+    @State private var draft: VMSystemDraft
+    @State private var machines: [MachineType] = []
 
     init(detail: GuestDetail, config: GuestConfig) {
         self.detail = detail
-        self.config = config
-        _bios = State(initialValue: config.bios ?? "seabios")
-        _machineFamily = State(initialValue: (config.machine ?? "").contains("q35") ? "q35" : "i440fx")
-        _scsiController = State(initialValue: config["scsihw"] ?? "lsi")
-        _display = State(initialValue: config["vga"].map { PropertyString(parsing: $0).defaultValue ?? $0 } ?? "")
+        let draft = VMSystemDraft(config)
+        original = draft
+        _draft = State(initialValue: draft)
     }
 
     var body: some View {
-        ConfigEditor(title: "System", detail: detail, makeUpdate: update) { errors in
+        ConfigEditor(title: "System", detail: detail, makeUpdate: update, privilege: "VM.Config.HWType") { errors in
             Section {
-                Picker("BIOS", selection: $bios) {
+                Picker("BIOS", selection: $draft.bios) {
                     Text("SeaBIOS").tag("seabios")
                     Text("OVMF (UEFI)").tag("ovmf")
                 }
                 FieldError(message: errors["bios"])
-                Picker("Machine", selection: $machineFamily) {
+                Picker("Machine", selection: $draft.machineFamily) {
                     Text("i440fx").tag("i440fx")
                     Text("q35").tag("q35")
+                    if !["i440fx", "q35"].contains(draft.machineFamily) {
+                        Text(draft.machineFamily).tag(draft.machineFamily)
+                    }
+                }
+                if ["i440fx", "q35"].contains(draft.machineFamily) {
+                    Picker("Version", selection: $draft.machineVersion) {
+                        Text("Latest").tag("")
+                        ForEach(versions, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Picker("vIOMMU", selection: $draft.viommu) {
+                    Text("None").tag("")
+                    Text("Intel (AMD Compatible)").tag("intel")
+                    Text("VirtIO").tag("virtio")
                 }
                 FieldError(message: errors["machine"])
             } footer: {
-                Text("UEFI needs an EFI disk to store its settings. Changing BIOS or machine type can stop the guest from booting.")
+                Text("UEFI needs an EFI disk to store its settings. Changing BIOS or machine type can stop the guest from booting. Pin a version to keep Windows guests from seeing new hardware after updates. The Intel vIOMMU needs q35.")
             }
             Section {
-                Picker("SCSI Controller", selection: $scsiController) {
-                    ForEach(Self.scsiControllers, id: \.self) { Text($0).tag($0) }
+                Picker("SCSI Controller", selection: $draft.scsiController) {
+                    ForEach(VMSystemDraft.scsiControllers, id: \.self) { Text($0).tag($0) }
                 }
-                Picker("Display", selection: $display) {
-                    ForEach(Self.displays.keys.sorted(), id: \.self) { key in
-                        Text(Self.displays[key] ?? key).tag(key)
+                FieldError(message: errors["scsihw"])
+            }
+            Section {
+                Picker("Graphic Card", selection: $draft.display) {
+                    ForEach(VMSystemDraft.displays, id: \.id) { Text($0.title).tag($0.id) }
+                }
+                if !draft.display.hasPrefix("serial"), draft.display != "none" {
+                    Picker("Memory", selection: $draft.displayMemory) {
+                        Text("Default").tag(0)
+                        ForEach([4, 8, 16, 32, 64, 128, 256, 512], id: \.self) { Text("\($0) MiB").tag($0) }
+                    }
+                    Picker("Clipboard", selection: $draft.clipboard) {
+                        Text("Default (SPICE)").tag("")
+                        Text("VNC").tag("vnc")
                     }
                 }
+                FieldError(message: errors["vga"])
+            } header: {
+                Text("Display")
+            } footer: {
+                Text("VNC clipboard sharing needs the QEMU guest agent and spice-vdagent in the guest; it disables live migration.")
             }
         }
+        .task { machines = await detail.load(PVE.machineTypes(node: detail.reference.node)) }
+    }
+
+    private var versions: [String] {
+        var versions = machines.filter { $0.type == draft.machineFamily }.compactMap { machine in
+            let prefix = draft.machineFamily == "q35" ? "pc-q35-" : "pc-i440fx-"
+            return machine.id.hasPrefix(prefix) ? String(machine.id.dropFirst(prefix.count)) : nil
+        }
+        if !draft.machineVersion.isEmpty, !versions.contains(draft.machineVersion) { versions.insert(draft.machineVersion, at: 0) }
+        return versions
     }
 
     private func update() -> GuestConfigUpdate? {
-        var update = GuestConfigUpdate()
-        if bios != (config.bios ?? "seabios") { update.set("bios", bios == "seabios" ? nil : bios) }
-        let currentFamily = (config.machine ?? "").contains("q35") ? "q35" : "i440fx"
-        if machineFamily != currentFamily { update.set("machine", machineFamily == "q35" ? "q35" : nil) }
-        if scsiController != (config["scsihw"] ?? "lsi") { update.set("scsihw", scsiController) }
-        let currentDisplay = config["vga"].map { PropertyString(parsing: $0).defaultValue ?? $0 } ?? ""
-        if display != currentDisplay { update.set("vga", display.isEmpty ? nil : display) }
+        let update = draft.changes(from: original)
         return update.isEmpty ? nil : update
     }
 }

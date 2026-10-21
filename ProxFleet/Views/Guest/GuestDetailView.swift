@@ -466,7 +466,7 @@ private struct GuestHardwareSections: View {
                         if let type = config.cpuType {
                             Text(type).font(.caption).foregroundStyle(.secondary)
                         }
-                        pendingLabel("cores", "sockets", "cpu")
+                        pendingLabel("cores", "sockets", "cpu", "vcpus", "cpulimit", "cpuunits", "affinity", "numa")
                     }
                 }
             }
@@ -484,7 +484,7 @@ private struct GuestHardwareSections: View {
                         if !isVM, let swap = config.swapMiB {
                             Text("Swap \(Format.bytes(Int64(swap) * 1_048_576))").font(.caption).foregroundStyle(.secondary)
                         }
-                        pendingLabel("memory", "balloon", "swap")
+                        pendingLabel("memory", "balloon", "swap", "shares")
                     }
                 }
             }

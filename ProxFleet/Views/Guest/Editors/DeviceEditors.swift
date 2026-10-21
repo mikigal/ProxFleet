@@ -10,6 +10,8 @@ struct NetworkDeviceEditor: View {
     let nic: GuestNIC?
     @State private var draft: NetworkDeviceDraft
     @State private var vlanText: String
+    @State private var rateText: String
+    @State private var mtuText: String
     @State private var bridges: [NodeNetworkInterface] = []
     @State private var confirmsRemoval = false
     @Environment(\.dismiss) private var dismiss
@@ -21,6 +23,8 @@ struct NetworkDeviceEditor: View {
         let draft = nic.map(NetworkDeviceDraft.init) ?? NetworkDeviceDraft()
         _draft = State(initialValue: draft)
         _vlanText = State(initialValue: draft.vlanTag.map(String.init) ?? "")
+        _rateText = State(initialValue: draft.rateLimit.map { $0.formatted(.number.grouping(.never)) } ?? "")
+        _mtuText = State(initialValue: draft.mtu.map(String.init) ?? "")
     }
 
     private var key: String? { nic?.key ?? config.nextFreeKey(prefix: "net", slots: 32) }
@@ -52,9 +56,37 @@ struct NetworkDeviceEditor: View {
                         .multilineTextAlignment(.trailing)
                         .font(.body.monospaced())
                 }
-                FieldError(message: key.flatMap { errors[$0] })
             } footer: {
                 Text("VirtIO is the fastest model; use Intel E1000 for guests without VirtIO drivers.")
+            }
+            Section {
+                LabeledContent("Rate Limit") {
+                    TextField("Unlimited", text: $rateText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                LabeledContent("MTU") {
+                    TextField(draft.model == "virtio" ? "1500 (1 = Same as Bridge)" : "Default", text: $mtuText)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                if draft.model == "virtio" {
+                    Picker("Multiqueue", selection: Binding(get: { draft.queues ?? 0 }, set: { draft.queues = $0 == 0 ? nil : $0 })) {
+                        Text("Off").tag(0)
+                        ForEach([2, 4, 8, 16, 32, 64], id: \.self) { Text("\($0) Queues").tag($0) }
+                    }
+                }
+                LabeledContent("VLAN Trunks") {
+                    TextField("All", text: $draft.trunks)
+                        .keyboardType(.numbersAndPunctuation)
+                        .multilineTextAlignment(.trailing)
+                        .autocorrectionDisabled()
+                }
+                FieldError(message: key.flatMap { errors[$0] })
+            } header: {
+                Text("Advanced")
+            } footer: {
+                Text("Rate limit in MB/s. Multiqueue lets several vCPUs handle network traffic; match it to the vCPU count. Trunks limit the VLANs passed to the guest, e.g. 10;20-30.")
             }
             if let nic {
                 Section {
@@ -81,8 +113,10 @@ struct NetworkDeviceEditor: View {
         guard let key else { return nil }
         var draft = draft
         draft.vlanTag = Int(vlanText)
+        draft.rateLimit = Double(rateText.replacingOccurrences(of: ",", with: "."))
+        draft.mtu = Int(mtuText)
         let value = draft.stringValue
-        guard value != nic.map({ config[$0.key] ?? "" }) else { return nil }
+        guard value != nic.map({ NetworkDeviceDraft($0).stringValue }) else { return nil }
         var update = GuestConfigUpdate()
         update.set(key, value)
         return update
@@ -123,9 +157,20 @@ struct DiskEditor: View {
     }
 
     private var isVM: Bool { detail.reference.kind == .virtualMachine }
+    /// `scsi`, `virtio`, `sata` or `ide`.
+    private var bus: String { String(disk.key.prefix { $0.isLetter }) }
+    /// Bind mounts and the EFI and TPM state disks cannot be moved or reassigned here.
+    private var canMove: Bool { disk.size != nil && !["efidisk0", "tpmstate0"].contains(disk.key) || disk.isUnused }
 
     var body: some View {
         ConfigEditor(title: LocalizedStringKey(disk.key), detail: detail, makeUpdate: update) { errors in
+            if isStale {
+                Section {
+                    Label("This disk was changed elsewhere. Go back to see its current settings.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
+                }
+            }
             Section {
                 LabeledContent("Volume", value: disk.volume)
                 if let size = disk.size {
@@ -147,15 +192,54 @@ struct DiskEditor: View {
                         Text("Default (No cache)").tag(String?.none)
                         ForEach(DiskOptionsDraft.cacheModes, id: \.self) { Text($0).tag(String?.some($0)) }
                     }
+                    Picker("Async IO", selection: $draft.asyncIO) {
+                        Text("Default (io_uring)").tag(String?.none)
+                        ForEach(DiskOptionsDraft.asyncIOModes, id: \.self) { Text($0).tag(String?.some($0)) }
+                    }
                     Toggle("Discard", isOn: $draft.discard)
-                    Toggle("IO Thread", isOn: $draft.ioThread)
-                    Toggle("SSD Emulation", isOn: $draft.ssdEmulation)
+                    if bus == "scsi" || bus == "virtio" {
+                        Toggle("IO Thread", isOn: $draft.ioThread)
+                        Toggle("Read Only", isOn: $draft.readOnly)
+                    }
+                    if bus != "virtio" {
+                        Toggle("SSD Emulation", isOn: $draft.ssdEmulation)
+                    }
                     Toggle("Include in Backups", isOn: $draft.includeInBackup)
+                    Toggle("Replicate", isOn: $draft.replicate)
+                    LabeledContent("Serial") {
+                        TextField("None", text: $draft.serial)
+                            .multilineTextAlignment(.trailing)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    NavigationLink {
+                        DiskLimitsEditor(limits: $draft.limits)
+                    } label: {
+                        LabeledContent("Bandwidth Limits", value: draft.limits.values.contains { !$0.isEmpty } ? String(localized: "Set") : String(localized: "Unlimited"))
+                    }
                     FieldError(message: errors[disk.key])
                 }
             }
             if let binding = Binding($mountDraft) {
                 MountPointOptionsSection(draft: binding, error: errors[disk.key])
+            }
+            if canMove {
+                Section {
+                    if disk.isUnused {
+                        NavigationLink("Attach Disk") {
+                            AttachUnusedDiskEditor(detail: detail, config: config, disk: disk) { dismiss() }
+                        }
+                    } else {
+                        NavigationLink("Move to Another Storage") {
+                            MoveDiskView(detail: detail, disk: disk) { dismiss() }
+                        }
+                    }
+                    if disk.key != "rootfs" {
+                        NavigationLink("Reassign to Another Guest") {
+                            ReassignDiskView(detail: detail, disk: disk) { dismiss() }
+                        }
+                    }
+                }
             }
             Section {
                 if disk.isUnused {
@@ -191,7 +275,11 @@ struct DiskEditor: View {
         }
     }
 
+    /// The disk no longer matches the configuration, e.g. after a move; saving would overwrite the new volume.
+    private var isStale: Bool { detail.config.map { $0[disk.key] != config[disk.key] } ?? false }
+
     private func update() -> GuestConfigUpdate? {
+        guard !isStale else { return nil }
         if let mountDraft {
             let value = mountDraft.stringValue
             guard value != MountPointDraft(disk).stringValue else { return nil }
@@ -201,7 +289,7 @@ struct DiskEditor: View {
         }
         guard isVM, !disk.isUnused else { return nil }
         let value = draft.stringValue
-        guard value != config[disk.key] else { return nil }
+        guard value != DiskOptionsDraft(disk).stringValue else { return nil }
         var update = GuestConfigUpdate()
         update.set(disk.key, value)
         return update

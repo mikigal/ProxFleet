@@ -23,6 +23,12 @@ struct GuestDetailTests {
         GuestReference(node: node, vmid: vmid, kind: .virtualMachine)
     }
 
+    @Test func conflictMessagesAreRecognized() {
+        for message in ["detected modified configuration - file changed by other user? Try again.", "checksum mismatch"] {
+            #expect(ConfigUpdateError(ProxmoxError.api(status: 500, message: message, fieldErrors: [:])) == .conflict)
+        }
+    }
+
     @Test func loadsStatusConfigHistoryAndAddresses() async throws {
         let detail = GuestDetail(reference: vm(101), connection: try await connection())
         await detail.load()

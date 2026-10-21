@@ -13,11 +13,15 @@ struct ConfigEditor<Content: View>: View {
     var footer: LocalizedStringKey?
     /// When set and the user lacks it, the form is shown read-only with an explanation.
     var privilege: String?
+    /// Called after a successful save instead of closing the editor, e.g. to close a parent screen as well.
+    var onSaved: (() -> Void)?
     @ViewBuilder let content: (_ fieldErrors: [String: String]) -> Content
 
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var fieldErrors: [String: String] = [:]
+    /// Digest of the configuration the form was filled from, so changes made elsewhere meanwhile are detected.
+    @State private var digest: String?
     @Environment(\.dismiss) private var dismiss
 
     private var isReadOnly: Bool {
@@ -63,17 +67,22 @@ struct ConfigEditor<Content: View>: View {
     }
 
     private func save() async {
-        guard let update = makeUpdate() else { return }
+        guard var update = makeUpdate() else { return }
+        if update.digest == nil { update.digest = digest }
         isSaving = true
         errorMessage = nil
         fieldErrors = [:]
         defer { isSaving = false }
         do {
             try await detail.apply(update)
-            dismiss()
+            if let onSaved { onSaved() } else { dismiss() }
         } catch .invalid(let message, let fields) {
             fieldErrors = fields
             errorMessage = message ?? String(localized: "Check the highlighted fields.")
+        } catch .conflict {
+            // Saving again overwrites the other change, as in the web interface.
+            digest = detail.config?.digest
+            errorMessage = ConfigUpdateError.conflict.localizedDescription
         } catch {
             errorMessage = error.localizedDescription
         }

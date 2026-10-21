@@ -166,4 +166,31 @@ extension PVE {
     public static func cpuModels(node: String) -> APIRequest<[CPUModel]> {
         APIRequest(.get, "/nodes/\(node)/capabilities/qemu/cpu")
     }
+
+    public static func machineTypes(node: String) -> APIRequest<[MachineType]> {
+        APIRequest(.get, "/nodes/\(node)/capabilities/qemu/machines")
+    }
+
+    /// Moves a disk or container volume to another storage. Without `deleteSource` the old volume stays as unused.
+    public static func moveDisk(_ guest: GuestReference, disk: String, storage: String, format: String? = nil, deleteSource: Bool) -> APIRequest<String?> {
+        var request = moveRequest(guest, disk: disk)
+        request.parameters["storage"] = .string(storage)
+        request.parameters["delete"] = .bool(deleteSource)
+        if let format { request.parameters["format"] = .string(format) }
+        return request
+    }
+
+    /// Moves a disk to another guest on the same node, as `targetKey` there.
+    public static func reassignDisk(_ guest: GuestReference, disk: String, to targetVMID: Int, as targetKey: String) -> APIRequest<String?> {
+        var request = moveRequest(guest, disk: disk)
+        request.parameters["target-vmid"] = .int(targetVMID)
+        request.parameters[guest.kind == .virtualMachine ? "target-disk" : "target-volume"] = .string(targetKey)
+        return request
+    }
+
+    private static func moveRequest(_ guest: GuestReference, disk: String) -> APIRequest<String?> {
+        guest.kind == .virtualMachine
+            ? APIRequest(.post, guest.path + "/move_disk", parameters: ["disk": .string(disk)])
+            : APIRequest(.post, guest.path + "/move_volume", parameters: ["volume": .string(disk)])
+    }
 }

@@ -140,10 +140,16 @@ public final class GuestDetail {
 
     /// Grows a disk by a number of GiB.
     public func growDisk(_ key: String, byGiB amount: Int) async throws(ConfigUpdateError) {
+        try await run(PVE.resizeDisk(reference, disk: key, size: "+\(amount)G"))
+    }
+
+    /// Runs a request that starts a task on this guest, such as moving a disk, waits for it and reloads.
+    public func run(_ request: APIRequest<String?>) async throws(ConfigUpdateError) {
         do {
-            let upid = try await connection.session.send(PVE.resizeDisk(reference, disk: key, size: "+\(amount)G"))
+            let upid = try await connection.session.send(request)
             try await waitForTask(upid)
         } catch {
+            await loadConfig()
             throw ConfigUpdateError(error)
         }
         await loadConfig()
@@ -218,7 +224,7 @@ public enum ConfigUpdateError: Error, Equatable, LocalizedError {
         switch error {
         case ProxmoxError.api(_, let message, let fields) where !fields.isEmpty:
             self = .invalid(message: message, fields: fields)
-        case ProxmoxError.api(_, let message?, _) where message.contains("checksum mismatch") || message.contains("file change by other user"):
+        case ProxmoxError.api(_, let message?, _) where message.contains("checksum mismatch") || message.contains("by other user"):
             self = .conflict
         default:
             self = .failed(error.localizedDescription)
