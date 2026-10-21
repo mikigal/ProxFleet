@@ -31,7 +31,7 @@ struct GuestDetailView: View {
             .safeAreaInset(edge: .bottom) {
                 // The console needs the space while typing.
                 if !(tab == .console && isKeyboardVisible) {
-                    GuestTabBar(selection: $tab)
+                    DetailTabBar(selection: $tab)
                         .padding(.bottom, 6)
                 }
             }
@@ -216,7 +216,7 @@ struct GuestDetailView: View {
 
         Section {
             Picker("Metric", selection: $metric) {
-                ForEach(PerformanceMetric.allCases) { Text($0.title).tag($0) }
+                ForEach(PerformanceMetric.guest) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
             PerformanceChart(points: detail.history, metric: metric, timeframe: detail.timeframe)
@@ -340,7 +340,7 @@ private struct GuestHeader: View {
     }
 }
 
-enum GuestTab: String, CaseIterable, Identifiable {
+nonisolated enum GuestTab: String, DetailTab {
     case summary, console, hardware, more
 
     var id: String { rawValue }
@@ -361,49 +361,6 @@ enum GuestTab: String, CaseIterable, Identifiable {
         case .hardware: "cpu"
         case .more: "ellipsis"
         }
-    }
-}
-
-/// Floating Liquid Glass bar for switching between the sections of a guest.
-private struct GuestTabBar: View {
-    @Binding var selection: GuestTab
-    @Namespace private var namespace
-
-    var body: some View {
-        GlassEffectContainer {
-            HStack(spacing: 0) {
-                ForEach(GuestTab.allCases) { tab in
-                    Button {
-                        withAnimation(.snappy(duration: 0.25)) { selection = tab }
-                    } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: tab.systemImage)
-                                .font(.system(size: 18, weight: .medium))
-                                .frame(height: 22)
-                            Text(tab.title)
-                                .font(.caption2.weight(.medium))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                        .foregroundStyle(selection == tab ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-                        .background {
-                            if selection == tab {
-                                Capsule()
-                                    .fill(.tint.opacity(0.16))
-                                    .matchedGeometryEffect(id: "selection", in: namespace)
-                            }
-                        }
-                        .contentShape(.capsule)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("tab.\(tab.rawValue)")
-                    .accessibilityAddTraits(selection == tab ? .isSelected : [])
-                }
-            }
-            .padding(4)
-            .glassEffect(.regular.interactive(), in: .capsule)
-        }
-        .padding(.horizontal, 20)
     }
 }
 

@@ -40,11 +40,14 @@ extension DemoState {
         }
 
         if parts.count == 3, parts[0] == "nodes", method == .post, parts[2] == "termproxy" {
-            return startConsole(.init(kind: .terminal, hostname: parts[1], osName: "Proxmox VE \(cluster.version)", isContainer: false), user: user)
+            return startConsole(.init(kind: .terminal, hostname: parts[1], osName: "Proxmox VE \(cluster.version)", isContainer: false, command: parameters["cmd"]), user: user)
         }
         guard parts.count >= 3, parts[0] == "nodes" else { return nil }
         let node = parts[1]
         if let response = handleBackups(method, node: node, rest: Array(parts.dropFirst(2)), parameters: parameters, user: user) {
+            return response
+        }
+        if let response = handleNode(method, node: node, rest: Array(parts.dropFirst(2)), parameters: parameters, user: user) {
             return response
         }
 
@@ -341,7 +344,7 @@ extension DemoState {
         return .object(data)
     }
 
-    private func clusterTaskJSON(_ task: DemoTask) -> JSONValue {
+    func clusterTaskJSON(_ task: DemoTask) -> JSONValue {
         var data: [String: JSONValue] = [
             "upid": .string(task.upid), "node": .string(task.node), "type": .string(task.type), "id": .string(task.objectID),
             "user": .string(task.user), "starttime": .int(Int(task.startedAt.timeIntervalSince1970)),

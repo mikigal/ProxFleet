@@ -445,6 +445,37 @@ struct LiveServerTests {
         #expect(try await session.send(PVE.backups(node: node, storage: storage, vmid: 202)).allSatisfy { $0.volumeID != backup.volumeID })
     }
 
+    /// Status, history, services, packages, journal and tasks of the node, and a service restart.
+    @Test func nodeDetails() async throws {
+        let (session, node) = try await rootSession()
+        let status = try await session.send(PVE.nodeStatus(node))
+        #expect(status.pveVersion?.hasPrefix("9.") == true)
+        #expect(status.memoryTotal > 0 && status.rootTotal > 0 && status.cpuCount > 0)
+        #expect(status.loadAverage.count == 3)
+        let history = try await session.send(PVE.nodeRRD(node, timeframe: .hour)).filter(\.hasData)
+        #expect(history.contains { $0.loadAverage != nil && $0.memoryTotal != nil })
+
+        let services = try await session.send(PVE.services(node: node))
+        let chrony = try #require(services.first { $0.name == "chrony" })
+        #expect(chrony.isRunning)
+        let upid = try #require(try await session.send(PVE.serviceAction(node: node, service: "chrony", .restart)))
+        var finished: TaskStatus?
+        for _ in 0..<40 where finished == nil {
+            try await Task.sleep(for: .milliseconds(500))
+            let task = try await session.send(PVE.taskStatus(node: node, upid: upid))
+            if !task.isRunning { finished = task }
+        }
+        #expect(finished?.succeeded == true)
+        #expect(TaskDescription.title(type: finished?.type ?? "", objectID: finished?.objectID) == "chrony – Restart Service")
+
+        // The journal answers compressed; URLSession unpacks it.
+        let journal = NodeJournal.lines(try await session.send(PVE.journal(node: node, lastEntries: 20)))
+        #expect(!journal.isEmpty && journal.allSatisfy { !$0.hasPrefix("s=") })
+        #expect(try await !session.send(PVE.packageVersions(node: node)).isEmpty)
+        _ = try await session.send(PVE.packageUpdates(node: node))
+        #expect(try await !session.send(PVE.nodeTasks(node: node, limit: 5)).isEmpty)
+    }
+
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
     func readOnlyUserLacksPowerManagement() async throws {
         let session = try await trustedSession()

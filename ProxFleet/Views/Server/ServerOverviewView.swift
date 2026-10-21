@@ -15,7 +15,10 @@ struct ServerOverviewView: View {
                 // A standalone node is shown as the server itself, without cluster information.
                 if snapshot.topology == .standalone, let node = snapshot.nodes.first {
                     Section {
-                        NodeHeader(node: node, snapshot: snapshot)
+                        NavigationLink(value: ServerRoute.node(node.name)) {
+                            NodeHeader(node: node, snapshot: snapshot)
+                        }
+                        .accessibilityIdentifier("node.\(node.name)")
                     }
                 } else {
                     Section {
@@ -23,7 +26,10 @@ struct ServerOverviewView: View {
                     }
                     Section("Nodes") {
                         ForEach(snapshot.nodes) { node in
-                            NodeRow(node: node)
+                            NavigationLink(value: ServerRoute.node(node.name)) {
+                                NodeRow(node: node)
+                            }
+                            .accessibilityIdentifier("node.\(node.name)")
                         }
                     }
                 }

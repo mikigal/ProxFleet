@@ -48,6 +48,11 @@ actor DemoState {
     var snapshots: [Int: [DemoSnapshot]] = [:]
     var currentSnapshot: [Int: String] = [:]
     var backups: [DemoBackup]
+    /// Services started or stopped in demo mode, by `node/service`.
+    var serviceStates: [String: Bool] = [:]
+    /// Nodes rebooting until a time, and when they last booted.
+    var nodeReboots: [String: Date] = [:]
+    var nodeBootTimes: [String: Date] = [:]
     /// Console proxies started but not yet connected, by ticket.
     var consoles: [String: DemoConsoleRequest] = [:]
     private var ticketCounter = 0
@@ -88,6 +93,7 @@ actor DemoState {
             return failure(401, "No ticket")
         }
 
+        settleNodeReboots()
         switch (request.method, path) {
         case (.get, "/version"):
             return success(["version": .string(cluster.version), "release": "9.0", "repoid": "demo"])

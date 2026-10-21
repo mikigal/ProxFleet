@@ -48,8 +48,12 @@ public final class TerminalConnection: Sendable {
     }
 
     /// Opens a terminal to a container or a node shell.
-    public static func open(_ target: ConsoleTarget, session: ProxmoxSession) async throws -> TerminalConnection {
-        let (proxy, socket) = try await session.openConsoleSocket(target, endpoint: "termproxy", parameters: APIParameters())
+    /// - Parameter command: Node shells only: a command the server runs instead of a login shell, such as
+    ///   `upgrade` for `apt-get dist-upgrade`, as the web interface's Upgrade button does.
+    public static func open(_ target: ConsoleTarget, session: ProxmoxSession, command: String? = nil) async throws -> TerminalConnection {
+        var parameters = APIParameters()
+        if let command { parameters["cmd"] = .string(command) }
+        let (proxy, socket) = try await session.openConsoleSocket(target, endpoint: "termproxy", parameters: parameters)
         try await socket.send(.text("\(proxy.user):\(proxy.ticket)\n"))
         let answer = try await socket.receive().bytes
         guard String(decoding: answer.prefix(2), as: UTF8.self) == "OK" else {

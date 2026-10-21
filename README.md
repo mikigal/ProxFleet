@@ -22,9 +22,10 @@ Early development. What works now:
 - Creating VMs (installation ISO, OS-specific defaults such as UEFI and TPM for Windows 11, disk, CPU, memory, network) and containers (templates, which can be downloaded from the app, root password or SSH keys, network and DNS)
 - Snapshots (take with or without RAM, roll back, describe, delete), cloning (full or linked from templates, from a snapshot), converting to a template and deleting guests
 - Backups: back up now (mode, compression, notes, protection), list from all backup storages, notes and protection, configuration in the backup, restore over the guest or as a new one, delete
+- Nodes: status, usage and history, shell, package updates (refresh, list, upgrade in the shell), services, system log, tasks, reboot and shutdown
 - Demo mode with a built-in sample cluster, including working demo consoles
 
-Next up: node and datacenter settings.
+Next up: node settings (network, disks, certificates) and datacenter settings.
 
 ## Requirements
 

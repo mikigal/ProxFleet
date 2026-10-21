@@ -99,6 +99,9 @@ public struct RRDPoint: Decodable, Sendable, Equatable, Identifiable {
     public var networkOut: Double?
     public var diskRead: Double?
     public var diskWrite: Double?
+    /// Nodes only: load average and the share of time spent waiting for I/O.
+    public var loadAverage: Double?
+    public var ioWait: Double?
 
     public var id: Date { time }
 
@@ -117,12 +120,15 @@ public struct RRDPoint: Decodable, Sendable, Equatable, Identifiable {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
         time = Date(timeIntervalSince1970: container.lossyDouble(AnyCodingKey("time")) ?? 0)
         cpu = container.lossyDouble(AnyCodingKey("cpu"))
-        memoryUsed = container.lossyDouble(AnyCodingKey("mem"))
-        memoryTotal = container.lossyDouble(AnyCodingKey("maxmem"))
+        // Guests report `mem`/`maxmem`, nodes `memused`/`memtotal`.
+        memoryUsed = container.lossyDouble(AnyCodingKey("mem")) ?? container.lossyDouble(AnyCodingKey("memused"))
+        memoryTotal = container.lossyDouble(AnyCodingKey("maxmem")) ?? container.lossyDouble(AnyCodingKey("memtotal"))
         networkIn = container.lossyDouble(AnyCodingKey("netin"))
         networkOut = container.lossyDouble(AnyCodingKey("netout"))
         diskRead = container.lossyDouble(AnyCodingKey("diskread"))
         diskWrite = container.lossyDouble(AnyCodingKey("diskwrite"))
+        loadAverage = container.lossyDouble(AnyCodingKey("loadavg"))
+        ioWait = container.lossyDouble(AnyCodingKey("iowait"))
     }
 
     /// The first samples of a new guest carry only a timestamp.

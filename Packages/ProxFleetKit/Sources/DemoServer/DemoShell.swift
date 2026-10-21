@@ -30,6 +30,22 @@ struct DemoShell {
         mode = requiresLogin ? .login : .shell
     }
 
+    /// What `apt-get dist-upgrade` prints in demo mode, where nothing is installed.
+    static func upgradeTranscript(_ packages: [String]) -> String {
+        [
+            "Starting system upgrade: apt-get dist-upgrade",
+            "Reading package lists... Done",
+            "Building dependency tree... Done",
+            "Calculating upgrade... Done",
+            "The following packages will be upgraded:",
+            "  " + packages.joined(separator: " "),
+            "\(packages.count) upgraded, 0 newly installed, 0 to remove and 0 not upgraded.",
+            "",
+            "\u{1B}[1mThis is a ProxFleet demo: nothing was installed.\u{1B}[0m",
+            "",
+        ].joined(separator: "\r\n")
+    }
+
     /// What the console shows before any input.
     func greeting() -> String {
         switch mode {

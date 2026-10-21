@@ -13,6 +13,8 @@ struct DemoConsoleRequest: Sendable {
     var isContainer: Bool
     var vmid = 0
     var isWindows = false
+    /// Node shells: `upgrade` shows an apt upgrade before the prompt.
+    var command: String?
 }
 
 /// One direction of an in-memory WebSocket.
@@ -88,16 +90,19 @@ enum DemoConsoleServer {
 private actor DemoTerminalSession {
     private var shell: DemoShell
     private let socket: DemoWebSocket
+    private let command: String?
 
     init(_ request: DemoConsoleRequest, socket: DemoWebSocket) {
         shell = DemoShell(hostname: request.hostname, osName: request.osName, isContainer: request.isContainer, vmid: request.vmid, requiresLogin: false)
         self.socket = socket
+        command = request.command
     }
 
     func run() async {
         do {
             _ = try await socket.outgoing.pop() // user:ticket
-            await socket.incoming.push(.data(Data(("OK" + shell.greeting()).utf8)))
+            let preamble = command == "upgrade" ? DemoShell.upgradeTranscript(DemoState.availableUpdates.map(\.package)) : ""
+            await socket.incoming.push(.data(Data(("OK" + preamble + shell.greeting()).utf8)))
             while true {
                 let frame = String(decoding: try await socket.outgoing.pop().bytes, as: UTF8.self)
                 guard frame.hasPrefix("0:"), let separator = frame.dropFirst(2).firstIndex(of: ":") else { continue }

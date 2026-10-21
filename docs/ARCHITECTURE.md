@@ -83,6 +83,16 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
 - Restore is the create call with `archive` (VMs) or `ostemplate` and `restore=1` (containers), plus `force` to replace the guest, which must be stopped. Containers need an explicit `storage`: without it Proxmox picks `local`, which usually cannot hold container volumes. A restore over the guest asks for confirmation first.
 - Backup jobs (schedules) belong to the datacenter settings; file restore needs Proxmox Backup Server. Neither is done yet.
 
+## Nodes
+
+`NodeDetail` (FleetCore) loads `GET /nodes/{node}/status` and `rrddata` like `GuestDetail`; services, updates, the journal and tasks load when their screen opens. Guest and node screens share `DetailTabBar`.
+
+- Node history uses `memused`/`memtotal` instead of the guests' `mem`/`maxmem`, plus `loadavg` and `iowait`; `RRDPoint` reads both.
+- `apt/update`: POST refreshes the package index as a task, GET lists the updates found by the last refresh. Upgrading opens the node shell with `termproxy` `cmd=upgrade`, as the web interface's Upgrade button does, so the user confirms apt's prompt there.
+- The system log comes from `GET .../journal?lastentries=N`, which answers gzip-compressed (URLSession unpacks it) and adds cursor lines at the start and end, which are dropped.
+- Service actions return tasks named `srvrestart` and so on, with the service as object ID. Stopping `pveproxy`, `pvedaemon` or `pve-cluster` cuts off API access, so the app warns before it.
+- Reboot and shutdown (`POST .../status`) answer right away; the node then goes offline.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

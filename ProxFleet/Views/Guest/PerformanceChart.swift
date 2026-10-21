@@ -3,13 +3,18 @@ import PVEKit
 import SwiftUI
 
 enum PerformanceMetric: String, CaseIterable, Identifiable {
-    case cpu, memory, network, disk
+    case cpu, load, memory, network, disk
 
     var id: String { rawValue }
+
+    /// Metrics with history for guests and for nodes.
+    static let guest: [PerformanceMetric] = [.cpu, .memory, .network, .disk]
+    static let node: [PerformanceMetric] = [.cpu, .load, .memory, .network]
 
     var title: LocalizedStringKey {
         switch self {
         case .cpu: "CPU"
+        case .load: "Load"
         case .memory: "Memory"
         case .network: "Network"
         case .disk: "Disk I/O"
@@ -46,7 +51,13 @@ struct PerformanceChart: View {
         points.flatMap { point -> [Sample] in
             switch metric {
             case .cpu:
-                return point.cpu.map { [Sample(time: point.time, series: "CPU", value: $0)] } ?? []
+                // Nodes also report the time spent waiting for I/O.
+                return [
+                    point.cpu.map { Sample(time: point.time, series: "CPU", value: $0) },
+                    point.ioWait.map { Sample(time: point.time, series: "IO Delay", value: $0) },
+                ].compactMap { $0 }
+            case .load:
+                return point.loadAverage.map { [Sample(time: point.time, series: "Load", value: $0)] } ?? []
             case .memory:
                 return point.memoryUsed.map { [Sample(time: point.time, series: "Used", value: $0)] } ?? []
             case .network:
@@ -69,7 +80,7 @@ struct PerformanceChart: View {
 
     var body: some View {
         if samples.isEmpty {
-            ContentUnavailableView("No Data Yet", systemImage: "chart.xyaxis.line", description: Text("The server records history while the guest runs."))
+            ContentUnavailableView("No Data Yet", systemImage: "chart.xyaxis.line", description: Text("The server records history while the guest or node runs."))
                 .frame(height: 180)
         } else {
             Chart(samples) { sample in
@@ -96,7 +107,7 @@ struct PerformanceChart: View {
                     AxisValueLabel(format: xAxisFormat)
                 }
             }
-            .chartLegend(metric == .network || metric == .disk ? .visible : .hidden)
+            .chartLegend(Set(samples.map(\.series)).count > 1 ? .visible : .hidden)
             .chartForegroundStyleScale(range: [Color.accentColor, Color.teal])
             .frame(height: 180)
             .accessibilityLabel(Text(metric.title))
@@ -111,6 +122,8 @@ struct PerformanceChart: View {
             return 0...(memoryLimit ?? (samples.map(\.value).max() ?? 1))
         case .network, .disk:
             return 0...max(samples.map(\.value).max() ?? 1, 1) * 1.1
+        case .load:
+            return 0...max(samples.map(\.value).max() ?? 1, 1) * 1.1
         }
     }
 
@@ -119,6 +132,7 @@ struct PerformanceChart: View {
         case .cpu: value.formatted(.percent.precision(.fractionLength(0)))
         case .memory: Int64(value).formatted(.byteCount(style: .memory))
         case .network, .disk: Int64(value).formatted(.byteCount(style: .binary)) + "/s"
+        case .load: value.formatted(.number.precision(.fractionLength(0...1)))
         }
     }
 
