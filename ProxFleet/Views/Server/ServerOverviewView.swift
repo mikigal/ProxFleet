@@ -57,6 +57,12 @@ struct ServerOverviewView: View {
                         MoreRow(title: "Users & Permissions", systemImage: "person.badge.key", color: .blue)
                     }
                     .accessibilityIdentifier("datacenter.access")
+                    NavigationLink {
+                        FirewallView(connection: connection, scope: .datacenter)
+                    } label: {
+                        MoreRow(title: "Firewall", systemImage: "flame", color: .red)
+                    }
+                    .accessibilityIdentifier("datacenter.firewall")
                 }
             }
         }

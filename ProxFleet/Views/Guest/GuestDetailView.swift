@@ -408,6 +408,12 @@ private struct GuestMoreList: View {
                 }
                 .accessibilityIdentifier("more.allSettings")
                 NavigationLink {
+                    FirewallView(connection: detail.connection, scope: .guest(detail.reference), interfaces: detail.config?.networks ?? [])
+                } label: {
+                    MoreRow(title: "Firewall", systemImage: "flame", color: .red, hint: nil)
+                }
+                .accessibilityIdentifier("more.firewall")
+                NavigationLink {
                     GuestTaskHistory(tasks: detail.recentTasks)
                 } label: {
                     MoreRow(title: "Task History", systemImage: "list.bullet.rectangle", color: .blue, hint: detail.recentTasks.isEmpty ? nil : "\(detail.recentTasks.count)")

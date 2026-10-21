@@ -135,6 +135,18 @@ The overview has a Datacenter section for settings that apply to all nodes; it s
 - Changing another user's password needs `confirmation-password`, the signed-in user's own password, except for root@pam. A missing one is a field error and a wrong one a 500 `invalid credentials`, not a 401, so the session stays signed in.
 - Password fields for other users use the one-time code content type: with none or `.newPassword`, iOS takes the form for an account sign-up and offers a strong password to save as the device owner's own.
 
+### Firewall
+
+`Firewall` (FleetCore) works on one `FirewallScope`: the datacenter (`/cluster/firewall`), a node, a guest, or a security group, whose rules live at `/cluster/firewall/groups/{group}`. Nodes have rules, options and a log; guests also have their own aliases and IP sets; only the datacenter has security groups. Changes need `Sys.Modify` on `/` or the node, or `VM.Config.Network` on the guest.
+
+- Rules carry the `digest` of the file and their position. New rules go to the top, as in the web interface. `PUT .../rules/{pos}` with `moveto` puts the rule in front of the rule now at that position, which is what SwiftUI's `onMove` reports, so the offset is passed on unchanged.
+- `FirewallRuleDraft` serializes like `OptionsDraft` and sends cleared settings in `delete`. It drops what does not apply, as the web interface does: a macro brings its own protocol and ports, ICMP types only go with `icmp`/`icmpv6`, and a rule of type `group` (the action is the group's name) only keeps an interface and a comment. Ports need a protocol; the server refuses them otherwise, with the error on `proto`. Forward rules only accept or drop and need the nftables firewall; guests have no forward rules.
+- Renaming a security group updates the rules that use it. Renaming an alias or IP set does not: those rules, and IP set entries naming a missing alias, come back with an `errors` object, which the lists show. IP sets and groups are renamed with `POST` of the new `name` plus `rename` with the old one; aliases with `PUT .../aliases/{old}` and `rename`. An empty comment removes it.
+- A security group with rules cannot be removed; an IP set with entries only with `force`, which the app sends after asking.
+- Options are a flat object; `FirewallOptionSpec` lists the options of each scope with the defaults the web interface shows (the node firewall is on by default, the datacenter and guest firewalls off; guests default to DHCP, NDP and MAC filter on). Values equal to the default are sent as `delete`, so nothing shows as changed when the server stores defaults explicitly.
+- Nodes and guests only filter while the datacenter firewall is on, and guest rules only apply to network devices with `firewall=1`; the firewall screen says so. Turning on the datacenter firewall asks first: the default input policy is DROP, and only the local network and the `management` IP set keep access to port 8006 and SSH, so a phone on another network could lock itself out. The live test never turns it on.
+- The log (`GET .../firewall/log`) counts lines from the start of the file and reports `total` next to `data`, so the app asks for one line first and then the last 500. An empty log is a single line `no content`.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

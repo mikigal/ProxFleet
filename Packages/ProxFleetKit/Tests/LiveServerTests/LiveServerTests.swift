@@ -866,6 +866,144 @@ struct LiveServerTests {
     }
 
     /// Disables and enables the Ceph repository again, and reads the subscription.
+    /// Aliases, an IP set, a security group and rules for the datacenter, a node and a guest: created, changed,
+    /// moved and removed again. The datacenter firewall stays off, so nothing filters the test server's traffic.
+    @Test(.timeLimit(.minutes(2))) func firewall() async throws {
+        let (session, node) = try await rootSession()
+        let guest = FirewallScope.guest(GuestReference(node: node, vmid: 100, kind: .virtualMachine))
+        try #require(try await !session.send(PVE.firewallAliases(.datacenter)).contains { $0.name == "pflive-net" }, "left over from an earlier run")
+        try #require(!(try await session.send(PVE.firewallOptions(.datacenter))).isEnabled(in: .datacenter), "the datacenter firewall must stay off")
+        #expect(try await session.send(PVE.firewallMacros()).contains { $0.name == "SSH" && !$0.description.isEmpty })
+
+        _ = try await session.send(PVE.createFirewallAlias(.datacenter, name: "pflive-net", cidr: "192.0.2.0/24", comment: "ProxFleet live test"))
+        _ = try await session.send(PVE.saveFirewallIPSet(.datacenter, name: "pflive-set", comment: ""))
+        _ = try await session.send(PVE.addFirewallIPSetEntry(.datacenter, set: "pflive-set", cidr: "pflive-net", comment: "", excluded: false))
+        _ = try await session.send(PVE.addFirewallIPSetEntry(.datacenter, set: "pflive-set", cidr: "198.51.100.0/24", comment: "excluded", excluded: true))
+        var entries = try await session.send(PVE.firewallIPSetEntries(.datacenter, set: "pflive-set"))
+        #expect(entries.map(\.cidr).sorted() == ["198.51.100.0/24", "pflive-net"] && entries.first { $0.cidr == "198.51.100.0/24" }?.isExcluded == true)
+        let network = try #require(entries.first { $0.cidr == "198.51.100.0/24" })
+        _ = try await session.send(PVE.updateFirewallIPSetEntry(.datacenter, set: "pflive-set", cidr: network.cidr, comment: "", excluded: false, digest: network.digest))
+        _ = try await session.send(PVE.deleteFirewallIPSetEntry(.datacenter, set: "pflive-set", cidr: network.cidr))
+        entries = try await session.send(PVE.firewallIPSetEntries(.datacenter, set: "pflive-set"))
+        #expect(entries.map(\.cidr) == ["pflive-net"])
+        let references = try await session.send(PVE.firewallReferences(guest))
+        #expect(references.contains { $0.reference == "+pflive-set" && $0.isIPSet && $0.scope == "dc" })
+
+        _ = try await session.send(PVE.saveFirewallGroup(name: "pflive-grp", comment: "ProxFleet live test"))
+        var groupRule = FirewallRuleDraft()
+        groupRule.macro = "SSH"
+        groupRule.source = "+pflive-set"
+        _ = try await session.send(PVE.createFirewallRule(.group("pflive-grp"), groupRule))
+        #expect(try await session.send(PVE.firewallRules(.group("pflive-grp"))).first?.macro == "SSH")
+
+        // Two rules at the top of the datacenter's, in front of anything already there.
+        let existing = try await session.send(PVE.firewallRules(.datacenter)).count
+        var first = FirewallRuleDraft()
+        first.proto = "tcp"
+        first.destinationPort = "8006"
+        first.source = "pflive-net"
+        first.comment = "pflive web"
+        first.isEnabled = false
+        _ = try await session.send(PVE.createFirewallRule(.datacenter, first))
+        var applyGroup = FirewallRuleDraft()
+        applyGroup.type = "group"
+        applyGroup.group = "pflive-grp"
+        applyGroup.isEnabled = false
+        applyGroup.comment = "pflive group"
+        _ = try await session.send(PVE.createFirewallRule(.datacenter, applyGroup))
+        var rules = try await session.send(PVE.firewallRules(.datacenter))
+        #expect(rules.prefix(2).map(\.comment) == ["pflive group", "pflive web"] && rules.count == existing + 2)
+
+        // moveto puts the rule in front of the one at that position.
+        _ = try await session.send(PVE.moveFirewallRule(.datacenter, position: 0, to: 2, digest: rules[0].digest))
+        rules = try await session.send(PVE.firewallRules(.datacenter))
+        #expect(rules.prefix(2).map(\.comment) == ["pflive web", "pflive group"])
+        let web = rules[0]
+        var edit = FirewallRuleDraft(web)
+        edit.macro = "HTTPS"
+        edit.logLevel = "info"
+        _ = try await session.send(PVE.updateFirewallRule(.datacenter, position: web.position, { var update = edit.changes(from: FirewallRuleDraft(web)); update.digest = web.digest; return update }()))
+        rules = try await session.send(PVE.firewallRules(.datacenter))
+        #expect(rules[0].macro == "HTTPS" && rules[0].proto == nil && rules[0].destinationPort == nil && rules[0].logLevel == "info")
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.deleteFirewallRule(.datacenter, position: 0, digest: web.digest)) }
+        var invalid = FirewallRuleDraft()
+        invalid.source = "pflive-missing"
+        do {
+            _ = try await session.send(PVE.createFirewallRule(.datacenter, invalid))
+            Issue.record("a rule with an unknown alias was accepted")
+        } catch ProxmoxError.api(_, _, let fields) {
+            #expect(fields["source"]?.contains("no such alias") == true)
+        }
+
+        // Renaming the group updates the rule that applies it.
+        let group = try #require(try await session.send(PVE.firewallGroups()).first { $0.name == "pflive-grp" })
+        _ = try await session.send(PVE.saveFirewallGroup(name: "pflive-grp2", comment: group.comment ?? "", renaming: group.name))
+        rules = try await session.send(PVE.firewallRules(.datacenter))
+        #expect(rules[1].isGroup && rules[1].action == "pflive-grp2")
+
+        // Node and guest: a rule and options, put back afterwards.
+        var hostRule = FirewallRuleDraft()
+        hostRule.type = "out"
+        hostRule.action = "DROP"
+        hostRule.destination = "pflive-net"
+        hostRule.isEnabled = false
+        hostRule.comment = "pflive host"
+        _ = try await session.send(PVE.createFirewallRule(.node(node), hostRule))
+        let hostRules = try await session.send(PVE.firewallRules(.node(node)))
+        #expect(hostRules.first?.comment == "pflive host" && hostRules.first?.type == "out")
+        let nodeOptions = try await session.send(PVE.firewallOptions(.node(node)))
+        var nodeDraft = FirewallOptionsDraft(nodeOptions, scope: .node(node))
+        let nodeOriginal = nodeDraft
+        nodeDraft.values["log_level_in"] = "info"
+        nodeDraft.setMembers("nf_conntrack_helpers", ["ftp"])
+        var nodeUpdate = nodeDraft.changes(from: nodeOriginal)
+        nodeUpdate.digest = nodeOptions.digest
+        _ = try await session.send(PVE.updateFirewallOptions(.node(node), nodeUpdate))
+        let changedNode = try await session.send(PVE.firewallOptions(.node(node)))
+        #expect(changedNode.values["log_level_in"] == "info" && changedNode.values["nf_conntrack_helpers"] == "ftp")
+        _ = try await session.send(PVE.updateFirewallOptions(.node(node), nodeOriginal.changes(from: FirewallOptionsDraft(changedNode, scope: .node(node)))))
+        #expect(try await session.send(PVE.firewallOptions(.node(node))).values == nodeOptions.values)
+        let log = try await session.send(PVE.firewallLog(.node(node), start: 0, limit: 1))
+        #expect(log.lines.count <= 1)
+
+        _ = try await session.send(PVE.createFirewallAlias(guest, name: "pflive-guest", cidr: "2001:db8::1", comment: ""))
+        var guestRule = FirewallRuleDraft()
+        guestRule.proto = "icmpv6"
+        guestRule.icmpType = "echo-request"
+        guestRule.destination = "pflive-guest"
+        guestRule.interface = "net0"
+        guestRule.isEnabled = false
+        _ = try await session.send(PVE.createFirewallRule(guest, guestRule))
+        let guestRules = try await session.send(PVE.firewallRules(guest))
+        #expect(guestRules.first?.ipVersion == 6 && guestRules.first?.icmpType == "echo-request" && guestRules.first?.interface == "net0")
+        let guestOptions = try await session.send(PVE.firewallOptions(guest))
+        var guestDraft = FirewallOptionsDraft(guestOptions, scope: guest)
+        let guestOriginal = guestDraft
+        guestDraft.setFlag("ipfilter", true)
+        guestDraft.values["policy_out"] = "DROP"
+        _ = try await session.send(PVE.updateFirewallOptions(guest, guestDraft.changes(from: guestOriginal)))
+        let changedGuest = try await session.send(PVE.firewallOptions(guest))
+        #expect(changedGuest.values["ipfilter"] == "1" && changedGuest.values["policy_out"] == "DROP")
+        _ = try await session.send(PVE.updateFirewallOptions(guest, guestOriginal.changes(from: FirewallOptionsDraft(changedGuest, scope: guest))))
+        #expect(try await session.send(PVE.firewallOptions(guest)).values == guestOptions.values)
+
+        // Clean up, newest first.
+        _ = try await session.send(PVE.deleteFirewallRule(guest, position: 0, digest: nil))
+        _ = try await session.send(PVE.deleteFirewallAlias(guest, name: "pflive-guest"))
+        _ = try await session.send(PVE.deleteFirewallRule(.node(node), position: 0, digest: nil))
+        _ = try await session.send(PVE.deleteFirewallRule(.datacenter, position: 1, digest: nil))
+        _ = try await session.send(PVE.deleteFirewallRule(.datacenter, position: 0, digest: nil))
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.deleteFirewallGroup("pflive-grp2")) }
+        _ = try await session.send(PVE.deleteFirewallRule(.group("pflive-grp2"), position: 0, digest: nil))
+        _ = try await session.send(PVE.deleteFirewallGroup("pflive-grp2"))
+        _ = try await session.send(PVE.deleteFirewallIPSet(.datacenter, name: "pflive-set"))
+        _ = try await session.send(PVE.deleteFirewallAlias(.datacenter, name: "pflive-net"))
+        #expect(try await session.send(PVE.firewallRules(.datacenter)).count == existing)
+        #expect(try await !session.send(PVE.firewallGroups()).contains { $0.name.hasPrefix("pflive") })
+        #expect(try await !session.send(PVE.firewallIPSets(.datacenter)).contains { $0.name == "pflive-set" })
+        #expect(try await session.send(PVE.firewallRules(guest)).allSatisfy { $0.comment?.hasPrefix("pflive") != true })
+    }
+
     @Test func repositories() async throws {
         let (session, node) = try await rootSession()
         let repositories = try await session.send(PVE.aptRepositories(node: node))

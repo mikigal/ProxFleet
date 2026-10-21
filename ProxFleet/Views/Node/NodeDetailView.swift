@@ -359,6 +359,12 @@ private struct NodeMoreList: View {
                 }
                 .accessibilityIdentifier("more.network")
                 NavigationLink {
+                    FirewallView(connection: detail.connection, scope: .node(detail.node))
+                } label: {
+                    MoreRow(title: "Firewall", systemImage: "flame", color: .red)
+                }
+                .accessibilityIdentifier("more.firewall")
+                NavigationLink {
                     NodeDisksView(detail: detail)
                 } label: {
                     MoreRow(title: "Disks", systemImage: "internaldrive", color: .gray)

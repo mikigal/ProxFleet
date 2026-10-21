@@ -68,6 +68,7 @@ actor DemoState {
     var storageConfigs: [DemoStorageConfig]
     var backupJobs: [DemoBackupJob]
     var access = DemoAccess.sample
+    var firewall: DemoFirewall
     /// Repositories enabled or disabled by `path#index`, and standard repositories added, by node.
     var repositoryStates: [String: [String: Bool]] = [:]
     var addedRepositories: [String: [String]] = [:]
@@ -84,6 +85,7 @@ actor DemoState {
         files = Self.sampleFiles(now: started)
         storageConfigs = DemoStorageConfig.defaults(for: cluster)
         backupJobs = Self.sampleBackupJobs(for: cluster)
+        firewall = DemoFirewall.sample(for: cluster)
     }
 
     func takeConsole(ticket: String) -> DemoConsoleRequest? {

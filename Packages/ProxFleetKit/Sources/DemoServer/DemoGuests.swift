@@ -26,7 +26,8 @@ extension DemoState {
         if let response = handleCreation(method, parts: parts, parameters: parameters, user: user)
             ?? handleStorageConfig(method, parts: parts, parameters: parameters, user: user)
             ?? handleBackupJobs(method, parts: parts, parameters: parameters, user: user)
-            ?? handleAccess(method, parts: parts, parameters: parameters, user: user) {
+            ?? handleAccess(method, parts: parts, parameters: parameters, user: user)
+            ?? handleFirewall(method, parts: parts, parameters: parameters, user: user) {
             return response
         }
 
