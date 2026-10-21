@@ -240,7 +240,7 @@ struct NotesEditor: View {
     }
 
     var body: some View {
-        ConfigEditor(title: "Notes", detail: detail, makeUpdate: update, footer: "Notes are saved immediately, even while the guest runs.") { _ in
+        ConfigEditor(title: "Notes", detail: detail, makeUpdate: update, footer: "Notes are saved immediately, even while the guest runs.", privilege: "VM.Config.Options") { _ in
             Section {
                 TextEditor(text: $notes)
                     .frame(minHeight: 220)

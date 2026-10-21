@@ -53,7 +53,12 @@ public struct GuestConfig: Decodable, Sendable, Equatable {
     public var disks: [GuestDisk] {
         values.keys
             .filter(GuestDisk.isDiskKey)
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            // The root file system first, unused volumes last.
+            .sorted { lhs, rhs in
+                let rank = { (key: String) in key == "rootfs" ? 0 : key.hasPrefix("unused") ? 2 : 1 }
+                guard rank(lhs) == rank(rhs) else { return rank(lhs) < rank(rhs) }
+                return lhs.localizedStandardCompare(rhs) == .orderedAscending
+            }
             .compactMap { key in values[key].map { GuestDisk(key: key, value: $0) } }
     }
 

@@ -102,6 +102,8 @@ struct DiskEditor: View {
     let config: GuestConfig
     let disk: GuestDisk
     @State private var draft: DiskOptionsDraft
+    /// Containers: options of the root file system or mount point.
+    @State private var mountDraft: MountPointDraft?
     @State private var growBy = 8
     @State private var confirmsGrow = false
     @State private var confirmsDetach = false
@@ -115,6 +117,9 @@ struct DiskEditor: View {
         self.config = config
         self.disk = disk
         _draft = State(initialValue: DiskOptionsDraft(disk))
+        if detail.reference.kind == .container, !disk.isUnused {
+            _mountDraft = State(initialValue: MountPointDraft(disk))
+        }
     }
 
     private var isVM: Bool { detail.reference.kind == .virtualMachine }
@@ -127,7 +132,7 @@ struct DiskEditor: View {
                     LabeledContent("Size", value: size)
                 }
             }
-            if !disk.isUnused {
+            if !disk.isUnused, disk.size != nil {
                 Section {
                     NumberField(title: "Grow By", value: $growBy, range: 1...16_384, unit: "GiB")
                     Button("Grow Disk") { confirmsGrow = true }
@@ -148,6 +153,9 @@ struct DiskEditor: View {
                     Toggle("Include in Backups", isOn: $draft.includeInBackup)
                     FieldError(message: errors[disk.key])
                 }
+            }
+            if let binding = Binding($mountDraft) {
+                MountPointOptionsSection(draft: binding, error: errors[disk.key])
             }
             Section {
                 if disk.isUnused {
@@ -184,6 +192,13 @@ struct DiskEditor: View {
     }
 
     private func update() -> GuestConfigUpdate? {
+        if let mountDraft {
+            let value = mountDraft.stringValue
+            guard value != MountPointDraft(disk).stringValue else { return nil }
+            var update = GuestConfigUpdate()
+            update.set(disk.key, value)
+            return update
+        }
         guard isVM, !disk.isUnused else { return nil }
         let value = draft.stringValue
         guard value != config[disk.key] else { return nil }

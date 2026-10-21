@@ -11,6 +11,8 @@ struct ConfigEditor<Content: View>: View {
     let detail: GuestDetail
     let makeUpdate: () -> GuestConfigUpdate?
     var footer: LocalizedStringKey?
+    /// When set and the user lacks it, the form is shown read-only with an explanation.
+    var privilege: String?
     @ViewBuilder let content: (_ fieldErrors: [String: String]) -> Content
 
     @State private var isSaving = false
@@ -18,13 +20,30 @@ struct ConfigEditor<Content: View>: View {
     @State private var fieldErrors: [String: String] = [:]
     @Environment(\.dismiss) private var dismiss
 
+    private var isReadOnly: Bool {
+        privilege.map { !detail.can($0) } ?? false
+    }
+
     var body: some View {
         Form {
-            content(fieldErrors)
-            if detail.powerState == .running {
+            if isReadOnly, let privilege {
+                Section {
+                    Label {
+                        Text("Read only. Changing this needs the \(privilege) privilege on /vms/\(detail.reference.vmid).")
+                    } icon: {
+                        Image(systemName: "lock.fill").foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
+                }
+            }
+            Group {
+                content(fieldErrors)
+            }
+            .disabled(isReadOnly)
+            if detail.powerState == .running, !isReadOnly {
                 Section {
                 } footer: {
-                    Text(footer ?? "Some changes apply only after the VM restarts. Those are shown as pending until then.")
+                    Text(footer ?? "Some changes apply only after the guest restarts. Those are shown as pending until then.")
                 }
             }
             ErrorSection(message: errorMessage)
@@ -33,10 +52,12 @@ struct ConfigEditor<Content: View>: View {
         .navigationBarTitleDisplayMode(.inline)
         .disabled(isSaving)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                ProgressButton("Save", isWorking: isSaving) { Task { await save() } }
-                    .disabled(makeUpdate() == nil)
-                    .accessibilityIdentifier("save")
+            if !isReadOnly {
+                ToolbarItem(placement: .confirmationAction) {
+                    ProgressButton("Save", isWorking: isSaving) { Task { await save() } }
+                        .disabled(makeUpdate() == nil)
+                        .accessibilityIdentifier("save")
+                }
             }
         }
     }
@@ -102,5 +123,136 @@ extension GuestDetail {
     /// Loads a list for an editor, e.g. storages or bridges. Returns an empty list on failure.
     func load<Item: Decodable & Sendable>(_ request: APIRequest<[Item]>) async -> [Item] {
         (try? await connection.send(request)) ?? []
+    }
+}
+
+/// Tags as removable chips plus a field to add new ones.
+struct TagsEditor: View {
+    @Binding var tags: [String]
+    @State private var newTag = ""
+    @State private var invalid = false
+
+    var body: some View {
+        if !tags.isEmpty {
+            FlowLayout(spacing: 6) {
+                ForEach(tags, id: \.self) { tag in
+                    Button {
+                        tags.removeAll { $0 == tag }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(tag)
+                            Image(systemName: "xmark.circle.fill").font(.caption)
+                        }
+                        .font(.subheadline)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(.quaternary, in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove tag \(tag)")
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        HStack {
+            TextField("Add Tag", text: $newTag)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onSubmit(add)
+                .accessibilityIdentifier("tags.new")
+            Button("Add", action: add)
+                .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        if invalid {
+            FieldError(message: String(localized: "Use lowercase letters, digits, and _ - + . only."))
+        }
+    }
+
+    private func add() {
+        guard let tag = TagRules.normalize(newTag) else {
+            invalid = !newTag.isEmpty
+            return
+        }
+        invalid = false
+        if !tags.contains(tag) { tags.append(tag) }
+        newTag = ""
+    }
+}
+
+/// Lays out views in rows, wrapping to the next row when full.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(subviews, width: proposal.width ?? .infinity)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            if !rows[rows.count - 1].indices.isEmpty, rows[rows.count - 1].width + spacing + size.width > width {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width += (row.indices.isEmpty ? 0 : spacing) + size.width
+            row.height = max(row.height, size.height)
+            row.indices.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows
+    }
+}
+
+/// Explains why a value cannot be changed when its row is tapped.
+struct LockedRowModifier: ViewModifier {
+    let message: LocalizedStringKey
+    @State private var showsMessage = false
+
+    func body(content: Content) -> some View {
+        Button {
+            showsMessage = true
+        } label: {
+            HStack {
+                content
+                Image(systemName: "lock.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .buttonStyle(.plain)
+        .alert("Cannot Be Changed", isPresented: $showsMessage) {
+            Button("OK") {}
+        } message: {
+            Text(message)
+        }
+    }
+}
+
+extension View {
+    func locked(_ message: LocalizedStringKey) -> some View {
+        modifier(LockedRowModifier(message: message))
     }
 }

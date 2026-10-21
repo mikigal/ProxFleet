@@ -377,22 +377,13 @@ private struct GuestMoreList: View {
             Section {
                 if let config = detail.config {
                     NavigationLink {
-                        if detail.can("VM.Config.Options") {
-                            OptionsEditor(detail: detail, config: config)
-                        } else {
-                            List { GuestOptionsSection(config: config, kind: detail.reference.kind) }
-                                .navigationTitle("Options")
-                        }
+                        OptionsEditor(detail: detail, config: config)
                     } label: {
                         MoreRow(title: "Options", systemImage: "slider.horizontal.3", color: .gray, hint: config.startsOnBoot ? String(localized: "Starts at boot") : nil)
                     }
                     .accessibilityIdentifier("more.options")
                     NavigationLink {
-                        if detail.can("VM.Config.Options") {
-                            NotesEditor(detail: detail, config: config)
-                        } else {
-                            NotesView(notes: config.description)
-                        }
+                        NotesEditor(detail: detail, config: config)
                     } label: {
                         MoreRow(title: "Notes", systemImage: "note.text", color: .yellow, hint: config.description?.isEmpty == false ? nil : String(localized: "None"))
                     }
@@ -429,23 +420,6 @@ private struct MoreRow: View {
                     .foregroundStyle(.secondary)
             }
         }
-    }
-}
-
-private struct NotesView: View {
-    let notes: String?
-
-    var body: some View {
-        List {
-            if let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-                Text(notes)
-                    .textSelection(.enabled)
-            } else {
-                Text("No notes.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .navigationTitle("Notes")
     }
 }
 
@@ -559,6 +533,14 @@ private struct GuestHardwareSections: View {
                 }
                 .accessibilityIdentifier("hardware.addDisk")
             }
+            if !isVM, detail.can("VM.Config.Disk") {
+                NavigationLink {
+                    AddMountPointEditor(detail: detail, config: config)
+                } label: {
+                    Label("Add Mount Point", systemImage: "plus.circle")
+                }
+                .accessibilityIdentifier("hardware.addMountPoint")
+            }
             if isVM, detail.can("VM.Config.CDROM") {
                 NavigationLink {
                     CDROMEditor(detail: detail, config: config, drive: nil)
@@ -571,8 +553,12 @@ private struct GuestHardwareSections: View {
         let networks = config.networks
         Section("Network") {
             ForEach(networks) { nic in
-                editable(privilege: "VM.Config.Network", enabled: isVM) {
-                    NetworkDeviceEditor(detail: detail, config: config, nic: nic)
+                editable(privilege: "VM.Config.Network") {
+                    if isVM {
+                        NetworkDeviceEditor(detail: detail, config: config, nic: nic)
+                    } else {
+                        ContainerNetworkEditor(detail: detail, config: config, nic: nic)
+                    }
                 } label: {
                     HardwareRow(
                         systemImage: "network",
@@ -584,9 +570,27 @@ private struct GuestHardwareSections: View {
                 }
                 .accessibilityIdentifier("hardware.\(nic.key)")
             }
-            if isVM, detail.can("VM.Config.Network") {
+            if !isVM {
+                editable(privilege: "VM.Config.Network") {
+                    ContainerDNSEditor(detail: detail, config: config)
+                } label: {
+                    HardwareRow(
+                        systemImage: "server.rack",
+                        title: "DNS",
+                        value: config["nameserver"] ?? String(localized: "Host settings"),
+                        detail: config["searchdomain"],
+                        pending: detail.pendingChange(for: "nameserver") != nil || detail.pendingChange(for: "searchdomain") != nil
+                    )
+                }
+                .accessibilityIdentifier("hardware.dns")
+            }
+            if detail.can("VM.Config.Network") {
                 NavigationLink {
-                    NetworkDeviceEditor(detail: detail, config: config, nic: nil)
+                    if isVM {
+                        NetworkDeviceEditor(detail: detail, config: config, nic: nil)
+                    } else {
+                        ContainerNetworkEditor(detail: detail, config: config, nic: nil)
+                    }
                 } label: {
                     Label("Add Network Device", systemImage: "plus.circle")
                 }
@@ -595,13 +599,15 @@ private struct GuestHardwareSections: View {
         }
     }
 
-    /// A navigation row to an editor, or the plain label when editing is not allowed.
+    /// A navigation row to an editor, or a locked row explaining why it cannot be changed.
     @ViewBuilder
     private func editable<Editor: View, Label: View>(privilege: String, enabled: Bool = true, @ViewBuilder editor: @escaping () -> Editor, @ViewBuilder label: () -> Label) -> some View {
-        if enabled, detail.can(privilege) {
+        if !detail.can(privilege) {
+            label().locked("You need the \(privilege) privilege on this guest to change this.")
+        } else if enabled {
             NavigationLink(destination: editor, label: label)
         } else {
-            label()
+            label().locked("Editing this is not supported yet.")
         }
     }
 
@@ -660,49 +666,6 @@ private struct PendingChangesSection: View {
             Text("These changes take effect the next time the guest starts. A reboot from inside the guest is not enough; use Reboot or Stop and Start here.")
         }
         .accessibilityIdentifier("pendingChanges")
-    }
-}
-
-/// Options as in the web interface, with Proxmox defaults where the key is not set.
-private struct GuestOptionsSection: View {
-    let config: GuestConfig
-    let kind: GuestKind
-
-    var body: some View {
-        Section {
-            LabeledContent("Name", value: config.name ?? "—")
-            yesNo("Start at Boot", "onboot", default: false)
-            LabeledContent("Start/Shutdown Order", value: config["startup"] ?? String(localized: "Default"))
-            if let os = config.osTypeDescription {
-                LabeledContent("OS Type", value: os)
-            }
-            yesNo("Protection", "protection", default: false)
-            if kind == .virtualMachine {
-                if !config.bootOrder.isEmpty {
-                    LabeledContent("Boot Order", value: config.bootOrder.joined(separator: ", "))
-                }
-                LabeledContent("QEMU Guest Agent", value: config.agentEnabled ? String(localized: "Enabled") : String(localized: "Disabled"))
-                yesNo("Use Tablet for Pointer", "tablet", default: true)
-                LabeledContent("Hotplug", value: config["hotplug"] ?? "network, disk, usb")
-                yesNo("ACPI Support", "acpi", default: true)
-                yesNo("KVM Hardware Virtualization", "kvm", default: true)
-                yesNo("Freeze CPU at Startup", "freeze", default: false)
-                yesNo("Use Local Time for RTC", "localtime", default: false)
-            } else {
-                if let arch = config["arch"] {
-                    LabeledContent("Architecture", value: arch)
-                }
-                yesNo("Unprivileged", "unprivileged", default: false)
-                LabeledContent("Features", value: config["features"] ?? String(localized: "None"))
-                LabeledContent("Console Mode", value: config["cmode"] ?? "tty")
-                LabeledContent("TTY Count", value: config["tty"] ?? "2")
-            }
-        }
-    }
-
-    private func yesNo(_ title: LocalizedStringKey, _ key: String, default value: Bool) -> some View {
-        let enabled = config[key].map { $0 == "1" } ?? value
-        return LabeledContent(title, value: enabled ? String(localized: "Yes") : String(localized: "No"))
     }
 }
 
