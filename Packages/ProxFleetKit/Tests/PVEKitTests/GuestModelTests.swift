@@ -143,6 +143,7 @@ struct GuestModelTests {
     @Test func taskTitles() {
         #expect(TaskDescription.title(type: "qmstart", objectID: "100") == "VM 100 – Start")
         #expect(TaskDescription.title(type: "vzshutdown", objectID: "200") == "CT 200 – Shutdown")
+        #expect(TaskDescription.title(type: "vzdump", objectID: "100") == "VM/CT 100 – Backup")
         #expect(TaskDescription.title(type: "aptupdate", objectID: nil) == "Update Package Database")
     }
 }

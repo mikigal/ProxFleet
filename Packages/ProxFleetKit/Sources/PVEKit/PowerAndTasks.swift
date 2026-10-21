@@ -126,7 +126,8 @@ public enum TaskDescription {
     public static func title(type: String, objectID: String?) -> String {
         let name = names[type] ?? type
         guard let objectID, !objectID.isEmpty else { return name }
-        let prefix = type.hasPrefix("qm") ? "VM " : type.hasPrefix("vz") || type.hasPrefix("pct") ? "CT " : ""
+        // Backups (`vzdump`) cover VMs and containers alike, so the web interface writes "VM/CT".
+        let prefix = type == "vzdump" ? "VM/CT " : type.hasPrefix("qm") ? "VM " : type.hasPrefix("vz") || type.hasPrefix("pct") ? "CT " : ""
         return "\(prefix)\(objectID) – \(name)"
     }
 
@@ -138,10 +139,10 @@ public enum TaskDescription {
         "qmmove": "Move Disk", "qmresize": "Resize Disk",
         "vzstart": "Start", "vzstop": "Stop", "vzshutdown": "Shutdown", "vzreboot": "Reboot", "vzcreate": "Create",
         "vzdestroy": "Destroy", "vzmigrate": "Migrate", "vzsuspend": "Suspend", "vzresume": "Resume",
-        "vztemplate": "Convert to Template", "vzrestore": "Restore", "vzsnapshot": "Snapshot", "vzrollback": "Rollback",
+        "vztemplate": "Convert to Template", "vzclone": "Clone", "vzrestore": "Restore", "vzsnapshot": "Snapshot", "vzrollback": "Rollback",
         "vzdelsnapshot": "Delete Snapshot", "vzdump": "Backup", "vncproxy": "Console", "vncshell": "Shell",
         "termproxy": "Console", "spiceproxy": "SPICE Console", "aptupdate": "Update Package Database",
-        "imgcopy": "Copy Image", "download": "Download", "startall": "Start All", "stopall": "Stop All",
+        "imgcopy": "Copy Image", "imgdel": "Delete Volume", "download": "Download", "startall": "Start All", "stopall": "Stop All",
         "srvreload": "Reload Service", "srvrestart": "Restart Service", "srvstart": "Start Service", "srvstop": "Stop Service",
     ]
 }

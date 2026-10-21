@@ -73,6 +73,16 @@ Editors build a `GuestConfigUpdate` (keys to set, keys to delete, pending keys t
 - Deleting needs a stopped guest; Proxmox refuses a running one with an error message. The app asks the user to type the ID, as the web interface does, with `purge` and `destroy-unreferenced-disks` on by default.
 - Migration is not done yet: there is no cluster to test it on.
 
+## Backups
+
+`Backups.swift` (PVEKit) has `BackupVolume`, `BackupDraft` and `RestoreDraft`; `GuestDetail.loadBackups` reads every active storage of the node with `backup` content in parallel, unlike the web interface, which shows one storage at a time.
+
+- Backup Now is `POST /nodes/{node}/vzdump` with `remove=0`, so a manual backup never prunes older ones by the storage's retention settings. `notes-template` variables such as `{{guestname}}` are filled in by the server.
+- Notes and protection change with `PUT .../storage/{storage}/content/{volume}`; the volume ID contains a slash and is escaped. Deleting a protected backup starts a task that fails, so the app disables it.
+- `GET .../vzdump/extractconfig` returns the configuration as file text; VM backups add internal `#qmdump#` lines, which are hidden.
+- Restore is the create call with `archive` (VMs) or `ostemplate` and `restore=1` (containers), plus `force` to replace the guest, which must be stopped. Containers need an explicit `storage`: without it Proxmox picks `local`, which usually cannot hold container volumes. A restore over the guest asks for confirmation first.
+- Backup jobs (schedules) belong to the datacenter settings; file restore needs Proxmox Backup Server. Neither is done yet.
+
 ## Consoles
 
 Both consoles open a one-time proxy on the node and connect to it through `/nodes/.../vncwebsocket` over a WebSocket (subprotocol `binary`), with the same certificate pinning as API calls.

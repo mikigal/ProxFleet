@@ -60,6 +60,9 @@ extension DemoState {
     }
 
     private func createGuest(kind: DemoCluster.Guest.Kind, node: String, parameters: [String: String], user: String) -> HTTPResponse {
+        if let archive = parameters["archive"] ?? (parameters["restore"] == "1" ? parameters["ostemplate"] : nil) {
+            return restoreBackup(archive, kind: kind, node: node, parameters: parameters, user: user)
+        }
         guard privileges(for: user).contains("VM.Allocate") else {
             return failure(403, "Permission check failed (/vms/\(parameters["vmid"] ?? ""), VM.Allocate)")
         }
@@ -131,10 +134,10 @@ extension DemoState {
         return ["rockylinux", "almalinux"].contains(match) ? "centos" : match
     }
 
-    func startTask(node: String, type: String, objectID: String, user: String, duration: TimeInterval, apply: (@Sendable (inout DemoCluster.Guest) -> Void)? = nil) -> HTTPResponse {
+    func startTask(node: String, type: String, objectID: String, user: String, duration: TimeInterval, error: String? = nil, apply: (@Sendable (inout DemoCluster.Guest) -> Void)? = nil) -> HTTPResponse {
         let start = Date()
         let upid = String(format: "UPID:%@:%08X:%08X:%08X:%@:%@:%@:", node, 4000 + tasks.count, 100_000 + tasks.count, Int(start.timeIntervalSince1970), type, objectID, user)
-        tasks.append(DemoTask(upid: upid, node: node, type: type, objectID: objectID, user: user, startedAt: start, duration: duration, error: nil, apply: apply))
+        tasks.append(DemoTask(upid: upid, node: node, type: type, objectID: objectID, user: user, startedAt: start, duration: duration, error: error, apply: apply))
         return success(.string(upid))
     }
 

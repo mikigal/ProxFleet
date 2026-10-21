@@ -464,6 +464,12 @@ private struct GuestMoreList: View {
                     MoreRow(title: "Snapshots", systemImage: "camera", color: .green, hint: nil)
                 }
                 .accessibilityIdentifier("more.snapshots")
+                NavigationLink {
+                    BackupsView(detail: detail)
+                } label: {
+                    MoreRow(title: "Backups", systemImage: "archivebox", color: .brown, hint: nil)
+                }
+                .accessibilityIdentifier("more.backups")
                 Button(action: onClone) {
                     MoreRow(title: "Clone", systemImage: "plus.square.on.square", color: .teal, hint: nil)
                 }

@@ -195,4 +195,51 @@ struct GuestDetailTests {
             try await running.destroy(purge: false, destroyUnreferencedDisks: false)
         }
     }
+
+    @Test func backupsAndRestore() async throws {
+        let connection = try await connection()
+        let vm = GuestDetail(reference: vm(100), connection: connection)
+        await vm.load()
+        #expect(await vm.loadBackups() == nil)
+        // Sample backups, newest first; one is protected.
+        #expect(vm.backups?.count == 2)
+        #expect(vm.backups?.last?.isProtected == true)
+        #expect(vm.backups?.first?.notes == "home-assistant")
+
+        var draft = BackupDraft(guest: vm.reference)
+        draft.storage = "local"
+        draft.notes = "{{guestname}} on {{node}}"
+        let task = try await connection.start(PVE.backupNow(draft))
+        #expect(task.title == "VM/CT 100 – Backup")
+        #expect(await connection.tasks.result(of: task.id) == .succeeded)
+        await vm.loadBackups()
+        let backup = try #require(vm.backups?.first)
+        #expect(vm.backups?.count == 3)
+        #expect(backup.notes == "home-assistant on pve1")
+
+        try await vm.runBackupAction(PVE.updateBackup(node: "pve1", volume: backup.volumeID, notes: "edited", isProtected: true))
+        #expect(vm.backups?.first?.notes == "edited")
+        await #expect(throws: ConfigUpdateError.self) {
+            try await vm.runBackupAction(PVE.deleteBackup(node: "pve1", volume: backup.volumeID))
+        }
+        try await vm.runBackupAction(PVE.updateBackup(node: "pve1", volume: backup.volumeID, isProtected: false))
+        let configuration = try await connection.send(PVE.backupConfiguration(node: "pve1", volume: backup.volumeID))
+        #expect(GuestConfig.displayLines(ofBackupConfiguration: configuration).contains("name: home-assistant"))
+
+        // Restoring over a running VM is refused, as a new VM it works.
+        var restore = RestoreDraft(backup: backup, source: vm.reference)
+        restore.sourceIsRunning = vm.powerState == .running
+        #expect(restore.problems["force"] != nil)
+        restore.overwrites = false
+        restore.vmid = try await connection.send(PVE.nextVMID()).value
+        let restoring = try await connection.start(PVE.restore(restore))
+        #expect(await connection.tasks.result(of: restoring.id) == .succeeded)
+        let restored = GuestDetail(reference: restore.target, connection: connection)
+        await restored.load()
+        #expect(restored.name == "home-assistant")
+        #expect(restored.config?["scsi0"]?.hasPrefix("local-lvm:vm-\(restore.vmid)-disk-0") == true)
+
+        try await vm.runBackupAction(PVE.deleteBackup(node: "pve1", volume: backup.volumeID))
+        #expect(vm.backups?.count == 2)
+    }
 }

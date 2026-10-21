@@ -135,19 +135,23 @@ extension DemoState {
         config["digest"] = nil
         config["template"] = nil
         config[nameKey] = name
-        let storage = parameters["full"] == "0" ? nil : parameters["storage"]
-        for (key, value) in config where Self.isDiskKey(key) && !key.hasPrefix("unused") {
+        createdConfigs[newID] = Self.movingDisks(of: config, from: source.vmid, to: newID, storage: parameters["full"] == "0" ? nil : parameters["storage"])
+        return startTask(node: source.node, type: isVM ? "qmclone" : "vzclone", objectID: String(source.vmid), user: user, duration: 2.5)
+    }
+
+    /// A configuration with its disks renamed for another guest, optionally on another storage. Unused volumes are dropped.
+    static func movingDisks(of config: [String: String], from oldID: Int, to newID: Int, storage: String?) -> [String: String] {
+        var config = config.filter { !$0.key.hasPrefix("unused") }
+        for (key, value) in config where isDiskKey(key) {
             var property = PropertyString(parsing: value)
             guard property["media"] != "cdrom", let volume = property.defaultValue, let colon = volume.firstIndex(of: ":") else { continue }
             let file = volume[volume.index(after: colon)...]
-                .replacingOccurrences(of: "base-\(source.vmid)-", with: "vm-\(newID)-")
-                .replacingOccurrences(of: "vm-\(source.vmid)-", with: "vm-\(newID)-")
+                .replacingOccurrences(of: "base-\(oldID)-", with: "vm-\(newID)-")
+                .replacingOccurrences(of: "vm-\(oldID)-", with: "vm-\(newID)-")
             property.items[0].value = "\(storage ?? String(volume[..<colon])):\(file)"
             config[key] = property.stringValue
         }
-        config = config.filter { !$0.key.hasPrefix("unused") }
-        createdConfigs[newID] = config
-        return startTask(node: source.node, type: isVM ? "qmclone" : "vzclone", objectID: String(source.vmid), user: user, duration: 2.5)
+        return config
     }
 
     private func makeTemplate(_ vmid: Int) {

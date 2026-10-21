@@ -10,6 +10,15 @@ nonisolated protocol CreationStep: Hashable, CaseIterable where AllCases == [Sel
     func owns(_ parameter: String) -> Bool
 }
 
+/// The only page of a form that uses the wizard for its task handling, such as cloning or restoring.
+nonisolated enum SinglePageStep: CreationStep {
+    case page
+
+    var title: LocalizedStringKey { "" }
+
+    func owns(_ parameter: String) -> Bool { true }
+}
+
 /// Step-by-step scaffold for creating a guest: a bar with the steps, Back and Next, and on the last step
 /// Create with the progress of the creation task.
 ///
@@ -22,6 +31,12 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
     let problems: [String: String]
     let makeRequest: () -> APIRequest<String>
     let onCreated: (GuestReference) -> Void
+    /// The button on the last step, e.g. Restore.
+    var actionTitle: LocalizedStringKey = "Create"
+    /// Shown while the task runs; by default "Creating VM 100…".
+    var workingTitle: LocalizedStringKey?
+    /// Asked before sending, for actions that replace data.
+    var confirmation: (title: String, message: String)?
     @ViewBuilder let content: (_ step: Step, _ fieldErrors: [String: String]) -> Content
 
     @State private var step = Step.allCases[0]
@@ -32,7 +47,11 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
     @State private var isSubmitting = false
     @State private var task: TaskCenter.TrackedTask?
     @State private var serverErrors: [String: String] = [:]
+    /// The server's message after a failed Create.
     @State private var errorMessage: String?
+    /// Problems found here were shown; the hint stays only while the current step still has some.
+    @State private var showsProblemHint = false
+    @State private var confirms = false
     @Environment(\.dismiss) private var dismiss
 
     private var steps: [Step] { Step.allCases }
@@ -61,7 +80,7 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
                     Section {
                         HStack(spacing: 12) {
                             ProgressView()
-                            Text("Creating \(kindName) \(String(reference.vmid))…")
+                            Text(workingTitle ?? "Creating \(kindName) \(String(reference.vmid))…")
                         }
                         NavigationLink("Show Task Log", value: ServerRoute.task(node: task.upid.node, upid: task.upid.rawValue))
                     } footer: {
@@ -72,7 +91,7 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
                     content(step, fieldErrors)
                 }
                 .disabled(isWorking)
-                ErrorSection(message: errorMessage)
+                ErrorSection(message: errorMessage ?? (showsProblemHint && !problems(on: step).isEmpty ? String(localized: "Check the highlighted fields.") : nil))
             }
             .id(step)
             .transition(.asymmetric(
@@ -92,6 +111,13 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button(task == nil ? "Cancel" : "Close") { dismiss() }
             }
+        }
+        .alert(confirmation?.title ?? "", isPresented: $confirms) {
+            Button("Cancel", role: .cancel) {}
+            Button(actionTitle, role: .destructive) { Task { await create() } }
+                .accessibilityIdentifier("create.confirm")
+        } message: {
+            Text(confirmation?.message ?? "")
         }
         .onDisappear {
             // The task center reports a failure once nobody here is watching anymore.
@@ -148,10 +174,14 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
             }
             if isLast {
                 Button {
-                    Task { await create() }
+                    if confirmation != nil, problems.isEmpty {
+                        confirms = true
+                    } else {
+                        Task { await create() }
+                    }
                 } label: {
                     Group {
-                        if isWorking { ProgressView() } else { Text("Create").fontWeight(.semibold) }
+                        if isWorking { ProgressView() } else { Text(actionTitle).fontWeight(.semibold) }
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -187,7 +217,7 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
         // Going ahead, also over the bar, stops at the first step with problems.
         if targetIndex > index, let blocked = steps[index..<targetIndex].first(where: { !problems(on: $0).isEmpty }) {
             checkedSteps.insert(blocked)
-            errorMessage = String(localized: "Check the highlighted fields.")
+            showsProblemHint = true
             move(to: blocked)
             return
         }
@@ -207,7 +237,7 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
         serverErrors = [:]
         checkedSteps.formUnion(steps)
         if let first = steps.first(where: { !problems(on: $0).isEmpty }) {
-            errorMessage = String(localized: "Check the highlighted fields.")
+            showsProblemHint = true
             move(to: first)
             return
         }

@@ -47,6 +47,7 @@ actor DemoState {
     /// Snapshots per VMID, oldest first, and the snapshot each guest's current state is based on.
     var snapshots: [Int: [DemoSnapshot]] = [:]
     var currentSnapshot: [Int: String] = [:]
+    var backups: [DemoBackup]
     /// Console proxies started but not yet connected, by ticket.
     var consoles: [String: DemoConsoleRequest] = [:]
     private var ticketCounter = 0
@@ -54,6 +55,7 @@ actor DemoState {
 
     init(cluster: DemoCluster) {
         self.cluster = cluster
+        backups = Self.sampleBackups(for: cluster, now: started)
     }
 
     func takeConsole(ticket: String) -> DemoConsoleRequest? {

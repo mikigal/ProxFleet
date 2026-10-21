@@ -44,6 +44,9 @@ extension DemoState {
         }
         guard parts.count >= 3, parts[0] == "nodes" else { return nil }
         let node = parts[1]
+        if let response = handleBackups(method, node: node, rest: Array(parts.dropFirst(2)), parameters: parameters, user: user) {
+            return response
+        }
 
         if parts[2] == "tasks", parts.count == 5 {
             guard let task = tasks.first(where: { $0.upid == parts[3] }) else { return failure(500, "no such task") }

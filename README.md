@@ -21,6 +21,7 @@ Early development. What works now:
 - Configuration editing: processor, memory, firmware, disks (add, grow, detach, delete), CD/DVD drives, network devices, options, boot order and notes, with pending changes shown until the next restart
 - Creating VMs (installation ISO, OS-specific defaults such as UEFI and TPM for Windows 11, disk, CPU, memory, network) and containers (templates, which can be downloaded from the app, root password or SSH keys, network and DNS)
 - Snapshots (take with or without RAM, roll back, describe, delete), cloning (full or linked from templates, from a snapshot), converting to a template and deleting guests
+- Backups: back up now (mode, compression, notes, protection), list from all backup storages, notes and protection, configuration in the backup, restore over the guest or as a new one, delete
 - Demo mode with a built-in sample cluster, including working demo consoles
 
 Next up: node and datacenter settings.

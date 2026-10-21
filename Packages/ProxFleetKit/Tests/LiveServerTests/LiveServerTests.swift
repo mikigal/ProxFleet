@@ -390,6 +390,61 @@ struct LiveServerTests {
         }
     }
 
+    /// Backs up container 202, edits and protects the backup, restores it as a new container and over that one,
+    /// and removes everything again.
+    @Test func backupAndRestore() async throws {
+        let (session, node) = try await rootSession()
+        func finish(_ upid: String?) async throws -> TaskStatus? {
+            guard let upid else { return nil }
+            for _ in 0..<100 {
+                let status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+                if !status.isRunning { return status }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            throw ProxmoxError.invalidResponse("task did not finish")
+        }
+
+        let container = GuestReference(node: node, vmid: 202, kind: .container)
+        let storage = try #require(try await session.send(PVE.storages(node: node, content: "backup")).first?.storage)
+        var draft = BackupDraft(guest: container)
+        draft.storage = storage
+        draft.notes = "{{guestname}} live test"
+        let before = Set(try await session.send(PVE.backups(node: node, storage: storage, vmid: 202)).map(\.volumeID))
+        #expect(try await finish(try await session.send(PVE.backupNow(draft)))?.succeeded == true)
+        let backup = try #require(try await session.send(PVE.backups(node: node, storage: storage, vmid: 202)).first { !before.contains($0.volumeID) })
+        #expect(backup.notes == "backup-agent live test")
+        #expect(backup.subtype == "lxc")
+
+        try await _ = finish(try await session.send(PVE.updateBackup(node: node, volume: backup.volumeID, notes: "edited", isProtected: true)))
+        let updated = try await session.send(PVE.backups(node: node, storage: storage, vmid: 202)).first { $0.volumeID == backup.volumeID }
+        #expect(updated?.notes == "edited" && updated?.isProtected == true)
+        // A protected backup cannot be deleted; the task fails.
+        #expect(try await finish(try await session.send(PVE.deleteBackup(node: node, volume: backup.volumeID)))?.succeeded == false)
+        try await _ = finish(try await session.send(PVE.updateBackup(node: node, volume: backup.volumeID, isProtected: false)))
+
+        let configuration = try await session.send(PVE.backupConfiguration(node: node, volume: backup.volumeID))
+        #expect(GuestConfig.displayLines(ofBackupConfiguration: configuration).contains("hostname: backup-agent"))
+
+        // As a new container, then over that new container.
+        let rootStorage = try #require(try await session.send(PVE.storages(node: node, content: "rootdir")).first?.storage)
+        var restore = RestoreDraft(backup: backup, source: container)
+        restore.overwrites = false
+        restore.vmid = try await session.send(PVE.nextVMID()).value
+        restore.storage = rootStorage
+        restore.uniqueMACAddresses = true
+        #expect(restore.problems.isEmpty)
+        #expect(try await finish(try await session.send(PVE.restore(restore)))?.succeeded == true)
+        let restored = GuestReference(node: node, vmid: restore.vmid, kind: .container)
+        #expect(try await session.send(PVE.guestConfig(restored)).name == "backup-agent")
+        var overwrite = RestoreDraft(backup: backup, source: restored)
+        overwrite.storage = rootStorage
+        #expect(try await finish(try await session.send(PVE.restore(overwrite)))?.succeeded == true)
+
+        #expect(try await finish(try await session.send(PVE.destroy(restored, purge: true, destroyUnreferencedDisks: true)))?.succeeded == true)
+        #expect(try await finish(try await session.send(PVE.deleteBackup(node: node, volume: backup.volumeID)))?.succeeded == true)
+        #expect(try await session.send(PVE.backups(node: node, storage: storage, vmid: 202)).allSatisfy { $0.volumeID != backup.volumeID })
+    }
+
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
     func readOnlyUserLacksPowerManagement() async throws {
         let session = try await trustedSession()

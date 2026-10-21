@@ -3,15 +3,6 @@ import ProxmoxCore
 import PVEKit
 import SwiftUI
 
-/// The single page of the clone form.
-nonisolated enum CloneStep: CreationStep {
-    case clone
-
-    var title: LocalizedStringKey { "Clone" }
-
-    func owns(_ parameter: String) -> Bool { true }
-}
-
 /// Clones a VM or container, like the web interface's Clone dialog. Templates clone linked by default.
 struct CloneView: View {
     let detail: GuestDetail
@@ -31,7 +22,7 @@ struct CloneView: View {
     private var nameKey: String { isVM ? "name" : "hostname" }
 
     var body: some View {
-        CreationWizard<CloneStep, _>(
+        CreationWizard<SinglePageStep, _>(
             title: isVM ? "Clone VM \(String(detail.reference.vmid))" : "Clone CT \(String(detail.reference.vmid))",
             connection: connection,
             reference: GuestReference(node: draft.targetNode, vmid: draft.vmid, kind: detail.reference.kind),

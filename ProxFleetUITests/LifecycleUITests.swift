@@ -111,6 +111,74 @@ final class LifecycleUITests: XCTestCase {
         XCTAssertFalse(app.buttons["delete.confirm"].isEnabled)
     }
 
+    @MainActor
+    func testBackUpNowProtectAndDelete() {
+        app.launch()
+        openGuest(200)
+        app.buttons["tab.more"].tap()
+        app.buttons["more.backups"].tap()
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'backup.vzdump'"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(rows.count, 1)
+
+        app.buttons["backup.now"].tap()
+        XCTAssertTrue(app.buttons["backup.mode"].waitForExistence(timeout: 5))
+        snapshot("43-backup-now")
+        app.buttons["create"].tap()
+        // The sheet closes when the backup is done, and the list shows it first.
+        expectation(for: NSPredicate(format: "count == 2"), evaluatedWith: rows)
+        waitForExpectations(timeout: 15)
+        snapshot("44-backups")
+
+        rows.firstMatch.tap()
+        let protected = app.switches["backup.protected"]
+        XCTAssertTrue(protected.waitForExistence(timeout: 5))
+        protected.switches.firstMatch.tap()
+        expectation(for: NSPredicate(format: "isEnabled == false"), evaluatedWith: app.buttons["backup.delete"])
+        waitForExpectations(timeout: 10)
+        protected.switches.firstMatch.tap()
+        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: app.buttons["backup.delete"])
+        waitForExpectations(timeout: 10)
+        app.buttons["backup.delete"].tap()
+        let confirm = app.alerts.buttons["Delete"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(app.buttons["backup.now"].waitForExistence(timeout: 10))
+        expectation(for: NSPredicate(format: "count == 1"), evaluatedWith: rows)
+        waitForExpectations(timeout: 10)
+    }
+
+    @MainActor
+    func testRestoreBackupAsNewGuest() {
+        app.launch()
+        openGuest(100)
+        app.buttons["tab.more"].tap()
+        app.buttons["more.backups"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'backup.vzdump'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        app.buttons["backup.restore"].tap()
+
+        // VM 100 is running, so it cannot be replaced.
+        let restore = app.buttons["create"]
+        XCTAssertTrue(restore.waitForExistence(timeout: 5))
+        restore.tap()
+        XCTAssertTrue(app.staticTexts["Stop the guest before restoring over it."].waitForExistence(timeout: 5))
+
+        app.buttons["restore.target"].tap()
+        let newVM = app.buttons["New VM"].firstMatch
+        XCTAssertTrue(newVM.waitForExistence(timeout: 5))
+        newVM.tap()
+        expectation(for: NSPredicate(format: "value == '106'"), evaluatedWith: app.textFields["vmid"])
+        waitForExpectations(timeout: 5)
+        snapshot("45-restore")
+        restore.tap()
+
+        // The restored VM opens, stopped, under its new ID.
+        XCTAssertTrue(app.buttons["power.start"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["VM 106 · pve1"].exists)
+    }
+
     /// Opens a guest from the server's list, scrolling to it if needed.
     private func openGuest(_ vmid: Int) {
         XCTAssertTrue(app.buttons["guest.100"].waitForExistence(timeout: 10))

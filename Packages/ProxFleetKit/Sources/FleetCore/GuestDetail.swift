@@ -21,6 +21,8 @@ public final class GuestDetail {
     public private(set) var recentTasks: [ClusterTask] = []
     /// nil until the snapshot screen loads them; includes `current`.
     public private(set) var snapshots: [GuestSnapshot]?
+    /// Backups of this guest on every backup storage of its node, newest first. nil until loaded.
+    public private(set) var backups: [BackupVolume]?
     public private(set) var loadError: String?
     public private(set) var actionError: String?
     public private(set) var hasLoaded = false
@@ -182,6 +184,62 @@ public final class GuestDetail {
         }
         await loadSnapshots()
         await loadStatus()
+    }
+
+    /// Loads the backups from every active storage of the node that holds backups.
+    /// Returns an error message when no storage could be read.
+    @discardableResult
+    public func loadBackups() async -> String? {
+        let session = connection.session
+        let node = reference.node
+        let vmid = reference.vmid
+        do {
+            let storages = try await session.send(PVE.storages(node: node, content: "backup")).filter(\.isActive)
+            var found: [BackupVolume] = []
+            var failures: [String] = []
+            await withTaskGroup(of: Result<[BackupVolume], any Error>.self) { group in
+                for storage in storages {
+                    group.addTask {
+                        do { return .success(try await session.send(PVE.backups(node: node, storage: storage.storage, vmid: vmid))) } catch { return .failure(error) }
+                    }
+                }
+                for await result in group {
+                    switch result {
+                    case .success(let volumes): found += volumes
+                    case .failure(let error): failures.append(error.localizedDescription)
+                    }
+                }
+            }
+            // A shared storage can list a backup more than once in a cluster; the volume ID identifies it.
+            var seen: Set<String> = []
+            backups = found
+                .filter { seen.insert($0.volumeID).inserted }
+                .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+            return found.isEmpty && !failures.isEmpty ? failures[0] : nil
+        } catch is CancellationError {
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Runs a request on a backup (notes, protection, deletion), waits for its task and reloads the backups.
+    public func runBackupAction(_ request: APIRequest<String?>) async throws(ConfigUpdateError) {
+        do {
+            let upid = try await connection.session.send(request)
+            try await waitForTask(upid)
+        } catch {
+            await loadBackups()
+            throw ConfigUpdateError(error)
+        }
+        await loadBackups()
+    }
+
+    /// Reloads everything after a restore replaced this guest.
+    public func reloadAfterRestore() async {
+        await load()
+        await loadBackups()
+        await connection.refresh()
     }
 
     /// Turns the stopped guest into a template. Containers convert in the background without a task ID,
