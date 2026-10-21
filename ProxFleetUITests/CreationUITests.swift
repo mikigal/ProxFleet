@@ -22,26 +22,40 @@ final class CreationUITests: XCTestCase {
         app.textFields["name"].tap()
         app.textFields["name"].typeText("web-01")
         snapshot("30-create-vm")
+        app.buttons["next"].tap()
+        XCTAssertTrue(app.staticTexts["Installation Media"].waitForExistence(timeout: 5))
+        snapshot("31-create-vm-os")
+
+        // The steps keep their values when going back.
+        app.buttons["back"].tap()
+        XCTAssertTrue(app.textFields["name"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["name"].value as? String, "web-01")
+
+        nextUntilConfirm()
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
         toggle("startAfterCreation")
+        snapshot("32-create-vm-confirm")
         app.buttons["create"].tap()
 
         // The new VM opens once its task finished, already running.
         XCTAssertTrue(app.staticTexts["web-01"].firstMatch.waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["Running"].waitForExistence(timeout: 10))
-        snapshot("31-created-vm")
+        snapshot("33-created-vm")
     }
 
     @MainActor
-    func testInvalidNameIsShownBeforeSending() {
+    func testInvalidNameStopsOnItsStep() {
         app.launch()
         open("create.vm")
         let name = app.textFields["name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap()
         name.typeText("bad name")
-        app.buttons["create"].tap()
+        app.buttons["next"].tap()
         XCTAssertTrue(app.staticTexts["Use letters, digits, hyphens and dots only."].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["New Virtual Machine"].exists)
+        XCTAssertTrue(name.exists)
+        // Later steps stay locked until this one is fixed.
+        XCTAssertFalse(app.buttons["step.1"].isEnabled)
     }
 
     @MainActor
@@ -49,29 +63,46 @@ final class CreationUITests: XCTestCase {
         app.launch()
         open("create.ct")
         XCTAssertTrue(app.staticTexts["New Container"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["hostname"].waitForExistence(timeout: 5))
+        app.textFields["hostname"].tap()
+        app.textFields["hostname"].typeText("alpine-01")
+        type("secret1", into: app.secureTextFields["password"])
+        type("secret1", into: app.secureTextFields["passwordConfirmation"])
+        snapshot("34-create-container")
+        app.buttons["next"].tap()
+
+        // Without a template the wizard does not go on.
+        XCTAssertTrue(app.buttons["Download Templates"].waitForExistence(timeout: 5))
+        app.buttons["next"].tap()
+        XCTAssertTrue(app.staticTexts["Choose a template."].waitForExistence(timeout: 5))
 
         // Download a template; it is selected once the download finished.
         app.buttons["Download Templates"].tap()
         let alpine = app.buttons["template.alpine-3.22-default_20250617_amd64.tar.xz"]
         XCTAssertTrue(alpine.waitForExistence(timeout: 10))
-        snapshot("32-templates")
+        snapshot("35-templates")
         alpine.tap()
         let download = app.buttons["Download to local"].firstMatch
         XCTAssertTrue(download.waitForExistence(timeout: 5))
         download.tap()
-        XCTAssertTrue(app.staticTexts["New Container"].waitForExistence(timeout: 15))
         let template = app.buttons["template"]
-        XCTAssertTrue(template.waitForExistence(timeout: 5))
+        XCTAssertTrue(template.waitForExistence(timeout: 15))
         XCTAssertTrue((template.value as? String)?.hasPrefix("alpine-3.22") == true)
-        app.textFields["hostname"].tap()
-        app.textFields["hostname"].typeText("alpine-01")
-        type("secret1", into: app.secureTextFields["password"])
-        type("secret1", into: app.secureTextFields["passwordConfirmation"])
-        snapshot("33-create-container")
 
+        nextUntilConfirm()
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
+        snapshot("36-create-container-confirm")
         app.buttons["create"].tap()
         XCTAssertTrue(app.staticTexts["alpine-01"].firstMatch.waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["Stopped"].waitForExistence(timeout: 10))
+    }
+
+    /// Taps Next until the Confirm step with its Create button shows.
+    private func nextUntilConfirm() {
+        for _ in 0..<10 where !app.buttons["create"].exists {
+            app.buttons["next"].tap()
+        }
+        XCTAssertTrue(app.buttons["create"].waitForExistence(timeout: 5))
     }
 
     private func open(_ identifier: String) {
@@ -87,12 +118,20 @@ final class CreationUITests: XCTestCase {
 
     /// Scrolls the form until the field is visible, then types into it.
     private func type(_ text: String, into field: XCUIElement) {
-        // Small drags, so the field stops above the keyboard instead of scrolling past it.
-        for _ in 0..<15 where !(field.exists && field.isHittable) {
+        // Small drags, so the field stops above the keyboard and the Back/Next bar instead of scrolling past them.
+        let bar = app.buttons["next"]
+        func isClear() -> Bool {
+            field.exists && field.isHittable && (!bar.exists || field.frame.maxY < bar.frame.minY - 8)
+        }
+        for _ in 0..<15 where !isClear() {
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
             start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
         }
-        field.tap()
+        // A tap while the form still scrolls may not focus the field, so try again.
+        for _ in 0..<3 {
+            field.tap()
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { break }
+        }
         field.typeText(text)
     }
 

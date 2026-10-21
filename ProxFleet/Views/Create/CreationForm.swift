@@ -3,58 +3,91 @@ import ProxmoxCore
 import PVEKit
 import SwiftUI
 
-/// Form scaffold for creating a guest: Create button, progress of the creation task, and errors.
+/// One page of a creation wizard, like a tab of the web interface's Create VM and Create CT dialogs.
+nonisolated protocol CreationStep: Hashable, CaseIterable where AllCases == [Self] {
+    var title: LocalizedStringKey { get }
+    /// Whether a request parameter is set on this page, so its problems and server errors show here.
+    func owns(_ parameter: String) -> Bool
+}
+
+/// Step-by-step scaffold for creating a guest: a bar with the steps, Back and Next, and on the last step
+/// Create with the progress of the creation task.
 ///
-/// Problems found before sending are shown under their fields after the first attempt;
-/// the server's validation errors use the same parameter names.
-struct CreationForm<Content: View>: View {
+/// Next checks only the current step. Problems found before sending and the server's validation errors use the same
+/// parameter names; after a failed Create the wizard goes back to the first step with an error.
+struct CreationWizard<Step: CreationStep, Content: View>: View {
     let title: LocalizedStringKey
     let connection: ServerConnection
     let reference: GuestReference
     let problems: [String: String]
     let makeRequest: () -> APIRequest<String>
     let onCreated: (GuestReference) -> Void
-    @ViewBuilder let content: (_ fieldErrors: [String: String]) -> Content
+    @ViewBuilder let content: (_ step: Step, _ fieldErrors: [String: String]) -> Content
 
+    @State private var step = Step.allCases[0]
+    /// The furthest step reached; the step bar lets the user jump back and forth up to it.
+    @State private var furthest = 0
+    @State private var movesForward = true
+    @State private var checkedSteps: Set<Step> = []
     @State private var isSubmitting = false
     @State private var task: TaskCenter.TrackedTask?
-    @State private var showsProblems = false
     @State private var serverErrors: [String: String] = [:]
     @State private var errorMessage: String?
     @Environment(\.dismiss) private var dismiss
 
+    private var steps: [Step] { Step.allCases }
+    private var index: Int { steps.firstIndex(of: step) ?? 0 }
+    private var isLast: Bool { index == steps.count - 1 }
     private var kindName: String { reference.kind == .virtualMachine ? "VM" : "CT" }
     private var isWorking: Bool { isSubmitting || task != nil }
 
+    /// The page each parameter belongs to; keys no page claims show on the last one.
+    private func owner(of parameter: String) -> Step {
+        steps.dropLast().first { $0.owns(parameter) } ?? steps[steps.count - 1]
+    }
+
+    private func problems(on step: Step) -> [String: String] {
+        problems.filter { owner(of: $0.key) == step }
+    }
+
+    private var fieldErrors: [String: String] {
+        problems.filter { checkedSteps.contains(owner(of: $0.key)) }.merging(serverErrors) { _, server in server }
+    }
+
     var body: some View {
-        Form {
-            if let task {
-                Section {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Creating \(kindName) \(reference.vmid)…")
+        ZStack {
+            Form {
+                if isLast, let task {
+                    Section {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Creating \(kindName) \(reference.vmid)…")
+                        }
+                        NavigationLink("Show Task Log", value: ServerRoute.task(node: task.upid.node, upid: task.upid.rawValue))
+                    } footer: {
+                        Text("You can close this screen; the server continues in the background.")
                     }
-                    NavigationLink("Show Task Log", value: ServerRoute.task(node: task.upid.node, upid: task.upid.rawValue))
-                } footer: {
-                    Text("You can close this screen; the server continues in the background.")
                 }
+                Group {
+                    content(step, fieldErrors)
+                }
+                .disabled(isWorking)
+                ErrorSection(message: errorMessage)
             }
-            Group {
-                content(showsProblems ? problems.merging(serverErrors) { _, server in server } : serverErrors)
-            }
-            .disabled(isWorking)
-            ErrorSection(message: errorMessage)
+            .id(step)
+            .transition(.asymmetric(
+                insertion: .move(edge: movesForward ? .trailing : .leading),
+                removal: .move(edge: movesForward ? .leading : .trailing)
+            ))
         }
+        .safeAreaBar(edge: .top, spacing: 0) { stepBar }
+        .safeAreaBar(edge: .bottom, spacing: 0) { buttons }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .interactiveDismissDisabled(isSubmitting)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(task == nil ? "Cancel" : "Close") { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                ProgressButton("Create", isWorking: isWorking) { Task { await create() } }
-                    .accessibilityIdentifier("create")
             }
         }
         .onDisappear {
@@ -65,12 +98,114 @@ struct CreationForm<Content: View>: View {
         }
     }
 
+    private var stepBar: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(Array(steps.enumerated()), id: \.element) { offset, item in
+                        Button {
+                            go(to: item)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(verbatim: "\(offset + 1)")
+                                    .monospacedDigit()
+                                    .foregroundStyle(item == step ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                                Text(item.title)
+                            }
+                            .font(.subheadline.weight(item == step ? .semibold : .regular))
+                            .padding(.horizontal, 4)
+                        }
+                        .buttonStyle(StepButtonStyle(isCurrent: item == step, hasProblem: checkedSteps.contains(item) && hasError(on: item)))
+                        .disabled(offset > furthest || isWorking)
+                        .id(item)
+                        .accessibilityIdentifier("step.\(offset)")
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            }
+            .scrollIndicators(.hidden)
+            .onChange(of: step) {
+                withAnimation { proxy.scrollTo(step, anchor: .center) }
+            }
+        }
+    }
+
+    private var buttons: some View {
+        HStack(spacing: 12) {
+            if index > 0 {
+                Button {
+                    go(to: steps[index - 1])
+                } label: {
+                    Text("Back").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glass)
+                .disabled(isWorking)
+                .accessibilityIdentifier("back")
+            }
+            if isLast {
+                Button {
+                    Task { await create() }
+                } label: {
+                    Group {
+                        if isWorking { ProgressView() } else { Text("Create").fontWeight(.semibold) }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .disabled(isWorking)
+                .accessibilityIdentifier("create")
+            } else {
+                Button(action: next) {
+                    Text("Next").fontWeight(.semibold).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .accessibilityIdentifier("next")
+            }
+        }
+        .controlSize(.large)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private func hasError(on step: Step) -> Bool {
+        !problems(on: step).isEmpty || serverErrors.keys.contains { owner(of: $0) == step }
+    }
+
+    /// Moves on when the current step has no problems; otherwise shows them under their fields.
+    private func next() {
+        checkedSteps.insert(step)
+        go(to: steps[index + 1])
+    }
+
+    private func go(to target: Step) {
+        guard let targetIndex = steps.firstIndex(of: target), targetIndex != index else { return }
+        errorMessage = nil
+        // Going ahead, also over the bar, stops at the first step with problems.
+        if targetIndex > index, let blocked = steps[index..<targetIndex].first(where: { !problems(on: $0).isEmpty }) {
+            checkedSteps.insert(blocked)
+            errorMessage = String(localized: "Check the highlighted fields.")
+            move(to: blocked)
+            return
+        }
+        move(to: target)
+    }
+
+    private func move(to target: Step) {
+        let targetIndex = steps.firstIndex(of: target) ?? 0
+        guard targetIndex != index else { return }
+        movesForward = targetIndex > index
+        furthest = max(furthest, targetIndex)
+        withAnimation(.snappy(duration: 0.3)) { step = target }
+    }
+
     private func create() async {
         errorMessage = nil
         serverErrors = [:]
-        guard problems.isEmpty else {
-            showsProblems = true
+        checkedSteps.formUnion(steps)
+        if let first = steps.first(where: { !problems(on: $0).isEmpty }) {
             errorMessage = String(localized: "Check the highlighted fields.")
+            move(to: first)
             return
         }
         isSubmitting = true
@@ -89,8 +224,54 @@ struct CreationForm<Content: View>: View {
         } catch .invalid(let message, let fields) {
             serverErrors = fields
             errorMessage = message ?? String(localized: "Check the highlighted fields.")
+            if let first = steps.first(where: { step in fields.keys.contains { owner(of: $0) == step } }) {
+                move(to: first)
+            }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+/// A step in the wizard's bar: filled for the current step, red when the step has a problem.
+private struct StepButtonStyle: ButtonStyle {
+    let isCurrent: Bool
+    let hasProblem: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .foregroundStyle(isCurrent ? AnyShapeStyle(.white) : hasProblem ? AnyShapeStyle(.red) : isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+            .background {
+                Capsule().fill(isCurrent ? AnyShapeStyle(hasProblem ? Color.red : Color.accentColor) : AnyShapeStyle(.fill.tertiary))
+            }
+            .overlay {
+                if hasProblem, !isCurrent { Capsule().strokeBorder(.red.opacity(0.6)) }
+            }
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// The request as it will be sent, like the Confirm tab of the web interface. Secrets are hidden.
+struct CreationSummary: View {
+    let parameters: APIParameters
+    var hidden: Set<String> = ["password"]
+
+    var body: some View {
+        Section("Summary") {
+            ForEach(parameters.items.sorted { $0.name < $1.name }, id: \.name) { item in
+                LabeledContent {
+                    Text(hidden.contains(item.name) ? "••••••" : item.value.encoded)
+                        .font(.footnote.monospaced())
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                } label: {
+                    Text(verbatim: item.name)
+                        .font(.footnote.monospaced())
+                }
+            }
         }
     }
 }
