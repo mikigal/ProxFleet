@@ -23,7 +23,8 @@ extension DemoState {
     func handleNode(_ method: HTTPMethod, node: String, rest: [String], parameters: [String: String], user: String) -> HTTPResponse? {
         settleNodeReboots()
         if let response = handleNodeSystem(method, node: node, rest: rest, parameters: parameters, user: user)
-            ?? handleDisks(method, node: node, rest: rest, parameters: parameters, user: user) {
+            ?? handleDisks(method, node: node, rest: rest, parameters: parameters, user: user)
+            ?? handleNodeAdministration(method, node: node, rest: rest, parameters: parameters, user: user) {
             return response
         }
         let isOnline = cluster.nodes.first { $0.name == node }?.isOnline ?? false

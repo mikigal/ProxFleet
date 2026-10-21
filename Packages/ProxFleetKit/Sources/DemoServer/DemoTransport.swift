@@ -62,6 +62,11 @@ actor DemoState {
     var pendingNetworks: [String: [DemoInterface]] = [:]
     /// Disks and storage built on them, by node, once changed in demo mode.
     var diskLayouts: [String: DemoDiskLayout] = [:]
+    /// Repositories enabled or disabled by `path#index`, and standard repositories added, by node.
+    var repositoryStates: [String: [String: Bool]] = [:]
+    var addedRepositories: [String: [String]] = [:]
+    /// When a custom certificate was uploaded, by node.
+    var customCertificates: [String: Date] = [:]
     /// Console proxies started but not yet connected, by ticket.
     var consoles: [String: DemoConsoleRequest] = [:]
     private var ticketCounter = 0

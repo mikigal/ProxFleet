@@ -107,6 +107,17 @@ public final class ServerConnection: Identifiable {
         await establish()
     }
 
+    /// Trusts a certificate the server itself reported over the trusted connection, for example after the
+    /// node's certificate was replaced from the app, so the connection survives pveproxy's restart.
+    public func trustFingerprint(_ fingerprint: String) {
+        let fingerprint = fingerprint.uppercased()
+        (transport as? any CertificatePinning)?.pin(fingerprint)
+        if !profile.isDemo, !profile.trustedFingerprints.contains(fingerprint) {
+            profile.trustedFingerprints.append(fingerprint)
+            onProfileChange(profile)
+        }
+    }
+
     public func cancelSignIn() {
         state = .disconnected
     }

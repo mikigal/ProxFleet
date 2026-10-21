@@ -30,6 +30,9 @@ public final class NodeDetail {
     public private(set) var thinPools: [LVMThinPool]?
     public private(set) var zfsPools: [ZFSPool]?
     public private(set) var directories: [DirectoryMount]?
+    public private(set) var repositories: AptRepositories?
+    public private(set) var subscription: NodeSubscription?
+    public private(set) var certificates: [NodeCertificate]?
 
     public var timeframe: RRDTimeframe = .hour {
         didSet {
@@ -156,6 +159,18 @@ public final class NodeDetail {
         return disks
     }
 
+    @discardableResult
+    public func loadRepositories() async -> String? {
+        let error = await fetch(PVE.aptRepositories(node: node)) { repositories = $0 }
+        await fetch(PVE.subscription(node: node)) { subscription = $0 }
+        return error
+    }
+
+    @discardableResult
+    public func loadCertificates() async -> String? {
+        await fetch(PVE.certificates(node: node)) { certificates = $0 }
+    }
+
     public func smart(of disk: String) async throws -> SMARTReport {
         try await connection.session.send(PVE.smart(node: node, disk: disk))
     }
@@ -257,6 +272,48 @@ public final class NodeDetail {
     public func deleteDiskStorage(_ kind: DiskStorageKind, name: String, volumeGroup: String? = nil, cleanupConfig: Bool, wipeDisks: Bool) async throws(ConfigUpdateError) {
         try await runTask(PVE.deleteDiskStorage(node: node, kind: kind, name: name, volumeGroup: volumeGroup, cleanupConfig: cleanupConfig, wipeDisks: wipeDisks))
         await loadDisks()
+    }
+
+    // MARK: - Repositories and certificates
+
+    public func setRepository(_ repository: AptRepositories.Repository, enabled: Bool) async throws(ConfigUpdateError) {
+        try await perform(PVE.setRepository(node: node, repository, enabled: enabled, digest: repositories?.digest))
+        await loadRepositories()
+    }
+
+    public func addStandardRepository(_ handle: String) async throws(ConfigUpdateError) {
+        try await perform(PVE.addStandardRepository(node: node, handle: handle, digest: repositories?.digest))
+        await loadRepositories()
+    }
+
+    /// Uploads a custom certificate. pveproxy restarts with it, so its fingerprint is trusted first: the
+    /// server reported it over the connection that is already trusted.
+    public func uploadCertificate(_ draft: CustomCertificateDraft) async throws(ConfigUpdateError) {
+        let certificate: NodeCertificate
+        do {
+            certificate = try await connection.session.send(PVE.uploadCertificate(node: node, draft))
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+        if let fingerprint = certificate.fingerprint { connection.trustFingerprint(fingerprint) }
+        await reloadCertificatesAfterRestart()
+    }
+
+    /// Removes the custom certificate; pveproxy goes back to `pve-ssl.pem`, whose fingerprint is trusted first.
+    public func deleteCustomCertificate() async throws(ConfigUpdateError) {
+        if let fingerprint = certificates?.first(where: { $0.fileName == "pve-ssl.pem" })?.fingerprint {
+            connection.trustFingerprint(fingerprint)
+        }
+        try await perform(PVE.deleteCustomCertificate(node: node))
+        await reloadCertificatesAfterRestart()
+    }
+
+    /// pveproxy needs a moment to restart; requests fail until then.
+    private func reloadCertificatesAfterRestart() async {
+        for attempt in 0..<10 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(1)) }
+            if await loadCertificates() == nil { return }
+        }
     }
 
     private func perform<Value>(_ request: APIRequest<Value>) async throws(ConfigUpdateError) {

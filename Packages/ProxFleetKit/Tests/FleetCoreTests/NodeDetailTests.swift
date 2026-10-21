@@ -185,4 +185,28 @@ struct NodeDetailTests {
         try await detail.wipe("/dev/sdc")
         #expect(detail.disks?.first { $0.path == "/dev/sdc" }?.hasGPT == false)
     }
+
+    @Test func repositoriesAndCertificates() async throws {
+        let connection = try await connection()
+        let detail = NodeDetail(node: "pve2", connection: connection)
+        #expect(await detail.loadRepositories() == nil)
+        let repositories = try #require(detail.repositories)
+        #expect(repositories.hasEnabledProxmoxRepository && !repositories.hasEnabledEnterpriseRepository)
+        #expect(detail.subscription?.isActive == false)
+        let enterprise = try #require(repositories.repositories.first { $0.isEnterprise })
+        try await detail.setRepository(enterprise, enabled: true)
+        #expect(detail.repositories?.hasEnabledEnterpriseRepository == true)
+        try await detail.addStandardRepository("test")
+        #expect(detail.repositories?.repositories.contains { $0.components == ["pve-test"] && $0.isEnabled } == true)
+        #expect(detail.repositories?.standardRepositories.first { $0.handle == "test" }?.isEnabled == true)
+
+        #expect(await detail.loadCertificates() == nil)
+        #expect(detail.certificates?.map(\.fileName) == ["pve-root-ca.pem", "pve-ssl.pem"])
+        var draft = CustomCertificateDraft()
+        draft.certificates = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+        try await detail.uploadCertificate(draft)
+        #expect(detail.certificates?.last?.isCustom == true)
+        try await detail.deleteCustomCertificate()
+        #expect(detail.certificates?.contains { $0.isCustom } == false)
+    }
 }

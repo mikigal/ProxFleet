@@ -557,6 +557,86 @@ struct LiveServerTests {
         _ = try await session.send(PVE.directoryMounts(node: node))
     }
 
+    /// Disables and enables the Ceph repository again, and reads the subscription.
+    @Test func repositories() async throws {
+        let (session, node) = try await rootSession()
+        let repositories = try await session.send(PVE.aptRepositories(node: node))
+        #expect(repositories.hasEnabledProxmoxRepository)
+        #expect(repositories.standardRepositories.contains { $0.handle == "no-subscription" && $0.isEnabled == true })
+        #expect(repositories.repositories.contains { $0.origin == "Debian" })
+        let ceph = try #require(repositories.repositories.first { $0.path.hasSuffix("ceph.sources") && $0.isEnabled })
+        _ = try await session.send(PVE.setRepository(node: node, ceph, enabled: false, digest: repositories.digest))
+        let disabled = try await session.send(PVE.aptRepositories(node: node))
+        #expect(disabled.repositories.first { $0.id == ceph.id }?.isEnabled == false)
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PVE.setRepository(node: node, ceph, enabled: true, digest: repositories.digest))
+        }
+        _ = try await session.send(PVE.setRepository(node: node, ceph, enabled: true, digest: disabled.digest))
+        #expect(try await session.send(PVE.aptRepositories(node: node)).repositories.first { $0.id == ceph.id }?.isEnabled == true)
+        #expect(try await !session.send(PVE.subscription(node: node)).status.isEmpty)
+    }
+
+    /// Uploads a throwaway self-signed certificate, keeps the connection by pinning the fingerprint the server
+    /// reports, and goes back to the default certificate.
+    @Test(.timeLimit(.minutes(2))) func customCertificate() async throws {
+        let transport = URLSessionTransport()
+        let session = ProxmoxSession(address: server.address, transport: transport)
+        do {
+            _ = try await session.sendUnauthenticated(ProxmoxAccess.realms())
+        } catch ProxmoxError.untrustedCertificate(let certificate) {
+            transport.pin(certificate.sha256Fingerprint)
+        }
+        _ = try await session.login(username: try #require(server["USER"]), password: try #require(server["PASSWORD"]), realm: server["REALM"])
+        let node = try #require(try await session.fetchClusterSnapshot().nodes.first?.name)
+        let before = try await session.send(PVE.certificates(node: node))
+        try #require(!before.contains { $0.isCustom }, "the test server already has a custom certificate")
+        let original = try #require(before.first { $0.fileName == "pve-ssl.pem" }?.fingerprint)
+
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let openssl = Process()
+        openssl.executableURL = URL(filePath: "/usr/bin/openssl")
+        openssl.arguments = ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=proxfleet-live-test",
+                             "-keyout", directory.appending(path: "key.pem").path, "-out", directory.appending(path: "cert.pem").path]
+        openssl.standardError = FileHandle.nullDevice
+        try openssl.run()
+        openssl.waitUntilExit()
+        var draft = CustomCertificateDraft()
+        draft.certificates = try String(contentsOf: directory.appending(path: "cert.pem"), encoding: .utf8)
+        draft.key = try String(contentsOf: directory.appending(path: "key.pem"), encoding: .utf8)
+
+        func certificatesAfterRestart() async throws -> [NodeCertificate] {
+            for _ in 0..<15 {
+                try await Task.sleep(for: .seconds(1))
+                if let list = try? await session.send(PVE.certificates(node: node)) { return list }
+            }
+            return try await session.send(PVE.certificates(node: node))
+        }
+
+        let uploaded = try await session.send(PVE.uploadCertificate(node: node, draft))
+        #expect(uploaded.isCustom && uploaded.commonName == "proxfleet-live-test")
+        transport.pin(try #require(uploaded.fingerprint))
+        #expect(try await certificatesAfterRestart().contains { $0.isCustom && $0.fingerprint == uploaded.fingerprint })
+
+        transport.pin(original)
+        _ = try await session.send(PVE.deleteCustomCertificate(node: node))
+        #expect(try await !certificatesAfterRestart().contains { $0.isCustom })
+
+        // pveproxy restarts gracefully: old workers keep serving the previous certificate for a while. The app
+        // trusts both meanwhile; later tests need the original back on every connection.
+        var stable = 0
+        for _ in 0..<40 where stable < 5 {
+            do {
+                _ = try await ProxmoxSession(address: server.address, transport: URLSessionTransport()).sendUnauthenticated(ProxmoxAccess.realms())
+            } catch ProxmoxError.untrustedCertificate(let certificate) {
+                stable = certificate.sha256Fingerprint == original.uppercased() ? stable + 1 : 0
+            }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        #expect(stable == 5)
+    }
+
     @Test(.enabled(if: LiveServer.current?["LIMITED_USER"] != nil))
     func readOnlyUserLacksPowerManagement() async throws {
         let session = try await trustedSession()

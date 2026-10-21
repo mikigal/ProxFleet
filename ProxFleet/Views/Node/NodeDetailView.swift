@@ -260,8 +260,12 @@ private struct NodeUpdatesList: View {
                     }
                 }
             }
-            if let versions = detail.versions, !versions.isEmpty {
-                Section {
+            Section {
+                NavigationLink("Repositories") {
+                    NodeRepositoriesView(detail: detail)
+                }
+                .accessibilityIdentifier("updates.repositories")
+                if let versions = detail.versions, !versions.isEmpty {
                     NavigationLink("Installed Versions") {
                         PackageVersionsView(versions: versions)
                     }
@@ -378,6 +382,12 @@ private struct NodeMoreList: View {
                     MoreRow(title: "Time Zone", systemImage: "clock", color: .orange, hint: detail.time?.timeZone)
                 }
                 .accessibilityIdentifier("more.time")
+                NavigationLink {
+                    NodeCertificatesView(detail: detail)
+                } label: {
+                    MoreRow(title: "Certificates", systemImage: "checkmark.seal", color: .green)
+                }
+                .accessibilityIdentifier("more.certificates")
             }
             .disabled(!detail.isOnline)
             Section {

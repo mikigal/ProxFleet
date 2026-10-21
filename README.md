@@ -25,9 +25,10 @@ Early development. What works now:
 - Nodes: status, usage and history, shell, package updates (refresh, list, upgrade in the shell), services, system log, tasks, reboot and shutdown
 - Node settings: network interfaces (bridges, bonds, VLANs; pending changes with apply and revert), DNS, hosts and time zone
 - Disks: list with partitions, SMART values, wipe and GPT initialization; LVM, LVM-thin, ZFS (with pool status) and directories, created on unused disks or removed
+- APT repositories (status, enable and disable, add standard ones) and certificates (view, upload a custom one, remove it)
 - Demo mode with a built-in sample cluster, including working demo consoles
 
-Next up: repositories and certificates of nodes, then datacenter settings.
+Next up: datacenter settings (storage, backup jobs, users and permissions, ACME).
 
 ## Requirements
 

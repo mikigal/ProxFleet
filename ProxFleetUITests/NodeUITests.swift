@@ -184,6 +184,47 @@ final class NodeUITests: XCTestCase {
         snapshot("60-node-zfs-pool")
     }
 
+    @MainActor
+    func testRepositoriesAndCertificates() {
+        app.launch()
+        openNode("pve2")
+        app.buttons["tab.updates"].tap()
+        app.buttons["updates.repositories"].tap()
+        let enterprise = app.switches["repository.pve-enterprise"]
+        XCTAssertTrue(enterprise.waitForExistence(timeout: 10))
+        XCTAssertEqual(enterprise.value as? String, "0")
+        snapshot("61-node-repositories")
+        enterprise.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        let warning = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'The enterprise repository is enabled'")).firstMatch
+        XCTAssertTrue(warning.waitForExistence(timeout: 10))
+
+        app.buttons["repositories.add"].tap()
+        let test = app.buttons["standard.test"]
+        XCTAssertTrue(test.waitForExistence(timeout: 5))
+        test.tap()
+        XCTAssertTrue(app.staticTexts["Enabled"].waitForExistence(timeout: 10))
+        app.buttons["Done"].tap()
+        let testWarning = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'The Test repository'")).firstMatch
+        XCTAssertTrue(testWarning.waitForExistence(timeout: 10))
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["tab.more"].tap()
+        app.buttons["more.certificates"].tap()
+        XCTAssertTrue(app.buttons["certificate.pve-ssl.pem"].waitForExistence(timeout: 10))
+        snapshot("62-node-certificates")
+        app.buttons["certificates.upload"].tap()
+        let pem = app.textViews["certificate.pem"]
+        XCTAssertTrue(pem.waitForExistence(timeout: 5))
+        pem.tap()
+        pem.typeText("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----")
+        app.buttons["certificate.upload"].tap()
+        let custom = app.buttons["certificate.pveproxy-ssl.pem"]
+        XCTAssertTrue(custom.waitForExistence(timeout: 15))
+        XCTAssertTrue(custom.label.contains("In Use"))
+        custom.tap()
+        XCTAssertTrue(app.staticTexts["SHA-256 Fingerprint"].waitForExistence(timeout: 5))
+    }
+
     private func openNode(_ name: String) {
         let row = app.buttons["node.\(name)"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
