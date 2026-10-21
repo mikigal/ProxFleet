@@ -24,7 +24,8 @@ extension DemoState {
         settleTasks()
         let parts = path.split(separator: "/").map(String.init)
         if let response = handleCreation(method, parts: parts, parameters: parameters, user: user)
-            ?? handleStorageConfig(method, parts: parts, parameters: parameters, user: user) {
+            ?? handleStorageConfig(method, parts: parts, parameters: parameters, user: user)
+            ?? handleBackupJobs(method, parts: parts, parameters: parameters, user: user) {
             return response
         }
 

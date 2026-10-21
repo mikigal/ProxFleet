@@ -764,6 +764,52 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.storageConfigs()).contains { $0.storage.hasPrefix("pflive") })
     }
 
+    /// A backup job for container 202: created, analysed, changed, run now, and removed with its backup.
+    @Test(.timeLimit(.minutes(2))) func backupJob() async throws {
+        let (session, node) = try await rootSession()
+        let before = try await session.send(PVE.backupJobs())
+        try #require(!before.contains { $0.comment == "ProxFleet live test" }, "left over from an earlier run")
+        #expect(try await session.send(PVE.scheduleRuns("mon..fri 21:00")).count == 3)
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.scheduleRuns("whenever")) }
+
+        var draft = BackupJobDraft()
+        draft.storage = "local"
+        draft.schedule = "sat 03:15"
+        draft.selectionMode = .guests
+        draft.guests = [202]
+        draft.backupMode = "stop"
+        draft.comment = "ProxFleet live test"
+        draft.notesTemplate = "{{guestname}} live"
+        draft.customRetention = true
+        draft.prune.counts = ["keep-last": "1"]
+        _ = try await session.send(PVE.createBackupJob(draft))
+        let job = try #require(try await session.send(PVE.backupJobs()).first { $0.comment == "ProxFleet live test" })
+        #expect(job.selection == .guests([202]) && job.prune?.serialized == "keep-last=1" && job.nextRun != nil)
+        #expect(try await !session.send(PVE.guestsWithoutBackupJob()).contains { $0.vmid == 202 })
+
+        let original = BackupJobDraft(job)
+        var edit = original
+        edit.isEnabled = false
+        edit.selectionMode = .exclude
+        edit.guests = [100, 101, 102, 200, 201, 9000]
+        _ = try await session.send(PVE.updateBackupJob(job.id, edit.changes(from: original)))
+        let changed = try #require(try await session.send(PVE.backupJobs()).first { $0.id == job.id })
+        // Disabled jobs still report their next run; the app does not show it for them.
+        #expect(!changed.isEnabled && changed.selection == .all(excluding: [100, 101, 102, 200, 201, 9000]))
+
+        let snapshot = try await session.fetchClusterSnapshot()
+        let runs = changed.runNowRequests(in: snapshot)
+        #expect(runs.map(\.node) == [node])
+        let upid = try await session.send(runs[0].request)
+        #expect(try await finishTask(session, node: node, upid)?.succeeded == true)
+        let backups = try await session.send(PVE.backups(node: node, storage: "local", vmid: 202))
+        let made = try #require(backups.first { $0.notes == "backup-agent live" })
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.deleteBackup(node: node, volume: made.volumeID)))?.succeeded == true)
+
+        _ = try await session.send(PVE.deleteBackupJob(job.id))
+        #expect(try await !session.send(PVE.backupJobs()).contains { $0.id == job.id })
+    }
+
     /// Disables and enables the Ceph repository again, and reads the subscription.
     @Test func repositories() async throws {
         let (session, node) = try await rootSession()

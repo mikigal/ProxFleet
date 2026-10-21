@@ -33,12 +33,12 @@ extension DemoState {
         }
     }
 
-    static func volumeName(vmid: Int, kind: DemoCluster.Guest.Kind, date: Date) -> String {
+    static func volumeName(vmid: Int, kind: DemoCluster.Guest.Kind, date: Date, storage: String = "local") -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyy_MM_dd-HH_mm_ss"
-        return "local:backup/vzdump-\(kind.rawValue)-\(vmid)-\(formatter.string(from: date)).\(kind == .qemu ? "vma" : "tar").zst"
+        return "\(storage):backup/vzdump-\(kind.rawValue)-\(vmid)-\(formatter.string(from: date)).\(kind == .qemu ? "vma" : "tar").zst"
     }
 
     /// Finished backups on a storage, as `GET .../content` lists them.
@@ -87,28 +87,51 @@ extension DemoState {
             return success(.string(text + "\n"))
 
         case (.post, ["vzdump"]):
-            guard let vmid = parameters["vmid"].flatMap(Int.init), let guest = cluster.guests.first(where: { $0.vmid == vmid }) else {
-                return failure(500, "unable to find guest")
-            }
-            guard privileges(for: user).contains("VM.Backup") else { return failure(403, "Permission check failed (/vms/\(vmid), VM.Backup)") }
-            guard parameters["storage"] == "local" else { return failure(500, "storage '\(parameters["storage"] ?? "")' does not support backups") }
-            let duration: TimeInterval = 4
-            var notes = parameters["notes-template"] ?? ""
-            for (variable, value) in ["guestname": guest.name, "vmid": String(vmid), "node": guest.node, "cluster": cluster.clusterName ?? ""] {
-                notes = notes.replacingOccurrences(of: "{{\(variable)}}", with: value)
-            }
-            var config = currentConfig(guest)
-            config["digest"] = nil
-            backups.append(DemoBackup(
-                volume: Self.volumeName(vmid: vmid, kind: guest.kind, date: now), vmid: vmid, kind: guest.kind, date: now,
-                size: guest.diskGiB * 120_000_000, notes: notes, isProtected: parameters["protected"] == "1", config: config,
-                availableAt: now.addingTimeInterval(duration)
-            ))
-            return startTask(node: guest.node, type: "vzdump", objectID: String(vmid), user: user, duration: duration)
+            return vzdump(node: node, parameters: parameters, user: user, now: now)
 
         default:
             return nil
         }
+    }
+
+    /// Backs up one guest (`vmid`), several, every guest of the node (`all`, with `exclude`) or a pool's guests on the node.
+    private func vzdump(node: String, parameters: [String: String], user: String, now: Date) -> HTTPResponse {
+        let storage = parameters["storage"] ?? "local"
+        guard storageConfigs.contains(where: { $0.id == storage && $0.content.contains("backup") && $0.isAvailable(on: node) }) else {
+            return failure(500, "storage '\(storage)' does not support backups")
+        }
+        let ids: (String?) -> Set<Int> = { text in Set((text ?? "").split(separator: ",").compactMap { Int($0) }) }
+        var guests: [DemoCluster.Guest]
+        if parameters["all"] == "1" {
+            let excluded = ids(parameters["exclude"])
+            guests = cluster.guests.filter { $0.node == node && !excluded.contains($0.vmid) }
+        } else if let pool = parameters["pool"] {
+            guests = cluster.guests.filter { $0.node == node && Self.poolMembers[pool]?.contains($0.vmid) == true }
+        } else {
+            let wanted = ids(parameters["vmid"])
+            guard !wanted.isEmpty, cluster.guests.contains(where: { wanted.contains($0.vmid) }) else { return failure(500, "unable to find guest") }
+            guests = cluster.guests.filter { wanted.contains($0.vmid) && $0.node == node }
+        }
+        guard !guests.isEmpty else { return failure(500, "No guests selected on node '\(node)'") }
+        for guest in guests where !privileges(for: user).contains("VM.Backup") {
+            return failure(403, "Permission check failed (/vms/\(guest.vmid), VM.Backup)")
+        }
+        let duration = 4 * TimeInterval(guests.count)
+        for (index, guest) in guests.enumerated() {
+            var notes = parameters["notes-template"] ?? ""
+            for (variable, value) in ["guestname": guest.name, "vmid": String(guest.vmid), "node": guest.node, "cluster": cluster.clusterName ?? ""] {
+                notes = notes.replacingOccurrences(of: "{{\(variable)}}", with: value)
+            }
+            var config = currentConfig(guest)
+            config["digest"] = nil
+            let date = now.addingTimeInterval(TimeInterval(index))
+            backups.append(DemoBackup(
+                volume: Self.volumeName(vmid: guest.vmid, kind: guest.kind, date: date, storage: storage), vmid: guest.vmid, kind: guest.kind, date: date,
+                size: guest.diskGiB * 120_000_000, notes: notes, isProtected: parameters["protected"] == "1", config: config,
+                availableAt: now.addingTimeInterval(4 * TimeInterval(index + 1))
+            ))
+        }
+        return startTask(node: node, type: "vzdump", objectID: guests.count == 1 ? String(guests[0].vmid) : "", user: user, duration: duration)
     }
 
     /// `POST /nodes/{node}/qemu` with `archive`, or `/lxc` with `restore=1`: over the existing guest with `force`, or as a new one.

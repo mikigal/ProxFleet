@@ -66,6 +66,7 @@ actor DemoState {
     var diskLayouts: [String: DemoDiskLayout] = [:]
     /// The datacenter's storage definitions.
     var storageConfigs: [DemoStorageConfig]
+    var backupJobs: [DemoBackupJob]
     /// Repositories enabled or disabled by `path#index`, and standard repositories added, by node.
     var repositoryStates: [String: [String: Bool]] = [:]
     var addedRepositories: [String: [String]] = [:]
@@ -81,6 +82,7 @@ actor DemoState {
         backups = Self.sampleBackups(for: cluster, now: started)
         files = Self.sampleFiles(now: started)
         storageConfigs = DemoStorageConfig.defaults(for: cluster)
+        backupJobs = Self.sampleBackupJobs(for: cluster)
     }
 
     func takeConsole(ticket: String) -> DemoConsoleRequest? {

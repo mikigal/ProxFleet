@@ -85,9 +85,10 @@ final class CreationUITests: XCTestCase {
         let download = app.buttons["Download to local"].firstMatch
         XCTAssertTrue(download.waitForExistence(timeout: 5))
         download.tap()
+        // The picker can be in the hierarchy while the download screen is still open, so wait for its value.
         let template = app.buttons["template"]
-        XCTAssertTrue(template.waitForExistence(timeout: 15))
-        XCTAssertTrue((template.value as? String)?.hasPrefix("alpine-3.22") == true)
+        expectation(for: NSPredicate(format: "value BEGINSWITH 'alpine-3.22'"), evaluatedWith: template)
+        waitForExpectations(timeout: 20)
 
         nextUntilConfirm()
         XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))

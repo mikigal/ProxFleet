@@ -51,7 +51,7 @@ extension DemoState {
             if parameters["content"] == "backup" { return nil }
             var volumes = storage == "local" ? fileVolumes(content: parameters["content"])
                 : storage == "local-lvm" ? diskVolumes(node: node, content: parameters["content"]) : []
-            if storage == "local", parameters["content"] == nil {
+            if parameters["content"] == nil, config.content.contains("backup") {
                 volumes += backupVolumes(storage: storage, vmid: nil)
             }
             return success(.array(volumes))

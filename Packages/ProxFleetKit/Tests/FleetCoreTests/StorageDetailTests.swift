@@ -121,4 +121,41 @@ struct StorageDetailTests {
         #expect(!storage.canModify)
         await #expect(throws: ConfigUpdateError.self) { try await storage.delete("nas") }
     }
+
+    @Test func backupJobs() async throws {
+        let connection = try await connection()
+        let list = BackupJobList(connection: connection)
+        await list.load()
+        #expect(list.jobs?.count == 2 && list.canModify)
+        // The nightly job covers everything but the template; the weekly one adds nothing to that.
+        #expect(list.unprotectedGuests?.map(\.vmid) == [9000])
+
+        guard case .success(let runs) = await list.nextRuns(of: "mon..fri 21:00") else { Issue.record("schedule refused"); return }
+        #expect(runs.count == 3 && runs.allSatisfy { !Calendar.current.isDateInWeekend($0) })
+        guard case .failure(.invalid(_, let fields)) = await list.nextRuns(of: "whenever") else { Issue.record("schedule accepted"); return }
+        #expect(fields["schedule"] != nil)
+
+        var draft = BackupJobDraft()
+        draft.storage = "nas"
+        draft.schedule = "*/6:00"
+        draft.selectionMode = .pool
+        draft.pool = "lab"
+        try await list.create(draft)
+        let created = try #require(list.jobs?.first { $0.selection == .pool("lab") })
+        var edit = BackupJobDraft(created)
+        edit.isEnabled = false
+        try await list.update(created.id, edit.changes(from: BackupJobDraft(created)))
+        #expect(list.jobs?.first { $0.id == created.id }?.isEnabled == false)
+
+        let weekly = try #require(list.jobs?.first { $0.storage == "pbs" })
+        let tasks = try await list.runNow(weekly)
+        #expect(tasks.count == 1)
+        #expect(await connection.tasks.result(of: tasks[0].id) == .succeeded)
+        let pbs = StorageDetail(node: "pve1", storage: "pbs", connection: connection)
+        await pbs.load()
+        #expect(pbs.volumes(of: .backup).map(\.vmid) == [100, 101, 200])
+
+        try await list.delete(created.id)
+        #expect(list.jobs?.count == 2)
+    }
 }

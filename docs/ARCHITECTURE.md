@@ -128,6 +128,9 @@ The overview has a Datacenter section for settings that apply to all nodes; it s
 - Directory, NFS, SMB/CIFS, Proxmox Backup Server, LVM, LVM-Thin, ZFS and Btrfs storages can be added and edited; others are shown read-only. The `scan` endpoints fill in NFS exports, SMB shares, PBS datastores, volume groups, thin pools and ZFS pools; scans run on the first online node.
 - A disabled storage disappears from `/cluster/resources`, so the overview only lists it under Datacenter → Storage.
 - Backup retention (`prune-backups`) is set per storage; with nothing set, all backups are kept.
+- Backup jobs (`/cluster/backup`) use `BackupJobDraft` the same way. A job covers all guests (optionally with `exclude`), a list of guests (`vmid`) or a pool; switching sends `delete` for the settings of the old selection. Jobs return `prune-backups` as an object, storage definitions as a string. Without its own retention a job uses the target storage's.
+- The editor checks schedules with `GET /cluster/jobs/schedule-analyze` while typing and shows the next three runs; the server's parse error shows under the field. Disabled jobs still report `next-run`, which the list hides.
+- Run Now does what the web interface does: `POST /nodes/{node}/vzdump` with the job's settings, on every online node for all guests or a pool, or on the nodes of the listed guests. `GET /cluster/backup-info/not-backed-up` lists guests no enabled job covers.
 
 ## Consoles
 

@@ -45,6 +45,12 @@ struct ServerOverviewView: View {
                         MoreRow(title: "Storage", systemImage: "externaldrive.badge.plus", color: .purple)
                     }
                     .accessibilityIdentifier("datacenter.storage")
+                    NavigationLink {
+                        BackupJobsView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Backup Jobs", systemImage: "calendar.badge.clock", color: .teal)
+                    }
+                    .accessibilityIdentifier("datacenter.backupjobs")
                 }
             }
         }

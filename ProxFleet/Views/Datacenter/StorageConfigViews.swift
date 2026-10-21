@@ -318,30 +318,12 @@ struct StorageConfigEditor: View {
 
     private var retentionSection: some View {
         Section {
-            Toggle("Keep All Backups", isOn: $draft.prune.keepAll)
-            if !draft.prune.keepAll {
-                ForEach(PruneOptions.keys, id: \.self) { key in
-                    LabeledTextField(title: Self.retentionTitle(key), prompt: "–", text: Binding(get: { draft.prune.counts[key] ?? "" }, set: { draft.prune.counts[key] = $0 }),
-                                     keyboard: .numberPad, identifier: "prune.\(key)")
-                }
-            }
-            FieldError(message: errors["prune-backups"])
+            RetentionFields(prune: $draft.prune, error: errors["prune-backups"])
             LabeledTextField(title: "Max. Protected", prompt: "Default", text: $draft.maxProtectedBackups, keyboard: .numbersAndPunctuation)
         } header: {
             Text("Backup Retention")
         } footer: {
             Text("Backup jobs and Back Up Now without overriding remove older backups beyond these counts. With nothing set, all backups are kept. Protected backups are never removed.")
-        }
-    }
-
-    private static func retentionTitle(_ key: String) -> LocalizedStringKey {
-        switch key {
-        case "keep-last": "Keep Last"
-        case "keep-hourly": "Keep Hourly"
-        case "keep-daily": "Keep Daily"
-        case "keep-weekly": "Keep Weekly"
-        case "keep-monthly": "Keep Monthly"
-        default: "Keep Yearly"
         }
     }
 
