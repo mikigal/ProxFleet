@@ -306,9 +306,11 @@ struct LiveServerTests {
         vm.cpu.units = "200"
         vm.memoryShares = "500"
         vm.allowKSM = false
-        vm.network.mtu = 1400
-        vm.network.queues = 2
-        vm.network.model = "virtio"
+        vm.networks[0].device.mtu = 1400
+        vm.networks[0].device.queues = 2
+        vm.networks[0].device.model = "virtio"
+        vm.addNetworkDevice()
+        vm.networks[1].device.vlanTag = 30
         #expect(vm.problems.isEmpty)
         let created = try await finish(try await session.send(PVE.createVM(vm)))
         #expect(created.succeeded, "\(created.exitStatus ?? "")")
@@ -330,6 +332,7 @@ struct LiveServerTests {
         #expect(vmConfig["shares"] == "500")
         #expect(vmConfig["allow-ksm"] == "0")
         #expect(vmConfig["net0"]?.contains("mtu=1400") == true && vmConfig["net0"]?.contains("queues=2") == true)
+        #expect(vmConfig["net1"]?.hasPrefix("e1000e=") == true && vmConfig["net1"]?.contains("tag=30") == true)
         try await destroy(vmReference)
 
         let template = try #require(try await session.send(PVE.storageContent(node: node, storage: "local", content: "vztmpl")).first?.volumeID)
@@ -348,8 +351,10 @@ struct LiveServerTests {
         container.rootFS.replicate = false
         container.cpuLimit = 1
         container.cpuUnits = "50"
-        container.network.mtu = 1450
-        container.network.rateLimit = 10
+        container.networks[0].device.mtu = 1450
+        container.networks[0].device.rateLimit = 10
+        container.addNetworkDevice()
+        container.networks[1].device.ipv4Mode = .none
         container.addMountPoint()
         container.mountPoints[0].sizeGiB = 1
         container.mountPoints[0].options.path = "/data"
@@ -367,8 +372,15 @@ struct LiveServerTests {
         #expect(containerConfig["cpulimit"] == "1")
         #expect(containerConfig["cpuunits"] == "50")
         #expect(containerConfig["net0"]?.contains("mtu=1450") == true)
+        #expect(containerConfig["net1"]?.contains("name=eth1") == true)
         #expect(containerConfig["mp0"]?.contains("mp=/data") == true && containerConfig["mp0"]?.contains("backup=1") == true)
-        #expect(try await session.send(PVE.guestStatus(containerReference)).powerState == .running)
+        // The start runs as its own task after the creation, and takes longer with more interfaces.
+        var isRunning = false
+        for _ in 0..<40 where !isRunning {
+            isRunning = try await session.send(PVE.guestStatus(containerReference)).powerState == .running
+            if !isRunning { try await Task.sleep(for: .milliseconds(500)) }
+        }
+        #expect(isRunning)
         _ = try await finish(try await session.send(PVE.powerAction(.stop, on: containerReference)))
         try await destroy(containerReference)
     }

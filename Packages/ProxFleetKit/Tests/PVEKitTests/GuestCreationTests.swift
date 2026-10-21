@@ -30,7 +30,7 @@ struct GuestCreationTests {
         draft.efiStorage = "local-lvm"
         draft.tpmStorage = "local-lvm"
         draft.driversISOVolume = "local:iso/virtio-win.iso"
-        draft.hasNetwork = false
+        draft.networks = []
         draft.startAfterCreation = true
         let parameters = draft.parameters
         #expect(parameters["machine"] == "q35")
@@ -45,7 +45,7 @@ struct GuestCreationTests {
 
         draft.applyDefaults(for: "l26")
         #expect(draft.bios == "seabios" && !draft.addTPM && draft.disks[0].bus == .scsi && draft.driversISOVolume == nil)
-        #expect(draft.network.model == "virtio")
+        #expect(draft.defaultNetworkModel == "virtio")
     }
 
     @Test func ballooning() {
@@ -83,11 +83,11 @@ struct GuestCreationTests {
         draft.cpu.numa = true
         draft.memoryShares = "500"
         draft.allowKSM = false
-        draft.network.macAddress = "BC:24:11:00:00:01"
-        draft.network.isDisconnected = true
-        draft.network.mtu = 1400
-        draft.network.rateLimit = 12.5
-        draft.network.queues = 4
+        draft.networks[0].device.macAddress = "BC:24:11:00:00:01"
+        draft.networks[0].device.isDisconnected = true
+        draft.networks[0].device.mtu = 1400
+        draft.networks[0].device.rateLimit = 12.5
+        draft.networks[0].device.queues = 4
         let parameters = draft.parameters
         #expect(parameters["ha-managed"] == .bool(true))
         #expect(parameters["onboot"] == .bool(true))
@@ -163,6 +163,29 @@ struct GuestCreationTests {
         #expect(draft.parameters["boot"] == "order=ide2;net0")
     }
 
+    @Test func severalNetworkDevices() {
+        var draft = VMCreationDraft(node: "pve", vmid: 160)
+        draft.disks[0].storage = "local-lvm"
+        draft.networks[0].device.bridge = "vmbr1"
+        draft.addNetworkDevice()
+        draft.networks[1].device.vlanTag = 30
+        #expect(draft.networks[1].device.bridge == "vmbr1")
+        var parameters = draft.parameters
+        #expect(parameters["net0"] == "model=virtio,bridge=vmbr1,firewall=1")
+        #expect(parameters["net1"] == "model=virtio,bridge=vmbr1,tag=30,firewall=1")
+        #expect(parameters["boot"] == "order=scsi0;net0")
+
+        // The OS type sets the card of every device, and new ones follow it.
+        draft.applyDefaults(for: "win10")
+        draft.addNetworkDevice()
+        #expect(draft.networks.map(\.device.model) == ["e1000e", "e1000e", "e1000e"])
+
+        draft.networks = []
+        parameters = draft.parameters
+        #expect(parameters["net0"] == nil)
+        #expect(parameters["boot"] == "order=sata0")
+    }
+
     @Test func vmValidation() {
         var draft = VMCreationDraft(node: "pve", vmid: 99)
         draft.name = "bad name"
@@ -210,11 +233,11 @@ struct GuestCreationTests {
         draft.rootFS.mountOptions = ["noatime", "discard"]
         draft.cpuLimit = 1.5
         draft.cpuUnits = "50"
-        draft.network.macAddress = "BC:24:11:00:00:02"
-        draft.network.isDisconnected = true
-        draft.network.mtu = 1450
-        draft.network.rateLimit = 10
-        draft.network.isHostManaged = true
+        draft.networks[0].device.macAddress = "BC:24:11:00:00:02"
+        draft.networks[0].device.isDisconnected = true
+        draft.networks[0].device.mtu = 1450
+        draft.networks[0].device.rateLimit = 10
+        draft.networks[0].device.isHostManaged = true
         let parameters = draft.parameters
         #expect(parameters["ha-managed"] == .bool(true))
         #expect(parameters["tags"] == "db")
@@ -247,6 +270,24 @@ struct GuestCreationTests {
         let parameters = draft.parameters
         #expect(parameters["mp0"] == "local-lvm:8,mp=/data,backup=1")
         #expect(parameters["mp1"] == "local-lvm:20,mp=/srv/www,ro=1,mountoptions=noatime")
+    }
+
+    @Test func containerNetworkDevices() {
+        var draft = ContainerCreationDraft(node: "pve", vmid: 213)
+        draft.addNetworkDevice()
+        draft.networks[1].device.ipv4Mode = .static
+        draft.networks[1].device.ipv4Address = "10.0.0.5/24"
+        #expect(draft.networks.map(\.device.name) == ["eth0", "eth1"])
+        #expect(draft.problems["net1"] == nil)
+        #expect(draft.parameters["net1"] == "name=eth1,bridge=vmbr0,firewall=1,ip=10.0.0.5/24,type=veth")
+        draft.networks[1].device.name = "eth0"
+        #expect(draft.problems["net1"] != nil)
+        draft.networks[1].device.name = " "
+        #expect(draft.problems["net1"] != nil)
+        draft.networks.removeFirst()
+        draft.networks[0].device.name = "eth0"
+        draft.addNetworkDevice()
+        #expect(draft.networks.map(\.device.name) == ["eth0", "eth1"])
     }
 
     @Test func containerWithSSHKeyNeedsNoPassword() {

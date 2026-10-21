@@ -343,33 +343,31 @@ struct CreateVMView: View {
 
     @ViewBuilder
     private func network(_ errors: [String: String]) -> some View {
-        Section {
-            Toggle("Network Device", isOn: $draft.hasNetwork)
-        } footer: {
-            if !draft.hasNetwork {
-                Text("The VM is created without a network device; you can add one later.")
-            }
-        }
-        if draft.hasNetwork {
+        ForEach($draft.networks) { $network in
+            let key = draft.networks.firstIndex { $0.id == network.id }.map { "net\($0)" } ?? ""
             Section {
-                BridgePicker(connection: connection, node: draft.node, selection: $draft.network.bridge)
-                OptionalNumberField(title: "VLAN Tag", placeholder: "None", value: $draft.network.vlanTag)
-                Picker("Model", selection: $draft.network.model) {
+                BridgePicker(connection: connection, node: draft.node, selection: $network.device.bridge)
+                OptionalNumberField(title: "VLAN Tag", placeholder: "None", value: $network.device.vlanTag)
+                Picker("Model", selection: $network.device.model) {
                     ForEach(NetworkDeviceDraft.models, id: \.self) { Text($0).tag($0) }
                 }
-                MACAddressField(address: $draft.network.macAddress)
-                Toggle("Firewall", isOn: $draft.network.firewall)
-                FieldError(message: errors["net0"])
-            } footer: {
-                Text("VirtIO is the fastest model; use Intel E1000 for guests without VirtIO drivers.")
+                MACAddressField(address: $network.device.macAddress)
+                Toggle("Firewall", isOn: $network.device.firewall)
+                FieldError(message: errors[key])
+                Button("Remove Network Device", role: .destructive) {
+                    withAnimation { draft.networks.removeAll { $0.id == network.id } }
+                }
+                .accessibilityIdentifier("network.remove.\(key)")
+            } header: {
+                Text(verbatim: key)
             }
             if showsAdvanced {
                 Section {
-                    Toggle("Disconnected", isOn: $draft.network.isDisconnected)
-                    RateLimitField(rate: $draft.network.rateLimit)
-                    OptionalNumberField(title: "MTU", placeholder: "Same as Bridge", value: $draft.network.mtu)
-                    if draft.network.model == "virtio" {
-                        Picker("Multiqueue", selection: Binding(get: { draft.network.queues ?? 0 }, set: { draft.network.queues = $0 == 0 ? nil : $0 })) {
+                    Toggle("Disconnected", isOn: $network.device.isDisconnected)
+                    RateLimitField(rate: $network.device.rateLimit)
+                    OptionalNumberField(title: "MTU", placeholder: "Same as Bridge", value: $network.device.mtu)
+                    if network.device.model == "virtio" {
+                        Picker("Multiqueue", selection: Binding(get: { network.device.queues ?? 0 }, set: { network.device.queues = $0 == 0 ? nil : $0 })) {
                             Text("Off").tag(0)
                             ForEach([2, 4, 8, 16, 32, 64], id: \.self) { Text("\($0) Queues").tag($0) }
                         }
@@ -379,6 +377,19 @@ struct CreateVMView: View {
                 } footer: {
                     Text("Rate limit in MB/s. Multiqueue lets several vCPUs handle network traffic; match it to the vCPU count.")
                 }
+            }
+        }
+        Section {
+            Button("Add Network Device") {
+                withAnimation { draft.addNetworkDevice() }
+            }
+            .disabled(draft.networks.count >= VMCreationDraft.maximumNetworkDevices)
+            .accessibilityIdentifier("network.add")
+        } footer: {
+            if draft.networks.isEmpty {
+                Text("The VM is created without a network device; you can add one later.")
+            } else {
+                Text("VirtIO is the fastest model; use Intel E1000 for guests without VirtIO drivers.")
             }
         }
     }

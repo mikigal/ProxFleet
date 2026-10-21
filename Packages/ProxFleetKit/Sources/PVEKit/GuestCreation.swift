@@ -49,8 +49,8 @@ public struct VMCreationDraft: Sendable, Equatable {
     /// Kernel Samepage Merging may merge identical memory pages of this VM.
     public var allowKSM = true
 
-    public var hasNetwork = true
-    public var network = NetworkDeviceDraft()
+    /// Network devices `net0` and up; empty for a VM without network.
+    public var networks = [NewNetworkDevice(NetworkDeviceDraft())]
 
     public init(node: String, vmid: Int) {
         self.node = node
@@ -68,26 +68,46 @@ public struct VMCreationDraft: Sendable, Equatable {
     public mutating func applyDefaults(for osType: String) {
         self.osType = osType
         if Self.isWindows(osType) {
-            let isLegacy = ["wxp", "w2k", "w2k3", "wvista"].contains(osType)
-            network.model = isLegacy ? "e1000" : "e1000e"
+            let isLegacy = Self.legacyWindows.contains(osType)
             machine = isLegacy ? "i440fx" : "q35"
             let needsUEFI = osType == "win11"
             bios = needsUEFI ? "ovmf" : "seabios"
             addTPM = needsUEFI
         } else {
-            network.model = "virtio"
             machine = "i440fx"
             bios = "seabios"
             addTPM = false
             driversISOVolume = nil
         }
         for index in disks.indices { disks[index].bus = defaultDiskBus }
+        for index in networks.indices { networks[index].device.model = defaultNetworkModel }
     }
+
+    /// Windows versions without drivers for SATA and the Intel E1000E card.
+    private static let legacyWindows: Set<String> = ["wxp", "w2k", "w2k3", "wvista"]
 
     /// The bus the web interface uses for the OS type: IDE for old Windows versions, SATA for newer ones, SCSI otherwise.
     public var defaultDiskBus: DiskBus {
         guard isWindows else { return .scsi }
-        return ["wxp", "w2k", "w2k3", "wvista"].contains(osType) ? .ide : .sata
+        return Self.legacyWindows.contains(osType) ? .ide : .sata
+    }
+
+    /// The card the web interface uses for the OS type: Intel cards for Windows, VirtIO otherwise.
+    public var defaultNetworkModel: String {
+        guard isWindows else { return "virtio" }
+        return Self.legacyWindows.contains(osType) ? "e1000" : "e1000e"
+    }
+
+    /// Proxmox allows `net0` to `net31`.
+    public static let maximumNetworkDevices = 32
+
+    /// Adds a network device on the bridge of the last one.
+    public mutating func addNetworkDevice() {
+        guard networks.count < Self.maximumNetworkDevices else { return }
+        var device = NetworkDeviceDraft()
+        device.model = defaultNetworkModel
+        if let last = networks.last { device.bridge = last.device.bridge }
+        networks.append(NewNetworkDevice(device))
     }
 
     /// Adds a disk on the bus and storage of the last one.
@@ -183,10 +203,10 @@ public struct VMCreationDraft: Sendable, Equatable {
         }
         if !allowKSM { parameters["allow-ksm"] = false }
 
-        if hasNetwork {
-            parameters["net0"] = .string(network.stringValue)
-            bootOrder.append("net0")
+        for (index, network) in networks.enumerated() {
+            parameters["net\(index)"] = .string(network.device.stringValue)
         }
+        if !networks.isEmpty { bootOrder.append("net0") }
         parameters["boot"] = .string("order=" + bootOrder.joined(separator: ";"))
         addCommonOptions(to: &parameters, startOnBoot: startOnBoot, startup: startup, tags: tags, startAfterCreation: startAfterCreation)
         return parameters
@@ -287,8 +307,8 @@ public struct ContainerCreationDraft: Sendable, Equatable {
     public var memoryMiB = 512
     public var swapMiB = 512
 
-    public var hasNetwork = true
-    public var network = ContainerNetworkDraft()
+    /// Interfaces `net0` and up; empty for a container without network.
+    public var networks = [NewNetworkDevice(ContainerNetworkDraft())]
     public var searchDomain = ""
     /// Space-separated addresses, empty for the host's settings.
     public var nameservers = ""
@@ -326,7 +346,27 @@ public struct ContainerCreationDraft: Sendable, Equatable {
                 problems["mp\(index)"] = String(localized: "Choose a storage.")
             }
         }
+        for (index, network) in networks.enumerated() {
+            let name = network.device.name.trimmingCharacters(in: .whitespaces)
+            if name.isEmpty {
+                problems["net\(index)"] = String(localized: "Enter an interface name, e.g. eth1.")
+            } else if networks.prefix(index).contains(where: { $0.device.name.trimmingCharacters(in: .whitespaces) == name }) {
+                problems["net\(index)"] = String(localized: "Another interface uses this name.")
+            }
+        }
         return problems
+    }
+
+    /// Proxmox allows `net0` to `net31`.
+    public static let maximumNetworkDevices = 32
+
+    /// Adds an interface with the next free name, on the bridge of the last one.
+    public mutating func addNetworkDevice() {
+        guard networks.count < Self.maximumNetworkDevices else { return }
+        let used = Set(networks.map(\.device.name))
+        var device = ContainerNetworkDraft(name: (0...).lazy.map { "eth\($0)" }.first { !used.contains($0) }!)
+        if let last = networks.last { device.bridge = last.device.bridge }
+        networks.append(NewNetworkDevice(device))
     }
 
     /// Proxmox allows `mp0` to `mp255`.
@@ -361,13 +401,25 @@ public struct ContainerCreationDraft: Sendable, Equatable {
         if !cpuUnits.trimmed.isEmpty { parameters["cpuunits"] = .string(cpuUnits.trimmed) }
         parameters["memory"] = .int(memoryMiB)
         parameters["swap"] = .int(swapMiB)
-        if hasNetwork { parameters["net0"] = .string(network.stringValue) }
+        for (index, network) in networks.enumerated() {
+            parameters["net\(index)"] = .string(network.device.stringValue)
+        }
         let dns = ContainerDNSDraft(GuestConfig(values: ["searchdomain": searchDomain, "nameserver": nameservers])).serialized()
         for key in ["nameserver", "searchdomain"] {
             if let value = dns[key] ?? nil { parameters[key] = .string(value) }
         }
         addCommonOptions(to: &parameters, startOnBoot: startOnBoot, startup: startup, tags: tags, startAfterCreation: startAfterCreation)
         return parameters
+    }
+}
+
+/// A network device a creation wizard adds; the identity tells the devices in the list apart.
+public struct NewNetworkDevice<Device: Sendable & Equatable>: Sendable, Equatable, Identifiable {
+    public let id = UUID()
+    public var device: Device
+
+    public init(_ device: Device) {
+        self.device = device
     }
 }
 

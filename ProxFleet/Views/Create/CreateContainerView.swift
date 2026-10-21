@@ -268,50 +268,50 @@ struct CreateContainerView: View {
 
     @ViewBuilder
     private func network(_ errors: [String: String]) -> some View {
-        Section {
-            Toggle("Network Device", isOn: $draft.hasNetwork)
-        } footer: {
-            if !draft.hasNetwork {
-                Text("The container is created without a network device; you can add one later.")
-            }
-        }
-        if draft.hasNetwork {
+        ForEach($draft.networks) { $network in
+            let key = draft.networks.firstIndex { $0.id == network.id }.map { "net\($0)" } ?? ""
             Section {
-                BridgePicker(connection: connection, node: draft.node, selection: $draft.network.bridge)
-                OptionalNumberField(title: "VLAN Tag", placeholder: "None", value: $draft.network.vlanTag)
-                MACAddressField(address: $draft.network.macAddress)
-                Toggle("Firewall", isOn: $draft.network.firewall)
+                addressField("Name", placeholder: "eth0", text: $network.device.name, keyboard: .asciiCapable)
+                BridgePicker(connection: connection, node: draft.node, selection: $network.device.bridge)
+                OptionalNumberField(title: "VLAN Tag", placeholder: "None", value: $network.device.vlanTag)
+                MACAddressField(address: $network.device.macAddress)
+                Toggle("Firewall", isOn: $network.device.firewall)
+            } header: {
+                Text(verbatim: key)
             }
             Section("IPv4") {
-                Picker("Configuration", selection: $draft.network.ipv4Mode) {
+                Picker("Configuration", selection: $network.device.ipv4Mode) {
                     Text("DHCP").tag(AddressMode.dhcp)
                     Text("Static").tag(AddressMode.static)
                     Text("None").tag(AddressMode.none)
                 }
-                if draft.network.ipv4Mode == .static {
-                    addressField("Address", placeholder: "192.168.1.10/24", text: $draft.network.ipv4Address)
-                    addressField("Gateway", placeholder: "None", text: $draft.network.ipv4Gateway)
+                if network.device.ipv4Mode == .static {
+                    addressField("Address", placeholder: "192.168.1.10/24", text: $network.device.ipv4Address)
+                    addressField("Gateway", placeholder: "None", text: $network.device.ipv4Gateway)
                 }
             }
             Section("IPv6") {
-                Picker("Configuration", selection: $draft.network.ipv6Mode) {
+                Picker("Configuration", selection: $network.device.ipv6Mode) {
                     Text("None").tag(AddressMode.none)
                     Text("DHCP").tag(AddressMode.dhcp)
                     Text("SLAAC").tag(AddressMode.slaac)
                     Text("Static").tag(AddressMode.static)
                 }
-                if draft.network.ipv6Mode == .static {
-                    addressField("Address", placeholder: "fd00::10/64", text: $draft.network.ipv6Address)
-                    addressField("Gateway", placeholder: "None", text: $draft.network.ipv6Gateway)
+                if network.device.ipv6Mode == .static {
+                    addressField("Address", placeholder: "fd00::10/64", text: $network.device.ipv6Address)
+                    addressField("Gateway", placeholder: "None", text: $network.device.ipv6Gateway)
                 }
-                FieldError(message: errors["net0"])
+                if !showsAdvanced {
+                    removeButton(for: network, key: key, error: errors[key])
+                }
             }
             if showsAdvanced {
                 Section {
-                    Toggle("Disconnected", isOn: $draft.network.isDisconnected)
-                    RateLimitField(rate: $draft.network.rateLimit)
-                    OptionalNumberField(title: "MTU", placeholder: "Same as Bridge", value: $draft.network.mtu)
-                    Toggle("Host-Managed", isOn: $draft.network.isHostManaged)
+                    Toggle("Disconnected", isOn: $network.device.isDisconnected)
+                    RateLimitField(rate: $network.device.rateLimit)
+                    OptionalNumberField(title: "MTU", placeholder: "Same as Bridge", value: $network.device.mtu)
+                    Toggle("Host-Managed", isOn: $network.device.isHostManaged)
+                    removeButton(for: network, key: key, error: errors[key])
                 } header: {
                     Text("Advanced")
                 } footer: {
@@ -319,6 +319,27 @@ struct CreateContainerView: View {
                 }
             }
         }
+        Section {
+            Button("Add Network Device") {
+                withAnimation { draft.addNetworkDevice() }
+            }
+            .disabled(draft.networks.count >= ContainerCreationDraft.maximumNetworkDevices)
+            .accessibilityIdentifier("network.add")
+        } footer: {
+            if draft.networks.isEmpty {
+                Text("The container is created without a network device; you can add one later.")
+            }
+        }
+    }
+
+    /// The server's error and the Remove button, at the end of an interface's last section.
+    @ViewBuilder
+    private func removeButton(for network: NewNetworkDevice<ContainerNetworkDraft>, key: String, error: String?) -> some View {
+        FieldError(message: error)
+        Button("Remove Network Device", role: .destructive) {
+            withAnimation { draft.networks.removeAll { $0.id == network.id } }
+        }
+        .accessibilityIdentifier("network.remove.\(key)")
     }
 
     @ViewBuilder

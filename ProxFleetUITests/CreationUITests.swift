@@ -44,7 +44,7 @@ final class CreationUITests: XCTestCase {
     }
 
     @MainActor
-    func testVMWithTwoDisks() {
+    func testVMWithTwoDisksAndNetworkDevices() {
         app.launch()
         open("create.vm")
         XCTAssertTrue(app.textFields["vmid"].waitForExistence(timeout: 5))
@@ -54,7 +54,13 @@ final class CreationUITests: XCTestCase {
         XCTAssertTrue(scroll(to: app.buttons["disk.remove.scsi1"]))
         snapshot("37-create-vm-disks")
 
+        // CPU, Memory, Network.
+        for _ in 0..<3 { app.buttons["next"].tap() }
+        tapScrolling(app.buttons["network.add"])
+        XCTAssertTrue(scroll(to: app.buttons["network.remove.net1"]))
+
         nextUntilConfirm()
+        XCTAssertTrue(scroll(to: app.staticTexts["net1"]))
         XCTAssertTrue(scroll(to: app.staticTexts["scsi1"]))
         app.buttons["create"].tap()
         XCTAssertTrue(app.staticTexts["Stopped"].waitForExistence(timeout: 15))
