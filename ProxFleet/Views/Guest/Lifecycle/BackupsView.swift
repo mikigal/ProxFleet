@@ -23,7 +23,8 @@ struct BackupsView: View {
                         }
                         .swipeActions {
                             if !backup.isProtected {
-                                Button("Delete", role: .destructive) { pendingDeletion = backup }
+                                Button("Delete") { pendingDeletion = backup }
+                                    .tint(.red)
                             }
                         }
                         .accessibilityIdentifier("backup.\(backup.fileName)")

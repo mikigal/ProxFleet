@@ -29,7 +29,8 @@ struct SnapshotsView: View {
                             }
                             .swipeActions {
                                 if canManage {
-                                    Button("Delete", role: .destructive) { pendingDeletion = entry.snapshot }
+                                    Button("Delete") { pendingDeletion = entry.snapshot }
+                                        .tint(.red)
                                 }
                             }
                             .accessibilityIdentifier("snapshot.\(entry.snapshot.name)")

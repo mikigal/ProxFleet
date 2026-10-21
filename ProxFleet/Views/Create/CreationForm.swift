@@ -459,7 +459,10 @@ struct VolumePicker: View {
         .pickerStyle(.navigationLink)
         .task(id: "\(node)/\(reloadID)") {
             isLoading = true
-            volumes = await connection.volumes(node: node, content: content)
+            let loaded = await connection.volumes(node: node, content: content)
+            // A newer reload replaced this one, e.g. right after a download; its older list would clear the new choice.
+            guard !Task.isCancelled else { return }
+            volumes = loaded
             isLoading = false
             if let selection, !volumes.contains(where: { $0.volumeID == selection }) {
                 self.selection = nil

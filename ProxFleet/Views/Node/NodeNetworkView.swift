@@ -131,7 +131,8 @@ struct NodeNetworkView: View {
         .accessibilityIdentifier("interface.\(interface.name)")
         .swipeActions {
             if interface.isRemovable, canModify {
-                Button("Delete", systemImage: "trash", role: .destructive) { deleting = interface }
+                Button("Delete", systemImage: "trash") { deleting = interface }
+                    .tint(.red)
             }
         }
     }

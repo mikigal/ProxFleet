@@ -15,18 +15,20 @@ struct ServerListView: View {
                 ServerRow(profile: profile, connection: fleet.connection(for: profile.id))
                     .tag(profile.id)
                     .swipeActions {
-                        Button("Delete", systemImage: "trash", role: .destructive) {
+                        Button("Delete", systemImage: "trash") {
                             pendingDeletion = profile
                         }
+                        .tint(.red)
                     }
                     .contextMenu {
                         Button("Rename", systemImage: "pencil") {
                             newName = profile.name
                             renaming = profile
                         }
-                        Button("Delete", systemImage: "trash", role: .destructive) {
+                        Button("Delete", systemImage: "trash") {
                             pendingDeletion = profile
                         }
+                        .tint(.red)
                     }
             }
             .onMove { fleet.move(fromOffsets: $0, toOffset: $1) }
