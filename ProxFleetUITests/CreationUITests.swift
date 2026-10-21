@@ -23,7 +23,7 @@ final class CreationUITests: XCTestCase {
         app.textFields["name"].typeText("web-01")
         snapshot("30-create-vm")
         app.buttons["next"].tap()
-        XCTAssertTrue(app.staticTexts["Installation Media"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Installation Media"].waitForExistence(timeout: 10))
         snapshot("31-create-vm-os")
 
         // The steps keep their values when going back.

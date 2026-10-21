@@ -67,6 +67,7 @@ actor DemoState {
     /// The datacenter's storage definitions.
     var storageConfigs: [DemoStorageConfig]
     var backupJobs: [DemoBackupJob]
+    var access = DemoAccess.sample
     /// Repositories enabled or disabled by `path#index`, and standard repositories added, by node.
     var repositoryStates: [String: [String: Bool]] = [:]
     var addedRepositories: [String: [String]] = [:]

@@ -51,6 +51,12 @@ struct ServerOverviewView: View {
                         MoreRow(title: "Backup Jobs", systemImage: "calendar.badge.clock", color: .teal)
                     }
                     .accessibilityIdentifier("datacenter.backupjobs")
+                    NavigationLink {
+                        AccessHubView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Users & Permissions", systemImage: "person.badge.key", color: .blue)
+                    }
+                    .accessibilityIdentifier("datacenter.access")
                 }
             }
         }

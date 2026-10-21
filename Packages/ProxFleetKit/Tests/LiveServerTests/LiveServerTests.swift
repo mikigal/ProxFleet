@@ -810,6 +810,61 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.backupJobs()).contains { $0.id == job.id })
     }
 
+    /// A group, a user in it, a custom role, a permission and an API token: created, changed and removed again.
+    @Test func usersAndPermissions() async throws {
+        let (session, _) = try await rootSession()
+        try #require(try await !session.send(PVE.users()).contains { $0.userid == "pflive@pve" }, "left over from an earlier run")
+        let roles = try await session.send(PVE.roles())
+        #expect(roles.contains { $0.roleid == "Administrator" && $0.isBuiltIn && $0.privileges.contains("Sys.Modify") })
+        #expect(AccessRole.privilegesByArea(roles).contains { $0.area == "VM" })
+
+        _ = try await session.send(PVE.createGroup("pflive-group", comment: "ProxFleet live test"))
+        var draft = UserDraft()
+        draft.name = "pflive"
+        draft.password = "Live-test-\(UUID().uuidString.prefix(8))"
+        draft.passwordConfirmation = draft.password
+        draft.firstName = "Live"
+        draft.groups = ["pflive-group"]
+        draft.expires = Date(timeIntervalSinceNow: 86_400 * 30)
+        #expect(draft.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createUser(draft))
+        let user = try #require(try await session.send(PVE.users()).first { $0.userid == "pflive@pve" })
+        #expect(user.groups == ["pflive-group"] && user.firstName == "Live" && user.expires != nil && user.realmType == "pve")
+        #expect(try await session.send(PVE.groups()).first { $0.groupid == "pflive-group" }?.members == ["pflive@pve"])
+
+        var edit = UserDraft(user)
+        edit.firstName = ""
+        edit.isEnabled = false
+        edit.expires = nil
+        _ = try await session.send(PVE.updateUser(user.userid, edit.changes(from: UserDraft(user))))
+        let changed = try #require(try await session.send(PVE.users()).first { $0.userid == "pflive@pve" })
+        #expect(changed.firstName == nil && !changed.isEnabled && changed.expires == nil)
+        _ = try await session.send(PVE.changePassword(userid: user.userid, password: "Another-\(UUID().uuidString.prefix(8))", confirmation: nil))
+
+        _ = try await session.send(PVE.createRole("PFLiveRole", privileges: ["VM.Audit"]))
+        _ = try await session.send(PVE.updateRole("PFLiveRole", privileges: ["VM.Audit", "VM.Console"]))
+        #expect(try await session.send(PVE.roles()).first { $0.roleid == "PFLiveRole" }?.privileges == ["VM.Audit", "VM.Console"])
+        let permission = ACLEntry(path: "/vms/100", subject: .group, subjectID: "pflive-group", role: "PFLiveRole", propagates: false)
+        _ = try await session.send(PVE.addPermission(permission))
+        #expect(try await session.send(PVE.acl()).contains(permission))
+
+        let token = try await session.send(PVE.createToken(userid: user.userid, tokenid: "live", comment: "test", separated: true, expires: nil))
+        #expect(token.fullID == "pflive@pve!live" && token.secret.count == 36)
+        let tokenPermission = ACLEntry(path: "/", subject: .token, subjectID: token.fullID, role: "PVEAuditor")
+        _ = try await session.send(PVE.addPermission(tokenPermission))
+        #expect(try await session.send(PVE.users()).first { $0.userid == "pflive@pve" }?.tokens.map(\.tokenid) == ["live"])
+
+        _ = try await session.send(PVE.removePermission(tokenPermission))
+        _ = try await session.send(PVE.deleteToken(userid: user.userid, tokenid: "live"))
+        _ = try await session.send(PVE.removePermission(permission))
+        #expect(try await !session.send(PVE.acl()).contains(permission))
+        _ = try await session.send(PVE.deleteRole("PFLiveRole"))
+        _ = try await session.send(PVE.deleteUser(user.userid))
+        _ = try await session.send(PVE.deleteGroup("pflive-group"))
+        #expect(try await !session.send(PVE.users()).contains { $0.userid == "pflive@pve" })
+        #expect(try await !session.send(PVE.groups()).contains { $0.groupid == "pflive-group" })
+    }
+
     /// Disables and enables the Ceph repository again, and reads the subscription.
     @Test func repositories() async throws {
         let (session, node) = try await rootSession()

@@ -131,6 +131,9 @@ The overview has a Datacenter section for settings that apply to all nodes; it s
 - Backup jobs (`/cluster/backup`) use `BackupJobDraft` the same way. A job covers all guests (optionally with `exclude`), a list of guests (`vmid`) or a pool; switching sends `delete` for the settings of the old selection. Jobs return `prune-backups` as an object, storage definitions as a string. Without its own retention a job uses the target storage's.
 - The editor checks schedules with `GET /cluster/jobs/schedule-analyze` while typing and shows the next three runs; the server's parse error shows under the field. Disabled jobs still report `next-run`, which the list hides.
 - Run Now does what the web interface does: `POST /nodes/{node}/vzdump` with the job's settings, on every online node for all guests or a pool, or on the nodes of the listed guests. `GET /cluster/backup-info/not-backed-up` lists guests no enabled job covers.
+- Users & Permissions: users (`/access/users?full=1`, groups as a comma string in the list but an array for one user), groups, roles (built-in ones are read-only) and permissions (`/access/acl`, added and removed with `PUT` and `delete=1`). `PUT /access/users/{id}` has no `delete`, so `UserDraft` sends cleared fields as empty strings. API token secrets come back once, from the create call.
+- Changing another user's password needs `confirmation-password`, the signed-in user's own password, except for root@pam. A missing one is a field error and a wrong one a 500 `invalid credentials`, not a 401, so the session stays signed in.
+- Password fields for other users use the one-time code content type: with none or `.newPassword`, iOS takes the form for an account sign-up and offers a strong password to save as the device owner's own.
 
 ## Consoles
 
