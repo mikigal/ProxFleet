@@ -38,11 +38,17 @@ final class GuestUITests: XCTestCase {
         waitForExpectations(timeout: 10)
         more.tap()
         app.buttons["Stop"].tap()
-        let confirm = app.buttons.matching(identifier: "confirm.stop").firstMatch
+        let confirm = app.alerts.buttons["Stop"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         snapshot("12-confirm-stop")
         confirm.tap()
         XCTAssertTrue(app.buttons["power.start"].waitForExistence(timeout: 10))
+
+        app.buttons["Hardware"].tap()
+        XCTAssertTrue(app.staticTexts["Processor"].waitForExistence(timeout: 5))
+        app.buttons["Options"].tap()
+        XCTAssertTrue(app.staticTexts["Start at Boot"].waitForExistence(timeout: 5))
+        snapshot("14-options")
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["tasks"].tap()

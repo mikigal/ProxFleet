@@ -1,4 +1,5 @@
 import FleetCore
+import ProxmoxCore
 import PVEKit
 import SwiftUI
 
@@ -6,6 +7,7 @@ struct GuestDetailView: View {
     @State private var detail: GuestDetail
     @State private var pendingAction: PowerAction?
     @State private var metric: PerformanceMetric = .cpu
+    @State private var tab: GuestTab = .summary
 
     init(reference: GuestReference, connection: ServerConnection) {
         _detail = State(initialValue: GuestDetail(reference: reference, connection: connection))
@@ -30,6 +32,16 @@ struct GuestDetailView: View {
                 }
             }
 
+            Section {
+                Picker("Section", selection: $tab) {
+                    ForEach(GuestTab.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("guestTabs")
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+
             if let error = detail.loadError {
                 Section {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -37,44 +49,20 @@ struct GuestDetailView: View {
                 }
             }
 
-            if let status = detail.status, status.powerState != .stopped {
-                usageSection(status)
-            }
-
-            Section {
-                Picker("Metric", selection: $metric) {
-                    ForEach(PerformanceMetric.allCases) { Text($0.title).tag($0) }
+            switch tab {
+            case .summary:
+                summaryContent
+            case .hardware:
+                if let config = detail.config {
+                    GuestHardwareSections(config: config, kind: kind)
+                } else {
+                    loadingRow
                 }
-                .pickerStyle(.segmented)
-                PerformanceChart(points: detail.history, metric: metric, timeframe: detail.timeframe)
-                Picker("Timeframe", selection: $detail.timeframe) {
-                    ForEach(RRDTimeframe.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("Performance")
-            }
-
-            networkSection
-
-            if let config = detail.config {
-                GuestHardwareSection(config: config, kind: kind)
-                optionsSection(config)
-                if let notes = config.description?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-                    Section("Notes") {
-                        Text(notes)
-                            .textSelection(.enabled)
-                    }
-                }
-            }
-
-            if !detail.recentTasks.isEmpty {
-                Section("Recent Tasks") {
-                    ForEach(detail.recentTasks.prefix(5)) { task in
-                        NavigationLink(value: ServerRoute.task(node: task.node, upid: task.upid)) {
-                            ClusterTaskRow(task: task, showsGuest: false)
-                        }
-                    }
+            case .options:
+                if let config = detail.config {
+                    GuestOptionsSection(config: config, kind: kind)
+                } else {
+                    loadingRow
                 }
             }
         }
@@ -91,12 +79,12 @@ struct GuestDetailView: View {
         .sensoryFeedback(trigger: detail.runningTask?.id) { old, new in
             old != nil && new == nil ? (detail.actionError == nil ? .success : .error) : nil
         }
-        .confirmationDialog(
+        .alert(
             pendingAction?.confirmationTitle(detail.name) ?? "",
             isPresented: Binding(get: { pendingAction != nil }, set: { if !$0 { pendingAction = nil } }),
-            titleVisibility: .visible,
             presenting: pendingAction
         ) { action in
+            Button("Cancel", role: .cancel) {}
             Button(action.title, role: action.isForceful ? .destructive : nil) {
                 Task { await detail.perform(action) }
             }
@@ -112,6 +100,56 @@ struct GuestDetailView: View {
             Button("OK") {}
         } message: { message in
             Text(message)
+        }
+    }
+
+    @ViewBuilder
+    private var summaryContent: some View {
+        if let status = detail.status, status.powerState != .stopped {
+            usageSection(status)
+        }
+
+        Section {
+            Picker("Metric", selection: $metric) {
+                ForEach(PerformanceMetric.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            PerformanceChart(points: detail.history, metric: metric, timeframe: detail.timeframe)
+            Picker("Timeframe", selection: $detail.timeframe) {
+                ForEach(RRDTimeframe.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Performance")
+        }
+
+        networkSection
+
+        if let notes = detail.config?.description?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+            Section("Notes") {
+                Text(notes)
+                    .textSelection(.enabled)
+            }
+        }
+
+        if !detail.recentTasks.isEmpty {
+            Section("Recent Tasks") {
+                ForEach(detail.recentTasks.prefix(5)) { task in
+                    NavigationLink(value: ServerRoute.task(node: task.node, upid: task.upid)) {
+                        ClusterTaskRow(task: task, showsGuest: false)
+                    }
+                }
+            }
+        }
+    }
+
+    private var loadingRow: some View {
+        Section {
+            HStack {
+                Spacer()
+                ProgressView()
+                Spacer()
+            }
         }
     }
 
@@ -165,23 +203,6 @@ struct GuestDetailView: View {
                 : "The QEMU guest agent is not running in the guest."
         }
         return "The container reports no addresses."
-    }
-
-    private func optionsSection(_ config: GuestConfig) -> some View {
-        Section("Options") {
-            LabeledContent("Start at Boot", value: config.startsOnBoot ? String(localized: "Yes") : String(localized: "No"))
-            if let os = config.osTypeDescription {
-                LabeledContent("OS Type", value: os)
-            }
-            if kind == .virtualMachine {
-                if !config.bootOrder.isEmpty {
-                    LabeledContent("Boot Order", value: config.bootOrder.joined(separator: ", "))
-                }
-                LabeledContent("QEMU Guest Agent", value: config.agentEnabled ? String(localized: "Enabled") : String(localized: "Disabled"))
-            } else {
-                LabeledContent("Unprivileged", value: config.isUnprivileged ? String(localized: "Yes") : String(localized: "No"))
-            }
-        }
     }
 }
 
@@ -241,12 +262,26 @@ private struct GuestHeader: View {
     }
 }
 
-private struct GuestHardwareSection: View {
+enum GuestTab: String, CaseIterable, Identifiable {
+    case summary, hardware, options
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .summary: "Summary"
+        case .hardware: "Hardware"
+        case .options: "Options"
+        }
+    }
+}
+
+private struct GuestHardwareSections: View {
     let config: GuestConfig
     let kind: GuestKind
 
     var body: some View {
-        Section("Hardware") {
+        Section("System") {
             LabeledContent("Processor") {
                 VStack(alignment: .trailing) {
                     Text(cores)
@@ -258,30 +293,49 @@ private struct GuestHardwareSection: View {
             if let memory = config.memoryMiB {
                 LabeledContent("Memory", value: Format.bytes(Int64(memory) * 1_048_576))
             }
+            if kind == .virtualMachine, let balloon = config.balloonMiB {
+                LabeledContent("Minimum Memory", value: balloon == 0 ? String(localized: "Ballooning off") : Format.bytes(Int64(balloon) * 1_048_576))
+            }
             if kind == .container, let swap = config.swapMiB {
                 LabeledContent("Swap", value: Format.bytes(Int64(swap) * 1_048_576))
             }
             if kind == .virtualMachine {
                 LabeledContent("BIOS", value: config.bios == "ovmf" ? "OVMF (UEFI)" : "SeaBIOS")
-                if let machine = config.machine {
-                    LabeledContent("Machine", value: machine)
+                LabeledContent("Machine", value: config.machine ?? "i440fx")
+                if let controller = config["scsihw"] {
+                    LabeledContent("SCSI Controller", value: controller)
+                }
+                if let display = config["vga"] {
+                    LabeledContent("Display", value: PropertyString(parsing: display).defaultValue ?? display)
                 }
             }
-            ForEach(config.disks) { disk in
-                HardwareRow(
-                    systemImage: disk.isCDROM ? "opticaldisc" : "internaldrive",
-                    title: disk.key,
-                    value: disk.mountPoint.map { "\(disk.volume) → \($0)" } ?? disk.volume,
-                    detail: disk.size
-                )
+        }
+
+        let disks = config.disks
+        if !disks.isEmpty {
+            Section(kind == .virtualMachine ? "Disks and Drives" : "Volumes") {
+                ForEach(disks) { disk in
+                    HardwareRow(
+                        systemImage: disk.isCDROM ? "opticaldisc" : "internaldrive",
+                        title: disk.key,
+                        value: disk.mountPoint.map { "\(disk.volume) → \($0)" } ?? disk.volume,
+                        detail: disk.size
+                    )
+                }
             }
-            ForEach(config.networks) { nic in
-                HardwareRow(
-                    systemImage: "network",
-                    title: nic.key,
-                    value: [nic.model, nic.bridge, nic.vlanTag.map { "VLAN \($0)" }].compactMap { $0 }.joined(separator: " · "),
-                    detail: [nic.macAddress, nic.ipv4.map { "IP \($0)" }, nic.firewall ? String(localized: "Firewall") : nil].compactMap { $0 }.joined(separator: " · ")
-                )
+        }
+
+        let networks = config.networks
+        if !networks.isEmpty {
+            Section("Network") {
+                ForEach(networks) { nic in
+                    HardwareRow(
+                        systemImage: "network",
+                        title: nic.key,
+                        value: [nic.model, nic.bridge, nic.vlanTag.map { "VLAN \($0)" }].compactMap { $0 }.joined(separator: " · "),
+                        detail: [nic.macAddress, nic.ipv4.map { "IP \($0)" }, nic.firewall ? String(localized: "Firewall") : nil].compactMap { $0 }.joined(separator: " · ")
+                    )
+                }
             }
         }
     }
@@ -290,6 +344,49 @@ private struct GuestHardwareSection: View {
         let total = (config.cores ?? 1) * config.sockets
         let text = Format.cores(total)
         return config.sockets > 1 ? "\(text) (\(config.sockets) × \(config.cores ?? 1))" : text
+    }
+}
+
+/// Options as in the web interface, with Proxmox defaults where the key is not set.
+private struct GuestOptionsSection: View {
+    let config: GuestConfig
+    let kind: GuestKind
+
+    var body: some View {
+        Section("Options") {
+            LabeledContent("Name", value: config.name ?? "—")
+            yesNo("Start at Boot", "onboot", default: false)
+            LabeledContent("Start/Shutdown Order", value: config["startup"] ?? String(localized: "Default"))
+            if let os = config.osTypeDescription {
+                LabeledContent("OS Type", value: os)
+            }
+            yesNo("Protection", "protection", default: false)
+            if kind == .virtualMachine {
+                if !config.bootOrder.isEmpty {
+                    LabeledContent("Boot Order", value: config.bootOrder.joined(separator: ", "))
+                }
+                LabeledContent("QEMU Guest Agent", value: config.agentEnabled ? String(localized: "Enabled") : String(localized: "Disabled"))
+                yesNo("Use Tablet for Pointer", "tablet", default: true)
+                LabeledContent("Hotplug", value: config["hotplug"] ?? "network, disk, usb")
+                yesNo("ACPI Support", "acpi", default: true)
+                yesNo("KVM Hardware Virtualization", "kvm", default: true)
+                yesNo("Freeze CPU at Startup", "freeze", default: false)
+                yesNo("Use Local Time for RTC", "localtime", default: false)
+            } else {
+                if let arch = config["arch"] {
+                    LabeledContent("Architecture", value: arch)
+                }
+                yesNo("Unprivileged", "unprivileged", default: false)
+                LabeledContent("Features", value: config["features"] ?? String(localized: "None"))
+                LabeledContent("Console Mode", value: config["cmode"] ?? "tty")
+                LabeledContent("TTY Count", value: config["tty"] ?? "2")
+            }
+        }
+    }
+
+    private func yesNo(_ title: LocalizedStringKey, _ key: String, default value: Bool) -> some View {
+        let enabled = config[key].map { $0 == "1" } ?? value
+        return LabeledContent(title, value: enabled ? String(localized: "Yes") : String(localized: "No"))
     }
 }
 
