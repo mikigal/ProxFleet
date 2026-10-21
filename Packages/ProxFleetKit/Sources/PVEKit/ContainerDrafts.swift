@@ -44,10 +44,12 @@ public struct ContainerNetworkDraft: Sendable, Equatable {
     /// MB/s, nil for unlimited.
     public var rateLimit: Double?
     public var mtu: Int?
+    /// The host configures the addresses; the container must not run its own DHCP client on the interface.
+    public var isHostManaged = false
     private var others = PropertyString(items: [])
 
     static let knownKeys: Set<String> = [
-        "name", "hwaddr", "bridge", "tag", "firewall", "link_down", "ip", "gw", "ip6", "gw6", "rate", "mtu",
+        "name", "hwaddr", "bridge", "tag", "firewall", "link_down", "ip", "gw", "ip6", "gw6", "rate", "mtu", "host-managed",
     ]
 
     public init(name: String = "eth0") {
@@ -71,6 +73,7 @@ public struct ContainerNetworkDraft: Sendable, Equatable {
         ipv6Gateway = property["gw6"] ?? ""
         rateLimit = property["rate"].flatMap { Double($0) }
         mtu = property["mtu"].flatMap { Int($0) }
+        isHostManaged = property["host-managed"] == "1"
         others.items = property.items.filter { item in
             guard let key = item.key else { return false }
             return !Self.knownKeys.contains(key)
@@ -104,6 +107,7 @@ public struct ContainerNetworkDraft: Sendable, Equatable {
         }
         if let rateLimit { property["rate"] = String(rateLimit) }
         if let mtu { property["mtu"] = String(mtu) }
+        if isHostManaged { property["host-managed"] = "1" }
         property.items += others.items
         return property.stringValue
     }
@@ -148,6 +152,11 @@ public struct MountPointDraft: Sendable, Equatable {
 
     public static let availableMountOptions = ["discard", "lazytime", "noatime", "nodev", "noexec", "nosuid"]
 
+    /// Options of a new container's root file system, all at the defaults.
+    public static func newRootFS() -> MountPointDraft {
+        MountPointDraft(GuestDisk(key: "rootfs", value: ""))
+    }
+
     public init(_ disk: GuestDisk) {
         property = disk.options
         isRootFS = disk.key == "rootfs"
@@ -173,6 +182,13 @@ public struct MountPointDraft: Sendable, Equatable {
         result["quota"] = quota ? "1" : nil
         result["replicate"] = replicate ? nil : "0"
         result["mountoptions"] = mountOptions.isEmpty ? nil : Self.availableMountOptions.filter(mountOptions.contains).joined(separator: ";")
+        return result.stringValue
+    }
+
+    /// Value for a new volume with these options: `local-lvm:8,mountoptions=noatime`.
+    public func newVolumeValue(storage: String, sizeGiB: Int) -> String {
+        var result = PropertyString(parsing: stringValue)
+        result.items.insert((key: nil, value: "\(storage):\(sizeGiB)"), at: 0)
         return result.stringValue
     }
 

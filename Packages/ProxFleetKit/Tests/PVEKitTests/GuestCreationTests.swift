@@ -57,6 +57,67 @@ struct GuestCreationTests {
         #expect(draft.parameters["balloon"] == .int(0))
     }
 
+    @Test func vmAdvancedOptions() {
+        var draft = VMCreationDraft(node: "pve", vmid: 130)
+        draft.diskStorage = "local-lvm"
+        draft.isHAManaged = true
+        draft.startOnBoot = true
+        draft.startup.order = "2"
+        draft.startup.startDelay = "30"
+        draft.tags = ["web", "prod"]
+        draft.display = "virtio"
+        draft.disk.cache = "writeback"
+        draft.disk.asyncIO = "native"
+        draft.disk.readOnly = true
+        draft.disk.ssdEmulation = true
+        draft.disk.includeInBackup = false
+        draft.disk.replicate = false
+        draft.disk.limits = ["mbps_rd": "100", "iops_wr": "500"]
+        draft.cpu.sockets = 2
+        draft.cpu.cores = 4
+        draft.cpu.vcpus = 6
+        draft.cpu.flags = ["aes": true, "pcid": false]
+        draft.cpu.limit = 2.5
+        draft.cpu.units = "200"
+        draft.cpu.affinity = "0-3"
+        draft.cpu.numa = true
+        draft.memoryShares = "500"
+        draft.allowKSM = false
+        draft.network.macAddress = "BC:24:11:00:00:01"
+        draft.network.isDisconnected = true
+        draft.network.mtu = 1400
+        draft.network.rateLimit = 12.5
+        draft.network.queues = 4
+        let parameters = draft.parameters
+        #expect(parameters["ha-managed"] == .bool(true))
+        #expect(parameters["onboot"] == .bool(true))
+        #expect(parameters["startup"] == "order=2,up=30")
+        #expect(parameters["tags"] == "web;prod")
+        #expect(parameters["vga"] == "virtio")
+        #expect(parameters["scsi0"] == "local-lvm:32,cache=writeback,discard=on,iothread=1,ssd=1,backup=0,aio=native,ro=1,replicate=0,mbps_rd=100,iops_wr=500")
+        #expect(parameters["sockets"] == "2")
+        #expect(parameters["cores"] == .int(4))
+        #expect(parameters["vcpus"] == "6")
+        #expect(parameters["cpu"] == "x86-64-v2-AES,flags=-pcid;+aes")
+        #expect(parameters["cpulimit"] == "2.5")
+        #expect(parameters["cpuunits"] == "200")
+        #expect(parameters["affinity"] == "0-3")
+        #expect(parameters["numa"] == "1")
+        #expect(parameters["shares"] == "500")
+        #expect(parameters["allow-ksm"] == .bool(false))
+        #expect(parameters["net0"] == "virtio=BC:24:11:00:00:01,bridge=vmbr0,firewall=1,link_down=1,rate=12.5,mtu=1400,queues=4")
+
+        // VirtIO Block disks have no SSD emulation; SATA disks have neither IO threads nor read-only mode.
+        draft.diskBus = .virtio
+        #expect(draft.parameters["virtio0"]?.encoded.contains("ssd=1") == false)
+        draft.diskBus = .sata
+        #expect(draft.parameters["sata0"]?.encoded.contains("iothread") == false)
+        #expect(draft.parameters["sata0"]?.encoded.contains("ro=1") == false)
+        // Shares only apply with ballooning.
+        draft.ballooning = false
+        #expect(draft.parameters["shares"] == nil)
+    }
+
     @Test func vmValidation() {
         var draft = VMCreationDraft(node: "pve", vmid: 99)
         draft.name = "bad name"
@@ -90,6 +151,33 @@ struct GuestCreationTests {
         #expect(parameters["unprivileged"] == .bool(true))
         #expect(parameters["net0"] == "name=eth0,bridge=vmbr0,firewall=1,ip=dhcp,type=veth")
         #expect(parameters["nameserver"] == "1.1.1.1 9.9.9.9")
+    }
+
+    @Test func containerAdvancedOptions() {
+        var draft = ContainerCreationDraft(node: "pve", vmid: 211)
+        draft.rootStorage = "local-lvm"
+        draft.isHAManaged = true
+        draft.tags = ["db"]
+        draft.startup.shutdownTimeout = "60"
+        draft.rootFS.acl = true
+        draft.rootFS.quota = true
+        draft.rootFS.replicate = false
+        draft.rootFS.mountOptions = ["noatime", "discard"]
+        draft.cpuLimit = 1.5
+        draft.cpuUnits = "50"
+        draft.network.macAddress = "BC:24:11:00:00:02"
+        draft.network.isDisconnected = true
+        draft.network.mtu = 1450
+        draft.network.rateLimit = 10
+        draft.network.isHostManaged = true
+        let parameters = draft.parameters
+        #expect(parameters["ha-managed"] == .bool(true))
+        #expect(parameters["tags"] == "db")
+        #expect(parameters["startup"] == "down=60")
+        #expect(parameters["rootfs"] == "local-lvm:8,acl=1,quota=1,replicate=0,mountoptions=discard;noatime")
+        #expect(parameters["cpulimit"] == "1.5")
+        #expect(parameters["cpuunits"] == "50")
+        #expect(parameters["net0"] == "name=eth0,hwaddr=BC:24:11:00:00:02,bridge=vmbr0,firewall=1,link_down=1,ip=dhcp,rate=10.0,mtu=1450,host-managed=1,type=veth")
     }
 
     @Test func containerWithSSHKeyNeedsNoPassword() {

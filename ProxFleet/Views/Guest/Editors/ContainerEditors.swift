@@ -101,11 +101,12 @@ struct ContainerNetworkEditor: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                 }
+                Toggle("Host-Managed", isOn: $draft.isHostManaged)
                 FieldError(message: key.flatMap { errors[$0] })
             } header: {
                 Text("Advanced")
             } footer: {
-                Text("Rate limit in MB/s.")
+                Text("Rate limit in MB/s. With Host-Managed, the host configures the addresses; the container must not run its own DHCP client on this interface.")
             }
 
             if let nic {
@@ -306,6 +307,7 @@ struct AddMountPointEditor: View {
 struct MountPointOptionsSection: View {
     @Binding var draft: MountPointDraft
     let error: String?
+    var footer: LocalizedStringKey = "Quotas need a privileged container. Changes to a running container apply at its next start."
 
     var body: some View {
         if !draft.isRootFS {
@@ -342,7 +344,7 @@ struct MountPointOptionsSection: View {
         } header: {
             Text("Mount Options")
         } footer: {
-            Text("Quotas need a privileged container. Changes to a running container apply at its next start.")
+            Text(footer)
         }
     }
 }

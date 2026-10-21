@@ -26,6 +26,8 @@ public struct StartupOptions: Equatable, Sendable {
     public var startDelay = ""
     public var shutdownTimeout = ""
 
+    public init() {}
+
     init(_ text: String?) {
         let property = PropertyString(parsing: text ?? "")
         order = property["order"] ?? ""

@@ -22,15 +22,20 @@ nonisolated enum VMCreationStep: CreationStep {
 
     func owns(_ parameter: String) -> Bool {
         switch self {
-        case .general: ["vmid", "name", "pool", "onboot"].contains(parameter)
+        case .general: ["vmid", "name", "pool", "ha-managed", "onboot", "startup", "tags"].contains(parameter)
         case .os: ["ostype", "ide0", "ide2"].contains(parameter)
-        case .system: ["machine", "bios", "efidisk0", "tpmstate0", "scsihw", "agent"].contains(parameter)
+        case .system: ["machine", "bios", "efidisk0", "tpmstate0", "scsihw", "agent", "vga"].contains(parameter)
         case .disks: Self.isDiskKey(parameter)
-        case .cpu: ["sockets", "cores", "cpu"].contains(parameter)
-        case .memory: ["memory", "balloon"].contains(parameter)
+        case .cpu: ["sockets", "cores", "cpu", "vcpus", "cpulimit", "cpuunits", "affinity", "numa"].contains(parameter)
+        case .memory: ["memory", "balloon", "shares", "allow-ksm"].contains(parameter)
         case .network: parameter.hasPrefix("net")
         case .confirm: false
         }
+    }
+
+    /// Fields behind the web interface's Advanced checkbox. Disk and network options are part of their device's value.
+    func isAdvanced(_ parameter: String) -> Bool {
+        ["onboot", "startup", "tags", "vcpus", "cpulimit", "cpuunits", "affinity", "numa", "balloon", "shares", "allow-ksm"].contains(parameter)
     }
 
     /// `scsi0`, `sata0`…; the IDE drives of the OS page hold ISO images.
@@ -48,6 +53,7 @@ struct CreateVMView: View {
     @State private var draft: VMCreationDraft
     @State private var isoReloadID = 0
     @State private var cpuModels: [CPUModel] = []
+    @AppStorage(AdvancedCreationOptions.storageKey) private var showsAdvanced = false
 
     init(connection: ServerConnection, onCreated: @escaping (GuestReference) -> Void) {
         self.connection = connection
@@ -62,7 +68,8 @@ struct CreateVMView: View {
             reference: GuestReference(node: draft.node, vmid: draft.vmid, kind: .virtualMachine),
             problems: draft.problems,
             makeRequest: { PVE.createVM(draft) },
-            onCreated: onCreated
+            onCreated: onCreated,
+            showsAdvancedOptions: $showsAdvanced
         ) { step, errors in
             switch step {
             case .general: general(errors)
@@ -90,15 +97,28 @@ struct CreateVMView: View {
                     .accessibilityIdentifier("name")
             }
             FieldError(message: errors["name"])
+            if isCluster {
+                Toggle("Add to HA", isOn: $draft.isHAManaged)
+                FieldError(message: errors["ha-managed"])
+            }
             PoolPicker(pools: pools, selection: $draft.pool)
+        } footer: {
+            if isCluster {
+                Text("High availability starts the VM on another node when its node fails.")
+            }
         }
         .task { pools = await connection.load(PVE.pools()) }
-        Section {
-            Toggle("Start at Boot", isOn: $draft.startOnBoot)
-        } footer: {
-            Text("Starts the VM when the node boots.")
+        if showsAdvanced {
+            StartupSection(startAtBoot: $draft.startOnBoot, startup: $draft.startup, error: errors["startup"])
+            Section("Tags") {
+                TagsEditor(tags: $draft.tags)
+                FieldError(message: errors["tags"])
+            }
         }
     }
+
+    /// High availability needs a cluster.
+    private var isCluster: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 }
 
     @ViewBuilder
     private func operatingSystem(_ errors: [String: String]) -> some View {
@@ -138,6 +158,10 @@ struct CreateVMView: View {
     @ViewBuilder
     private func system(_ errors: [String: String]) -> some View {
         Section {
+            Picker("Graphic Card", selection: $draft.display) {
+                ForEach(VMSystemDraft.displays, id: \.id) { Text($0.title).tag($0.id) }
+            }
+            FieldError(message: errors["vga"])
             Picker("Machine", selection: $draft.machine) {
                 Text("Default (i440fx)").tag("i440fx")
                 Text("q35").tag("q35")
@@ -193,12 +217,32 @@ struct CreateVMView: View {
             Text(verbatim: draft.diskKey)
         }
         Section("Options") {
-            Toggle("Discard", isOn: $draft.discard)
-            if draft.diskBus == .scsi || draft.diskBus == .virtio {
-                Toggle("IO Thread", isOn: $draft.ioThread)
+            Picker("Cache", selection: $draft.disk.cache) {
+                Text("Default (No cache)").tag(String?.none)
+                ForEach(DiskOptionsDraft.cacheModes, id: \.self) { Text($0).tag(String?.some($0)) }
             }
-            if draft.diskBus != .virtio {
-                Toggle("SSD Emulation", isOn: $draft.ssdEmulation)
+            Toggle("Discard", isOn: $draft.disk.discard)
+            if draft.diskSupportsIOThread {
+                Toggle("IO Thread", isOn: $draft.disk.ioThread)
+            }
+            if showsAdvanced {
+                if draft.diskSupportsSSDEmulation {
+                    Toggle("SSD Emulation", isOn: $draft.disk.ssdEmulation)
+                }
+                if draft.diskSupportsIOThread {
+                    Toggle("Read Only", isOn: $draft.disk.readOnly)
+                }
+                Toggle("Include in Backups", isOn: $draft.disk.includeInBackup)
+                Toggle("Replicate", isOn: $draft.disk.replicate)
+                Picker("Async IO", selection: $draft.disk.asyncIO) {
+                    Text("Default (io_uring)").tag(String?.none)
+                    ForEach(DiskOptionsDraft.asyncIOModes, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                NavigationLink {
+                    DiskLimitsEditor(limits: $draft.disk.limits)
+                } label: {
+                    LabeledContent("Bandwidth Limits", value: draft.disk.limits.values.contains { !$0.isEmpty } ? String(localized: "Set") : String(localized: "Unlimited"))
+                }
             }
         }
     }
@@ -206,24 +250,76 @@ struct CreateVMView: View {
     @ViewBuilder
     private func processor(_ errors: [String: String]) -> some View {
         Section {
-            NumberField(title: "Sockets", value: $draft.sockets, range: 1...16)
+            NumberField(title: "Sockets", value: $draft.cpu.sockets, range: 1...16)
             FieldError(message: errors["sockets"])
-            NumberField(title: "Cores", value: $draft.cores, range: 1...512)
+            NumberField(title: "Cores", value: $draft.cpu.cores, range: 1...512)
             FieldError(message: errors["cores"])
+            if showsAdvanced {
+                Picker("vCPUs at Start", selection: $draft.cpu.vcpus) {
+                    Text("All").tag(0)
+                    ForEach(1...max(1, totalCores), id: \.self) { Text("\($0)").tag($0) }
+                }
+                FieldError(message: errors["vcpus"])
+            }
         } footer: {
-            Text("Total: \(Format.cores(draft.sockets * draft.cores)).")
+            if showsAdvanced {
+                Text("Total: \(Format.cores(totalCores)). With CPU hotplug, fewer vCPUs can be active at start.")
+            } else {
+                Text("Total: \(Format.cores(totalCores)).")
+            }
+        }
+        .onChange(of: totalCores) {
+            if draft.cpu.vcpus > totalCores { draft.cpu.vcpus = 0 }
         }
         Section {
-            Picker("Type", selection: $draft.cpuType) {
+            Picker("Type", selection: $draft.cpu.model) {
                 Text("Default (kvm64)").tag("")
-                ForEach(CPUModel.pickerNames(cpuModels, including: draft.cpuType), id: \.self) { Text($0).tag($0) }
+                ForEach(CPUModel.pickerNames(cpuModels, including: draft.cpu.model), id: \.self) { Text($0).tag($0) }
             }
             FieldError(message: errors["cpu"])
+            if showsAdvanced {
+                NavigationLink {
+                    CPUFlagsEditor(flags: $draft.cpu.flags)
+                } label: {
+                    LabeledContent("Extra CPU Flags", value: draft.cpu.flags.isEmpty ? String(localized: "None") : "\(draft.cpu.flags.count)")
+                }
+                Toggle("NUMA", isOn: $draft.cpu.numa)
+                FieldError(message: errors["numa"])
+            }
         } footer: {
             Text("“host” gives the best performance but prevents live migration to nodes with a different CPU.")
         }
         .task(id: draft.node) { cpuModels = await connection.load(PVE.cpuModels(node: draft.node)) }
+        if showsAdvanced {
+            Section {
+                LabeledContent("CPU Limit") {
+                    TextField("Unlimited", value: Binding(get: { draft.cpu.limit > 0 ? draft.cpu.limit : nil }, set: { draft.cpu.limit = $0 ?? 0 }), format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                FieldError(message: errors["cpulimit"])
+                LabeledContent("CPU Units") {
+                    TextField("100", text: $draft.cpu.units)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                FieldError(message: errors["cpuunits"])
+                LabeledContent("CPU Affinity") {
+                    TextField("All Cores", text: $draft.cpu.affinity)
+                        .keyboardType(.numbersAndPunctuation)
+                        .multilineTextAlignment(.trailing)
+                        .autocorrectionDisabled()
+                }
+                FieldError(message: errors["affinity"])
+            } header: {
+                Text("Scheduling")
+            } footer: {
+                Text("Limit is in cores. Units weigh this VM against others when the host is busy. Affinity pins the VM to host cores, e.g. 0-3,8.")
+            }
+        }
     }
+
+    private var totalCores: Int { draft.cpu.sockets * draft.cpu.cores }
 
     @ViewBuilder
     private func memory(_ errors: [String: String]) -> some View {
@@ -231,14 +327,28 @@ struct CreateVMView: View {
             NumberField(title: "Memory", value: $draft.memoryMiB, range: 16...4_194_304, step: 512, unit: "MiB")
             FieldError(message: errors["memory"])
         }
-        Section {
-            Toggle("Ballooning", isOn: $draft.ballooning)
-            if draft.ballooning {
-                NumberField(title: "Minimum", value: Binding(get: { draft.minimumMemoryMiB == 0 ? draft.memoryMiB : draft.minimumMemoryMiB }, set: { draft.minimumMemoryMiB = $0 }), range: 16...max(16, draft.memoryMiB), step: 256, unit: "MiB")
-                FieldError(message: errors["balloon"])
+        if showsAdvanced {
+            Section {
+                Toggle("Ballooning Device", isOn: $draft.ballooning)
+                if draft.ballooning {
+                    NumberField(title: "Minimum", value: Binding(get: { draft.minimumMemoryMiB == 0 ? draft.memoryMiB : draft.minimumMemoryMiB }, set: { draft.minimumMemoryMiB = $0 }), range: 16...max(16, draft.memoryMiB), step: 256, unit: "MiB")
+                    FieldError(message: errors["balloon"])
+                    LabeledContent("Shares") {
+                        TextField("1000", text: $draft.memoryShares)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    FieldError(message: errors["shares"])
+                }
+            } footer: {
+                Text("With ballooning, the host can reclaim memory down to the minimum when it runs short. Shares weigh this VM against others when memory is reclaimed.")
             }
-        } footer: {
-            Text("With ballooning, the host can reclaim memory down to the minimum when it runs short.")
+            Section {
+                Toggle("Allow KSM", isOn: $draft.allowKSM)
+                FieldError(message: errors["allow-ksm"])
+            } footer: {
+                Text("Kernel Samepage Merging saves host memory by merging identical memory pages of guests.")
+            }
         }
     }
 
@@ -258,10 +368,28 @@ struct CreateVMView: View {
                 Picker("Model", selection: $draft.network.model) {
                     ForEach(NetworkDeviceDraft.models, id: \.self) { Text($0).tag($0) }
                 }
+                MACAddressField(address: $draft.network.macAddress)
                 Toggle("Firewall", isOn: $draft.network.firewall)
                 FieldError(message: errors["net0"])
             } footer: {
                 Text("VirtIO is the fastest model; use Intel E1000 for guests without VirtIO drivers.")
+            }
+            if showsAdvanced {
+                Section {
+                    Toggle("Disconnected", isOn: $draft.network.isDisconnected)
+                    RateLimitField(rate: $draft.network.rateLimit)
+                    OptionalNumberField(title: "MTU", placeholder: "Same as Bridge", value: $draft.network.mtu)
+                    if draft.network.model == "virtio" {
+                        Picker("Multiqueue", selection: Binding(get: { draft.network.queues ?? 0 }, set: { draft.network.queues = $0 == 0 ? nil : $0 })) {
+                            Text("Off").tag(0)
+                            ForEach([2, 4, 8, 16, 32, 64], id: \.self) { Text("\($0) Queues").tag($0) }
+                        }
+                    }
+                } header: {
+                    Text("Advanced")
+                } footer: {
+                    Text("Rate limit in MB/s. Multiqueue lets several vCPUs handle network traffic; match it to the vCPU count.")
+                }
             }
         }
     }

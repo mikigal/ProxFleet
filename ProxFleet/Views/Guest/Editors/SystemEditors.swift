@@ -117,7 +117,7 @@ struct CPUEditor: View {
 }
 
 /// CPU flags set on top of the CPU type.
-private struct CPUFlagsEditor: View {
+struct CPUFlagsEditor: View {
     @Binding var flags: [String: Bool]
 
     private static let descriptions: [String: LocalizedStringKey] = [

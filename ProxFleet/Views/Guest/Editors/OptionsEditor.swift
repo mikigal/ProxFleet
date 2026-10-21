@@ -362,7 +362,8 @@ private struct ContainerOptionsEditor: View {
     }
 }
 
-private struct StartupSection: View {
+/// Start at boot, start order and delays, in the options editors and the creation wizards.
+struct StartupSection: View {
     @Binding var startAtBoot: Bool
     @Binding var startup: StartupOptions
     let error: String?

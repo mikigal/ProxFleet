@@ -8,6 +8,18 @@ nonisolated protocol CreationStep: Hashable, CaseIterable where AllCases == [Sel
     var title: LocalizedStringKey { get }
     /// Whether a request parameter is set on this page, so its problems and server errors show here.
     func owns(_ parameter: String) -> Bool
+    /// Whether a request parameter is set only with the advanced options shown.
+    func isAdvanced(_ parameter: String) -> Bool
+}
+
+nonisolated extension CreationStep {
+    func isAdvanced(_ parameter: String) -> Bool { false }
+}
+
+/// Whether the creation wizards show the options the web interface keeps behind its Advanced checkbox.
+/// Like there, the choice is remembered for all wizards.
+enum AdvancedCreationOptions {
+    static let storageKey = "creation.showsAdvancedOptions"
 }
 
 /// The only page of a form that uses the wizard for its task handling, such as cloning or restoring.
@@ -37,6 +49,8 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
     var workingTitle: LocalizedStringKey?
     /// Asked before sending, for actions that replace data.
     var confirmation: (title: String, message: String)?
+    /// Adds the Advanced switch to the toolbar; the wizard turns it on when the server rejects an advanced option.
+    var showsAdvancedOptions: Binding<Bool>?
     @ViewBuilder let content: (_ step: Step, _ fieldErrors: [String: String]) -> Content
 
     @State private var step = Step.allCases[0]
@@ -110,6 +124,17 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(task == nil ? "Cancel" : "Close") { dismiss() }
+            }
+            if let showsAdvancedOptions {
+                ToolbarItem(placement: .primaryAction) {
+                    // An icon keeps the title readable; the button is tinted while the options show.
+                    Toggle(isOn: showsAdvancedOptions.animation()) {
+                        Label("Advanced", systemImage: "slider.horizontal.3")
+                    }
+                    .toggleStyle(.button)
+                        .disabled(isWorking)
+                        .accessibilityIdentifier("advanced")
+                }
             }
         }
         .alert(confirmation?.title ?? "", isPresented: $confirms) {
@@ -257,6 +282,9 @@ struct CreationWizard<Step: CreationStep, Content: View>: View {
         } catch .invalid(let message, let fields) {
             serverErrors = fields
             errorMessage = message ?? String(localized: "Check the highlighted fields.")
+            if fields.keys.contains(where: { key in steps.contains { $0.isAdvanced(key) } }) {
+                showsAdvancedOptions?.wrappedValue = true
+            }
             if let first = steps.first(where: { step in fields.keys.contains { owner(of: $0) == step } }) {
                 move(to: first)
             }
@@ -514,5 +542,33 @@ struct OptionalNumberField: View {
         }
         .onAppear { text = value.map(String.init) ?? "" }
         .onChange(of: text) { value = Int(text) }
+    }
+}
+
+/// MAC address of a new network device, empty for one Proxmox generates.
+struct MACAddressField: View {
+    @Binding var address: String?
+
+    var body: some View {
+        LabeledContent("MAC Address") {
+            TextField("Automatic", text: Binding(get: { address ?? "" }, set: { address = $0.isEmpty ? nil : $0.uppercased() }))
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .multilineTextAlignment(.trailing)
+                .font(.body.monospaced())
+        }
+    }
+}
+
+/// Network rate limit in MB/s, nil for unlimited.
+struct RateLimitField: View {
+    @Binding var rate: Double?
+
+    var body: some View {
+        LabeledContent("Rate Limit") {
+            TextField("Unlimited", value: $rate, format: .number)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+        }
     }
 }

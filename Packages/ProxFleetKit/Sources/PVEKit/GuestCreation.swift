@@ -8,7 +8,11 @@ public struct VMCreationDraft: Sendable, Equatable {
     public var name = ""
     /// Empty for no pool.
     public var pool = ""
+    /// Adds the VM to high availability once it exists.
+    public var isHAManaged = false
     public var startOnBoot = false
+    public var startup = StartupOptions()
+    public var tags: [String] = []
     public var startAfterCreation = false
 
     /// ISO image for the installation, nil for no CD/DVD drive.
@@ -28,22 +32,30 @@ public struct VMCreationDraft: Sendable, Equatable {
     public var tpmStorage = ""
     public var scsiController = "virtio-scsi-single"
     public var guestAgent = false
+    /// Graphic card, empty for the default.
+    public var display = ""
 
     public var diskBus: DiskBus = .scsi
     public var diskStorage = ""
     public var diskSizeGiB = 32
-    public var discard = true
-    public var ioThread = true
-    public var ssdEmulation = false
+    /// Options of the system disk; the bus decides which of them apply.
+    public var disk: DiskOptionsDraft = {
+        var options = DiskOptionsDraft()
+        options.discard = true
+        options.ioThread = true
+        return options
+    }()
 
-    public var sockets = 1
-    public var cores = 2
-    /// Empty for the Proxmox default (kvm64).
-    public var cpuType = "x86-64-v2-AES"
+    /// Sockets, cores, type, flags and scheduling. Its model is empty for the Proxmox default (kvm64).
+    public var cpu = CPUDraft(GuestConfig(values: ["cores": "2", "cpu": "x86-64-v2-AES"]), isVM: true)
     public var memoryMiB = 2048
     public var ballooning = true
     /// Minimum memory with ballooning, 0 for the same as `memoryMiB`.
     public var minimumMemoryMiB = 0
+    /// Weight against other VMs when the host reclaims memory, empty for the default.
+    public var memoryShares = ""
+    /// Kernel Samepage Merging may merge identical memory pages of this VM.
+    public var allowKSM = true
 
     public var hasNetwork = true
     public var network = NetworkDeviceDraft()
@@ -84,6 +96,11 @@ public struct VMCreationDraft: Sendable, Equatable {
     /// The key of the system disk, e.g. `scsi0`.
     public var diskKey: String { "\(diskBus.rawValue)0" }
 
+    /// IO threads and read-only disks need SCSI or VirtIO Block.
+    public var diskSupportsIOThread: Bool { diskBus == .scsi || diskBus == .virtio }
+    /// VirtIO Block disks report themselves as rotational or not on their own.
+    public var diskSupportsSSDEmulation: Bool { diskBus != .virtio }
+
     /// Problems to fix before the request can be sent, by parameter name.
     public var problems: [String: String] {
         var problems: [String: String] = [:]
@@ -101,6 +118,7 @@ public struct VMCreationDraft: Sendable, Equatable {
         var parameters: APIParameters = ["vmid": .int(vmid)]
         if !name.isEmpty { parameters["name"] = .string(name) }
         if !pool.isEmpty { parameters["pool"] = .string(pool) }
+        if isHAManaged { parameters["ha-managed"] = true }
         parameters["ostype"] = .string(osType)
 
         if machine == "q35" { parameters["machine"] = "q35" }
@@ -116,15 +134,13 @@ public struct VMCreationDraft: Sendable, Equatable {
         }
         parameters["scsihw"] = .string(scsiController)
         if guestAgent { parameters["agent"] = "1" }
+        if !display.isEmpty { parameters["vga"] = .string(display) }
 
-        let supportsIOThread = diskBus == .scsi || diskBus == .virtio
-        parameters[diskKey] = .string(GuestConfig.newDiskValue(
-            storage: diskStorage,
-            sizeGiB: diskSizeGiB,
-            discard: discard,
-            ioThread: ioThread && supportsIOThread,
-            ssdEmulation: ssdEmulation && diskBus != .virtio
-        ))
+        var disk = disk
+        disk.ioThread = disk.ioThread && diskSupportsIOThread
+        disk.readOnly = disk.readOnly && diskSupportsIOThread
+        disk.ssdEmulation = disk.ssdEmulation && diskSupportsSSDEmulation
+        parameters[diskKey] = .string(disk.newDiskValue(storage: diskStorage, sizeGiB: diskSizeGiB))
         var bootOrder = [diskKey]
         if let isoVolume {
             parameters["ide2"] = .string(GuestConfig.cdromValue(isoVolume: isoVolume))
@@ -134,23 +150,31 @@ public struct VMCreationDraft: Sendable, Equatable {
             parameters["ide0"] = .string(GuestConfig.cdromValue(isoVolume: driversISOVolume))
         }
 
-        if sockets != 1 { parameters["sockets"] = .int(sockets) }
-        parameters["cores"] = .int(cores)
-        if !cpuType.isEmpty { parameters["cpu"] = .string(cpuType) }
+        let cpuValues = cpu.serialized()
+        for key in ["sockets", "cores", "vcpus", "cpu", "cpulimit", "cpuunits", "affinity", "numa"] {
+            if key == "cores" {
+                parameters["cores"] = .int(cpu.cores)
+            } else if let value = cpuValues[key] ?? nil {
+                parameters[key] = .string(value)
+            }
+        }
         parameters["memory"] = .int(memoryMiB)
         if !ballooning {
             parameters["balloon"] = 0
-        } else if minimumMemoryMiB > 0, minimumMemoryMiB < memoryMiB {
-            parameters["balloon"] = .int(minimumMemoryMiB)
+        } else {
+            if minimumMemoryMiB > 0, minimumMemoryMiB < memoryMiB {
+                parameters["balloon"] = .int(minimumMemoryMiB)
+            }
+            if !memoryShares.trimmed.isEmpty { parameters["shares"] = .string(memoryShares.trimmed) }
         }
+        if !allowKSM { parameters["allow-ksm"] = false }
 
         if hasNetwork {
             parameters["net0"] = .string(network.stringValue)
             bootOrder.append("net0")
         }
         parameters["boot"] = .string("order=" + bootOrder.joined(separator: ";"))
-        if startOnBoot { parameters["onboot"] = true }
-        if startAfterCreation { parameters["start"] = true }
+        addCommonOptions(to: &parameters, startOnBoot: startOnBoot, startup: startup, tags: tags, startAfterCreation: startAfterCreation)
         return parameters
     }
 
@@ -178,7 +202,11 @@ public struct ContainerCreationDraft: Sendable, Equatable {
     public var passwordConfirmation = ""
     /// One key per line.
     public var sshPublicKeys = ""
+    /// Adds the container to high availability once it exists.
+    public var isHAManaged = false
     public var startOnBoot = false
+    public var startup = StartupOptions()
+    public var tags: [String] = []
     public var startAfterCreation = false
 
     /// Volume ID of the template, e.g. `local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst`.
@@ -186,8 +214,14 @@ public struct ContainerCreationDraft: Sendable, Equatable {
 
     public var rootStorage = ""
     public var rootSizeGiB = 8
+    /// ACLs, quotas, replication and mount options of the root file system.
+    public var rootFS = MountPointDraft.newRootFS()
 
     public var cores = 1
+    /// CPU time limit in cores, 0 for none.
+    public var cpuLimit: Double = 0
+    /// Scheduler weight, empty for the default.
+    public var cpuUnits = ""
     public var memoryMiB = 512
     public var swapMiB = 512
 
@@ -232,12 +266,15 @@ public struct ContainerCreationDraft: Sendable, Equatable {
         if let template { parameters["ostemplate"] = .string(template) }
         if !hostname.isEmpty { parameters["hostname"] = .string(hostname) }
         if !pool.isEmpty { parameters["pool"] = .string(pool) }
+        if isHAManaged { parameters["ha-managed"] = true }
         parameters["unprivileged"] = .bool(unprivileged)
         if nesting { parameters["features"] = "nesting=1" }
         if !password.isEmpty { parameters["password"] = .string(password) }
         if !sshKeyLines.isEmpty { parameters["ssh-public-keys"] = .string(sshKeyLines.joined(separator: "\n")) }
-        parameters["rootfs"] = .string("\(rootStorage):\(rootSizeGiB)")
+        parameters["rootfs"] = .string(rootFS.newVolumeValue(storage: rootStorage, sizeGiB: rootSizeGiB))
         parameters["cores"] = .int(cores)
+        if cpuLimit > 0 { parameters["cpulimit"] = .string(CPUDraft.number(cpuLimit)) }
+        if !cpuUnits.trimmed.isEmpty { parameters["cpuunits"] = .string(cpuUnits.trimmed) }
         parameters["memory"] = .int(memoryMiB)
         parameters["swap"] = .int(swapMiB)
         if hasNetwork { parameters["net0"] = .string(network.stringValue) }
@@ -245,10 +282,17 @@ public struct ContainerCreationDraft: Sendable, Equatable {
         for key in ["nameserver", "searchdomain"] {
             if let value = dns[key] ?? nil { parameters[key] = .string(value) }
         }
-        if startOnBoot { parameters["onboot"] = true }
-        if startAfterCreation { parameters["start"] = true }
+        addCommonOptions(to: &parameters, startOnBoot: startOnBoot, startup: startup, tags: tags, startAfterCreation: startAfterCreation)
         return parameters
     }
+}
+
+/// Start at boot, start order, tags and starting right away, the same for VMs and containers.
+private func addCommonOptions(to parameters: inout APIParameters, startOnBoot: Bool, startup: StartupOptions, tags: [String], startAfterCreation: Bool) {
+    if startOnBoot { parameters["onboot"] = true }
+    if let startup = startup.serialized { parameters["startup"] = .string(startup) }
+    if !tags.isEmpty { parameters["tags"] = .string(tags.joined(separator: ";")) }
+    if startAfterCreation { parameters["start"] = true }
 }
 
 /// Proxmox accepts guest IDs from 100 to 999999999.

@@ -290,6 +290,21 @@ struct LiveServerTests {
         vm.efiStorage = storage
         vm.tpmStorage = storage
         vm.diskSizeGiB = 1
+        // Options of the wizard's advanced mode.
+        vm.startup.order = "5"
+        vm.tags = ["creation-test"]
+        vm.display = "virtio"
+        vm.disk.cache = "writeback"
+        vm.disk.includeInBackup = false
+        vm.disk.limits = ["mbps_rd": "200"]
+        vm.cpu.flags = ["aes": true]
+        vm.cpu.limit = 1.5
+        vm.cpu.units = "200"
+        vm.memoryShares = "500"
+        vm.allowKSM = false
+        vm.network.mtu = 1400
+        vm.network.queues = 2
+        vm.network.model = "virtio"
         #expect(vm.problems.isEmpty)
         let created = try await finish(try await session.send(PVE.createVM(vm)))
         #expect(created.succeeded, "\(created.exitStatus ?? "")")
@@ -299,6 +314,17 @@ struct LiveServerTests {
         #expect(vmConfig.bios == "ovmf")
         #expect(vmConfig["efidisk0"] != nil && vmConfig["tpmstate0"] != nil && vmConfig["sata0"] != nil)
         #expect(vmConfig.bootOrder.first == "sata0")
+        #expect(vmConfig["startup"] == "order=5")
+        #expect(vmConfig["tags"] == "creation-test")
+        #expect(vmConfig["vga"] == "virtio")
+        #expect(vmConfig["sata0"]?.contains("cache=writeback") == true)
+        #expect(vmConfig["sata0"]?.contains("backup=0") == true)
+        #expect(vmConfig["sata0"]?.contains("mbps_rd=200") == true)
+        #expect(vmConfig["cpu"] == "x86-64-v2-AES,flags=+aes")
+        #expect(vmConfig["cpulimit"] == "1.5")
+        #expect(vmConfig["shares"] == "500")
+        #expect(vmConfig["allow-ksm"] == "0")
+        #expect(vmConfig["net0"]?.contains("mtu=1400") == true && vmConfig["net0"]?.contains("queues=2") == true)
         try await destroy(vmReference)
 
         let template = try #require(try await session.send(PVE.storageContent(node: node, storage: "local", content: "vztmpl")).first?.volumeID)
@@ -312,6 +338,13 @@ struct LiveServerTests {
         container.passwordConfirmation = container.password
         container.nameservers = "1.1.1.1"
         container.startAfterCreation = true
+        container.tags = ["creation-test"]
+        container.rootFS.mountOptions = ["noatime"]
+        container.rootFS.replicate = false
+        container.cpuLimit = 1
+        container.cpuUnits = "50"
+        container.network.mtu = 1450
+        container.network.rateLimit = 10
         #expect(container.problems.isEmpty)
         let createdContainer = try await finish(try await session.send(PVE.createContainer(container)))
         #expect(createdContainer.succeeded, "\(createdContainer.exitStatus ?? "")")
@@ -320,6 +353,12 @@ struct LiveServerTests {
         #expect(containerConfig.name == "creation-test")
         #expect(containerConfig.isUnprivileged)
         #expect(containerConfig["features"] == "nesting=1")
+        #expect(containerConfig["tags"] == "creation-test")
+        #expect(containerConfig["rootfs"]?.contains("mountoptions=noatime") == true)
+        #expect(containerConfig["rootfs"]?.contains("replicate=0") == true)
+        #expect(containerConfig["cpulimit"] == "1")
+        #expect(containerConfig["cpuunits"] == "50")
+        #expect(containerConfig["net0"]?.contains("mtu=1450") == true)
         #expect(try await session.send(PVE.guestStatus(containerReference)).powerState == .running)
         _ = try await finish(try await session.send(PVE.powerAction(.stop, on: containerReference)))
         try await destroy(containerReference)

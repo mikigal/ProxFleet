@@ -22,15 +22,20 @@ nonisolated enum ContainerCreationStep: CreationStep {
 
     func owns(_ parameter: String) -> Bool {
         switch self {
-        case .general: ["vmid", "hostname", "pool", "unprivileged", "features", "password", "ssh-public-keys", "onboot"].contains(parameter)
+        case .general: ["vmid", "hostname", "pool", "ha-managed", "unprivileged", "features", "password", "ssh-public-keys", "onboot", "startup", "tags"].contains(parameter)
         case .template: parameter == "ostemplate"
         case .disks: parameter == "rootfs"
-        case .cpu: parameter == "cores"
+        case .cpu: ["cores", "cpulimit", "cpuunits"].contains(parameter)
         case .memory: ["memory", "swap"].contains(parameter)
         case .network: parameter.hasPrefix("net")
         case .dns: ["nameserver", "searchdomain"].contains(parameter)
         case .confirm: false
         }
+    }
+
+    /// Fields behind the web interface's Advanced checkbox. Root disk and network options are part of their value.
+    func isAdvanced(_ parameter: String) -> Bool {
+        ["onboot", "startup", "tags", "cpulimit", "cpuunits"].contains(parameter)
     }
 }
 
@@ -42,6 +47,7 @@ struct CreateContainerView: View {
     @State private var pools: [ResourcePool] = []
     @State private var draft: ContainerCreationDraft
     @State private var templatesReloadID = 0
+    @AppStorage(AdvancedCreationOptions.storageKey) private var showsAdvanced = false
 
     init(connection: ServerConnection, onCreated: @escaping (GuestReference) -> Void) {
         self.connection = connection
@@ -56,7 +62,8 @@ struct CreateContainerView: View {
             reference: GuestReference(node: draft.node, vmid: draft.vmid, kind: .container),
             problems: draft.problems,
             makeRequest: { PVE.createContainer(draft) },
-            onCreated: onCreated
+            onCreated: onCreated,
+            showsAdvancedOptions: $showsAdvanced
         ) { step, errors in
             switch step {
             case .general: general(errors)
@@ -84,7 +91,15 @@ struct CreateContainerView: View {
                     .accessibilityIdentifier("hostname")
             }
             FieldError(message: errors["hostname"])
+            if isCluster {
+                Toggle("Add to HA", isOn: $draft.isHAManaged)
+                FieldError(message: errors["ha-managed"])
+            }
             PoolPicker(pools: pools, selection: $draft.pool)
+        } footer: {
+            if isCluster {
+                Text("High availability starts the container on another node when its node fails.")
+            }
         }
         .task { pools = await connection.load(PVE.pools()) }
 
@@ -123,11 +138,21 @@ struct CreateContainerView: View {
             Toggle("Unprivileged", isOn: $draft.unprivileged)
             Toggle("Nesting", isOn: $draft.nesting)
             FieldError(message: errors["features"])
-            Toggle("Start at Boot", isOn: $draft.startOnBoot)
         } footer: {
             Text("Unprivileged containers map root to an ordinary user on the host, which is safer. Nesting is needed by recent systemd versions and to run containers inside.")
         }
+
+        if showsAdvanced {
+            StartupSection(startAtBoot: $draft.startOnBoot, startup: $draft.startup, error: errors["startup"])
+            Section("Tags") {
+                TagsEditor(tags: $draft.tags)
+                FieldError(message: errors["tags"])
+            }
+        }
     }
+
+    /// High availability needs a cluster.
+    private var isCluster: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 }
 
     @ViewBuilder
     private func template(_ errors: [String: String]) -> some View {
@@ -161,6 +186,9 @@ struct CreateContainerView: View {
         } footer: {
             Text("Add mount points after creating the container.")
         }
+        if showsAdvanced {
+            MountPointOptionsSection(draft: $draft.rootFS, error: errors["rootfs"], footer: "Quotas need a privileged container.")
+        }
     }
 
     @ViewBuilder
@@ -170,6 +198,26 @@ struct CreateContainerView: View {
             FieldError(message: errors["cores"])
         } footer: {
             Text("The container can use this many cores of the host.")
+        }
+        if showsAdvanced {
+            Section {
+                LabeledContent("CPU Limit") {
+                    TextField("Unlimited", value: Binding(get: { draft.cpuLimit > 0 ? draft.cpuLimit : nil }, set: { draft.cpuLimit = $0 ?? 0 }), format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                FieldError(message: errors["cpulimit"])
+                LabeledContent("CPU Units") {
+                    TextField("100", text: $draft.cpuUnits)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                FieldError(message: errors["cpuunits"])
+            } header: {
+                Text("Scheduling")
+            } footer: {
+                Text("Limit is in cores. Units weigh this container against others when the host is busy.")
+            }
         }
     }
 
@@ -196,6 +244,7 @@ struct CreateContainerView: View {
             Section {
                 BridgePicker(connection: connection, node: draft.node, selection: $draft.network.bridge)
                 OptionalNumberField(title: "VLAN Tag", placeholder: "None", value: $draft.network.vlanTag)
+                MACAddressField(address: $draft.network.macAddress)
                 Toggle("Firewall", isOn: $draft.network.firewall)
             }
             Section("IPv4") {
@@ -221,6 +270,18 @@ struct CreateContainerView: View {
                     addressField("Gateway", placeholder: "None", text: $draft.network.ipv6Gateway)
                 }
                 FieldError(message: errors["net0"])
+            }
+            if showsAdvanced {
+                Section {
+                    Toggle("Disconnected", isOn: $draft.network.isDisconnected)
+                    RateLimitField(rate: $draft.network.rateLimit)
+                    OptionalNumberField(title: "MTU", placeholder: "Same as Bridge", value: $draft.network.mtu)
+                    Toggle("Host-Managed", isOn: $draft.network.isHostManaged)
+                } header: {
+                    Text("Advanced")
+                } footer: {
+                    Text("Rate limit in MB/s. With Host-Managed, the host configures the addresses; the container must not run its own DHCP client on this interface.")
+                }
             }
         }
     }

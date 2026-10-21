@@ -83,6 +83,11 @@ public struct DiskOptionsDraft: Sendable, Equatable {
     public static let asyncIOModes = ["io_uring", "native", "threads"]
     public static let limitKeys = ["mbps_rd", "mbps_wr", "iops_rd", "iops_wr", "mbps_rd_max", "mbps_wr_max", "iops_rd_max", "iops_wr_max"]
 
+    /// Options of a new disk, all at the Proxmox defaults.
+    public init() {
+        self.init(GuestDisk(key: "", value: ""))
+    }
+
     public init(_ disk: GuestDisk) {
         property = disk.options
         cache = property["cache"]
@@ -114,6 +119,13 @@ public struct DiskOptionsDraft: Sendable, Equatable {
             let value = limits[key]?.trimmed.replacingOccurrences(of: ",", with: ".") ?? ""
             result[key] = value.isEmpty ? nil : value
         }
+        return result.stringValue
+    }
+
+    /// Value for a new disk with these options: `local-lvm:32,discard=on,iothread=1`.
+    public func newDiskValue(storage: String, sizeGiB: Int) -> String {
+        var result = PropertyString(parsing: stringValue)
+        result.items.insert((key: nil, value: "\(storage):\(sizeGiB)"), at: 0)
         return result.stringValue
     }
 }
