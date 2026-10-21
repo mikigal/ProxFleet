@@ -63,6 +63,8 @@ final class NodeUITests: XCTestCase {
         app.launch()
         openNode("pve2")
         app.buttons["tab.more"].tap()
+        // The power section sits below the System section, partly under the floating tab bar.
+        app.swipeUp()
         app.buttons["node.reboot"].tap()
         let confirm = app.alerts.buttons["node.power.confirm"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
