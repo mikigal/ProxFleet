@@ -249,20 +249,25 @@ private struct NodeUpdatesList: View {
                 } else {
                     Section {
                         ForEach(updates) { update in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(update.package)
-                                    .font(.body.weight(.medium))
-                                Text("\(update.oldVersion ?? "–") → \(update.version)")
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                if let title = update.title {
-                                    Text(title)
-                                        .font(.caption)
+                            NavigationLink {
+                                PackageChangelogView(connection: detail.connection, node: detail.node, package: update.package, version: nil)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(update.package)
+                                        .font(.body.weight(.medium))
+                                    Text("\(update.oldVersion ?? "–") → \(update.version)")
+                                        .font(.caption.monospaced())
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+                                    if let title = update.title {
+                                        Text(title)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
                                 }
+                                .accessibilityElement(children: .combine)
                             }
-                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("update.\(update.package)")
                         }
                     } header: {
                         Text("^[\(updates.count) Update](inflect: true)")
@@ -283,8 +288,9 @@ private struct NodeUpdatesList: View {
                 .accessibilityIdentifier("updates.repositories")
                 if let versions = detail.versions, !versions.isEmpty {
                     NavigationLink("Installed Versions") {
-                        PackageVersionsView(versions: versions)
+                        PackageVersionsView(detail: detail, versions: versions)
                     }
+                    .accessibilityIdentifier("updates.versions")
                 }
             }
         }
@@ -318,21 +324,133 @@ private struct NodeUpdatesList: View {
 }
 
 private struct PackageVersionsView: View {
+    let detail: NodeDetail
     let versions: [PackageVersion]
 
     var body: some View {
         List(versions) { package in
-            LabeledContent {
-                Text(package.version)
-                    .font(.footnote.monospaced())
+            NavigationLink {
+                PackageChangelogView(connection: detail.connection, node: detail.node, package: package.package, version: package.version)
             } label: {
-                Text(package.package)
-                if let kernel = package.runningKernel {
-                    Text("Running kernel: \(kernel)")
+                LabeledContent {
+                    Text(package.version)
+                        .font(.footnote.monospaced())
+                } label: {
+                    Text(package.package)
+                    if let kernel = package.runningKernel {
+                        Text("Running kernel: \(kernel)")
+                    }
+                }
+            }
+            .accessibilityIdentifier("version.\(package.package)")
+        }
+        .navigationTitle("Installed Versions")
+    }
+}
+
+/// A package's Debian changelog: the update's, or with a version that version's.
+private struct PackageChangelogView: View {
+    let connection: ServerConnection
+    let node: String
+    let package: String
+    let version: String?
+    @State private var text: String?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ScrollView {
+            if let text {
+                Text(text)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .accessibilityIdentifier("changelog.text")
+            }
+        }
+        .overlay {
+            if let errorMessage {
+                ContentUnavailableView("Cannot Load the Changelog", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
+            } else if text == nil {
+                ProgressView()
+            }
+        }
+        .navigationTitle(package)
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            do {
+                let changelog = try await connection.send(PVE.packageChangelog(node: node, package: package, version: version))
+                // apt reports a changelog it cannot fetch, e.g. of a Debian security update, as the text itself.
+                if changelog.hasPrefix("E: ") {
+                    errorMessage = changelog.components(separatedBy: "\nRC:").first?.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    text = changelog
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// The node's system report for support requests, which can be shared as a text file.
+private struct SystemReportView: View {
+    let detail: NodeDetail
+    @State private var report: String?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ScrollView {
+            if let report {
+                Text(report)
+                    .font(.caption2.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .accessibilityIdentifier("report.text")
+            }
+        }
+        .overlay {
+            if let errorMessage {
+                ContentUnavailableView("Cannot Load the Report", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
+            } else if report == nil {
+                ProgressView("Collecting…")
+            }
+        }
+        .navigationTitle("System Report")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let report {
+                ToolbarItem(placement: .primaryAction) {
+                    ShareLink(item: SystemReportFile(node: detail.node, text: report), preview: SharePreview("\(detail.node) system report")) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("report.share")
                 }
             }
         }
-        .navigationTitle("Installed Versions")
+        .task {
+            do {
+                report = try await detail.connection.send(PVE.systemReport(node: detail.node))
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// The report as `pve-report-{node}-{date}.txt`, as the web interface downloads it.
+private struct SystemReportFile: Transferable {
+    let node: String
+    let text: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .plainText) { file in
+            let date = Date().formatted(.iso8601.year().month().day())
+            let url = FileManager.default.temporaryDirectory.appending(path: "pve-report-\(file.node)-\(date).txt")
+            try Data(file.text.utf8).write(to: url)
+            return SentTransferredFile(url)
+        }
     }
 }
 
@@ -374,6 +492,12 @@ private struct NodeMoreList: View {
                     MoreRow(title: "Task History", systemImage: "list.bullet.rectangle", color: .blue)
                 }
                 .accessibilityIdentifier("more.tasks")
+                NavigationLink {
+                    SystemReportView(detail: detail)
+                } label: {
+                    MoreRow(title: "System Report", systemImage: "doc.text", color: .brown)
+                }
+                .accessibilityIdentifier("more.report")
             }
             Section("System") {
                 NavigationLink {

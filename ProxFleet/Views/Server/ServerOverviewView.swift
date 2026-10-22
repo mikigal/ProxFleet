@@ -10,6 +10,8 @@ struct ServerOverviewView: View {
     @State private var createdGuest: GuestReference?
     @State private var isWaking = false
     @State private var wakeResult: WakeOnLANResult?
+    @State private var bulkAction: NodeBulkAction?
+    @State private var showsLog = false
 
     var body: some View {
         List {
@@ -134,6 +136,16 @@ struct ServerOverviewView: View {
             }
             .serverDestinations(connection)
         }
+        .sheet(item: $bulkAction) { action in
+            NavigationStack {
+                NodeBulkActionView(connection: connection, node: nil, action: action) { draft throws(ConfigUpdateError) in
+                    try await connection.runBulkAction(draft)
+                }
+            }
+        }
+        .navigationDestination(isPresented: $showsLog) {
+            ClusterLogView(connection: connection)
+        }
         .navigationDestination(item: $createdGuest) { reference in
             GuestDetailView(reference: reference, connection: connection)
         }
@@ -156,6 +168,16 @@ struct ServerOverviewView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu("More", systemImage: "ellipsis") {
+                    Section("Bulk Actions") {
+                        Button("Bulk Start", systemImage: "play") { bulkAction = .start }
+                            .accessibilityIdentifier("bulk.start")
+                        Button("Bulk Shutdown", systemImage: "power") { bulkAction = .shutdown }
+                            .accessibilityIdentifier("bulk.shutdown")
+                        Button("Bulk Hibernate", systemImage: "moon.zzz") { bulkAction = .hibernate }
+                            .accessibilityIdentifier("bulk.hibernate")
+                    }
+                    Button("Cluster Log", systemImage: "doc.text.magnifyingglass") { showsLog = true }
+                        .accessibilityIdentifier("cluster.log")
                     Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right") {
                         Task { await connection.signOut() }
                     }

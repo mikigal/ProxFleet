@@ -2,11 +2,13 @@ import FleetCore
 import PVEKit
 import SwiftUI
 
-/// The web interface's Bulk Start, Bulk Shutdown and Bulk Suspend dialogs: choose guests of the node and run the
-/// action for all of them in one task.
+/// The web interface's Bulk Start, Bulk Shutdown and Bulk Suspend dialogs: choose guests of a node, or of every node,
+/// and run the action for all of them in one task.
 struct NodeBulkActionView: View {
-    let detail: NodeDetail
     let action: NodeBulkAction
+    /// nil for the datacenter's bulk actions.
+    let node: String?
+    private let run: (NodeBulkActionDraft) async throws(ConfigUpdateError) -> Void
     private let guests: [GuestSummary]
     @State private var draft: NodeBulkActionDraft
     @State private var timeoutText = ""
@@ -15,9 +17,16 @@ struct NodeBulkActionView: View {
     @Environment(\.dismiss) private var dismiss
 
     init(detail: NodeDetail, action: NodeBulkAction) {
-        self.detail = detail
+        self.init(connection: detail.connection, node: detail.node, action: action) { draft throws(ConfigUpdateError) in
+            _ = try await detail.run(draft)
+        }
+    }
+
+    init(connection: ServerConnection, node: String?, action: NodeBulkAction, run: @escaping (NodeBulkActionDraft) async throws(ConfigUpdateError) -> Void) {
         self.action = action
-        let guests = detail.connection.snapshot.map { action.eligibleGuests(on: detail.node, in: $0) } ?? []
+        self.node = node
+        self.run = run
+        let guests = connection.snapshot.map { action.eligibleGuests(on: node, in: $0) } ?? []
         self.guests = guests
         _draft = State(initialValue: NodeBulkActionDraft(action: action, vmids: Set(guests.map(\.vmid))))
     }
@@ -58,7 +67,7 @@ struct NodeBulkActionView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(guest.name.isEmpty ? String(guest.vmid) : guest.name)
                                         .foregroundStyle(.primary)
-                                    Text("\(guest.kind == .virtualMachine ? String(localized: "VM") : String(localized: "CT")) \(String(guest.vmid))")
+                                    Text("\(guest.kind == .virtualMachine ? String(localized: "VM") : String(localized: "CT")) \(String(guest.vmid))\(node == nil ? " · \(guest.node)" : "")")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -144,7 +153,7 @@ struct NodeBulkActionView: View {
         isStarting = true
         defer { isStarting = false }
         do {
-            try await detail.run(draft)
+            try await run(draft)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

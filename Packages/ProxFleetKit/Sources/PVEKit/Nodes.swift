@@ -189,6 +189,24 @@ extension PVE {
         APIRequest(.get, "/nodes/\(node)/journal", parameters: ["lastentries": .int(lastEntries)])
     }
 
+    /// The Debian changelog of a package, by default of the version an update would install.
+    public static func packageChangelog(node: String, package: String, version: String? = nil) -> APIRequest<String> {
+        var parameters: APIParameters = ["name": .string(package)]
+        if let version { parameters["version"] = .string(version) }
+        return APIRequest(.get, "/nodes/\(node)/apt/changelog", parameters: parameters)
+    }
+
+    /// The node's system report, as the web interface's System Report button shows it: versions, network, storage,
+    /// guests and more, for support requests. Takes a few seconds.
+    public static func systemReport(node: String) -> APIRequest<String> {
+        APIRequest(.get, "/nodes/\(node)/report")
+    }
+
+    /// The cluster log, newest first.
+    public static func clusterLog(max: Int = 200) -> APIRequest<[ClusterLogEntry]> {
+        APIRequest(.get, "/cluster/log", parameters: ["max": .int(max)])
+    }
+
     /// Recent tasks of one node, newest first.
     public static func nodeTasks(node: String, limit: Int = 100) -> APIRequest<[ClusterTask]> {
         APIRequest(.get, "/nodes/\(node)/tasks", parameters: ["limit": .int(limit), "source": "all"])
@@ -212,10 +230,20 @@ public enum NodeBulkAction: String, Sendable, CaseIterable, Identifiable {
         }
     }
 
-    /// Guests of a node the action applies to: stopped ones to start, running ones to shut down, running VMs to hibernate.
-    public func eligibleGuests(on node: String, in snapshot: ClusterSnapshot) -> [GuestSummary] {
-        snapshot.guests
-            .filter { $0.node == node && !$0.isTemplate }
+    var clusterEndpoint: String {
+        switch self {
+        case .start: "start"
+        case .shutdown: "shutdown"
+        case .hibernate: "suspend"
+        }
+    }
+
+    /// Guests the action applies to: stopped ones to start, running ones to shut down, running VMs to hibernate.
+    /// Without a node, those of every online node.
+    public func eligibleGuests(on node: String?, in snapshot: ClusterSnapshot) -> [GuestSummary] {
+        let online = Set(snapshot.nodes.filter(\.isOnline).map(\.name))
+        return snapshot.guests
+            .filter { guest in (node.map { guest.node == $0 } ?? online.contains(guest.node)) && !guest.isTemplate }
             .filter { guest in
                 switch self {
                 case .start: guest.state == .stopped
@@ -264,5 +292,52 @@ extension PVE {
     /// Starts one task on the node that runs the action for every chosen guest. Returns its task ID.
     public static func bulkAction(node: String, _ draft: NodeBulkActionDraft) -> APIRequest<String> {
         APIRequest(.post, "/nodes/\(node)/\(draft.action.endpoint)", parameters: draft.parameters)
+    }
+
+    /// The datacenter's bulk actions (PVE 9): one task that runs the action for the chosen guests on all nodes.
+    public static func clusterBulkAction(_ draft: NodeBulkActionDraft) -> APIRequest<String> {
+        var parameters = APIParameters()
+        for vmid in draft.vmids.sorted() { parameters.append("vms", .int(vmid)) }
+        if let maxWorkers = draft.maxWorkers { parameters["max-workers"] = .int(maxWorkers) }
+        switch draft.action {
+        case .start:
+            break
+        case .shutdown:
+            if let timeout = draft.timeout { parameters["timeout"] = .int(timeout) }
+            if !draft.forceStop { parameters["force-stop"] = false }
+        case .hibernate:
+            parameters["to-disk"] = true
+        }
+        return APIRequest(.post, "/cluster/bulk-action/guest/\(draft.action.clusterEndpoint)", parameters: parameters)
+    }
+}
+
+/// An entry of `GET /cluster/log`: a message of a node's daemons, such as tasks starting and ending.
+public struct ClusterLogEntry: Decodable, Sendable, Equatable, Identifiable {
+    /// `uid:node`, unique across the cluster.
+    public var id: String
+    public var date: Date
+    public var node: String
+    public var tag: String
+    public var user: String?
+    public var message: String
+    /// Syslog priority: 0 emergency … 3 error, 4 warning, 6 info, 7 debug.
+    public var priority: Int
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        node = container.lossyString(AnyCodingKey("node")) ?? ""
+        id = container.lossyString(AnyCodingKey("id")) ?? "\(container.lossyString(AnyCodingKey("uid")) ?? UUID().uuidString):\(node)"
+        date = Date(timeIntervalSince1970: TimeInterval(container.lossyInt(AnyCodingKey("time")) ?? 0))
+        tag = container.lossyString(AnyCodingKey("tag")) ?? ""
+        user = container.lossyString(AnyCodingKey("user"))
+        message = container.lossyString(AnyCodingKey("msg")) ?? ""
+        priority = container.lossyInt(AnyCodingKey("pri")) ?? 6
+    }
+
+    /// The task ID of "starting task …" and "end task … OK" messages.
+    public var upid: String? {
+        guard let range = message.range(of: "UPID:") else { return nil }
+        return String(message[range.lowerBound...].prefix { !$0.isWhitespace })
     }
 }

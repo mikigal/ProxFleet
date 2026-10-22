@@ -129,3 +129,70 @@ struct ClusterTaskRow: View {
         }
     }
 }
+
+/// The cluster log: what every node's daemons reported, newest first, like the web interface's Cluster Log panel.
+struct ClusterLogView: View {
+    let connection: ServerConnection
+    @State private var entries: [ClusterLogEntry]?
+    @State private var search = ""
+    @State private var errorMessage: String?
+
+    private var shown: [ClusterLogEntry] {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return entries ?? [] }
+        return (entries ?? []).filter { entry in
+            [entry.message, entry.node, entry.tag, entry.user ?? ""].contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    var body: some View {
+        List(shown) { entry in
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    if entry.priority <= 4 {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(entry.priority <= 3 ? .red : .orange)
+                    }
+                    Text(entry.date.formatted(.dateTime.day().month(.abbreviated).hour().minute().second()))
+                    Text(verbatim: "·")
+                    Text(entry.node)
+                    Text(verbatim: "·")
+                    Text(entry.tag)
+                    Spacer()
+                    if let user = entry.user { Text(user) }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                Text(entry.message)
+                    .font(.footnote.monospaced())
+                    .textSelection(.enabled)
+            }
+            .accessibilityElement(children: .combine)
+        }
+        .listStyle(.plain)
+        .overlay {
+            if let errorMessage, entries == nil {
+                ContentUnavailableView("Cannot Load the Log", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
+            } else if entries == nil {
+                ProgressView()
+            } else if shown.isEmpty, !search.isEmpty {
+                ContentUnavailableView.search(text: search)
+            }
+        }
+        .searchable(text: $search)
+        .navigationTitle("Cluster Log")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            entries = try await connection.send(PVE.clusterLog(max: 500))
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}

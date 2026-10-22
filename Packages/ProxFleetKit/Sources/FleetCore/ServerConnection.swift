@@ -277,6 +277,16 @@ public final class ServerConnection: Identifiable {
         }
     }
 
+    /// Runs a bulk action for guests on every node, as the datacenter's Bulk Actions do. Failures show in the task list.
+    @discardableResult
+    public func runBulkAction(_ draft: NodeBulkActionDraft) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        do {
+            return try tasks.track(try await session.send(PVE.clusterBulkAction(draft)))
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+    }
+
     /// Stops a running task. A task the app follows does not report the resulting failure.
     public func stopTask(node: String, upid: String) async throws {
         tasks.markStopped(upid)

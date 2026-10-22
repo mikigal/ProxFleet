@@ -143,6 +143,7 @@ public enum TaskDescription {
         "vzdelsnapshot": "Delete Snapshot", "vzdump": "Backup", "vncproxy": "Console", "vncshell": "Shell",
         "termproxy": "Console", "spiceproxy": "SPICE Console", "aptupdate": "Update Package Database",
         "imgcopy": "Copy Image", "imgdel": "Delete Volume", "download": "Download", "startall": "Bulk Start", "stopall": "Bulk Shutdown", "suspendall": "Bulk Hibernate",
+        "bulk-start": "Bulk Start", "bulk-shutdown": "Bulk Shutdown", "bulk-suspend": "Bulk Suspend", "reloadnetworkall": "Apply SDN",
         "srvreload": "Reload Service", "srvrestart": "Restart Service", "srvstart": "Start Service", "srvstop": "Stop Service",
         "diskinit": "Initialize Disk with GPT", "wipedisk": "Wipe Disk", "zfscreate": "Create ZFS Pool", "zfsremove": "Remove ZFS Pool",
         "lvmcreate": "Create LVM Volume Group", "lvmremove": "Remove LVM Volume Group", "lvmthincreate": "Create LVM Thin Pool",

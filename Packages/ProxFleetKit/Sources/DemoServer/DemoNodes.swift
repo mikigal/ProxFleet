@@ -85,6 +85,50 @@ extension DemoState {
                 if package.hasPrefix("proxmox-kernel") { entry["RunningKernel"] = "6.14.11-2-pve" }
                 return .object(entry)
             }))
+        case (.get, ["apt", "changelog"]):
+            guard isOnline else { return offline }
+            let package = parameters["name"] ?? ""
+            let version = parameters["version"] ?? Self.availableUpdates.first { $0.package == package }?.new ?? "1.0"
+            return success(.string("""
+            \(package) (\(version)) trixie; urgency=medium
+
+              * Fix the problems the previous version had in demo mode.
+
+              * Improve the way the web interface shows this package.
+
+             -- Proxmox Support Team <support@proxmox.com>  Mon, 13 Oct 2025 10:00:00 +0200
+
+            """))
+        case (.get, ["report"]):
+            guard isOnline else { return offline }
+            let guests = cluster.guests.filter { $0.node == node }
+            return success(.string("""
+
+            ==== general system info ====
+
+            # hostname
+            \(node)
+
+            # pveversion --verbose
+            proxmox-ve: 9.0.0 (running kernel: 6.14.11-2-pve)
+            pve-manager: \(cluster.version) (running version: \(cluster.version))
+
+            ==== info about virtual guests ====
+
+            # qm list
+            \(guests.filter { $0.kind == .qemu }.map { "  \($0.vmid) \($0.name) \($0.isRunning ? "running" : "stopped")" }.joined(separator: "\n"))
+
+            # pct list
+            \(guests.filter { $0.kind == .lxc }.map { "  \($0.vmid) \($0.isRunning ? "running" : "stopped") \($0.name)" }.joined(separator: "\n"))
+
+            ==== info about network ====
+
+            # ip -details -statistics address
+            1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536
+            2: vmbr0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500
+                inet \(cluster.nodes.first { $0.name == node }?.ip ?? "10.0.0.1")/24 scope global vmbr0
+
+            """))
         case (.get, ["journal"]):
             guard isOnline else { return offline }
             let count = min(Int(parameters["lastentries"] ?? "") ?? 50, 200)

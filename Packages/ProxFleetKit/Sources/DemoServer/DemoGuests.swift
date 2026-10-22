@@ -39,6 +39,10 @@ extension DemoState {
         switch (method, parts.count) {
         case (.get, 2) where parts == ["cluster", "tasks"]:
             return success(.array(tasks.reversed().map(clusterTaskJSON)))
+        case (.get, 2) where parts == ["cluster", "log"]:
+            return success(.array(clusterLog(max: Int(parameters["max"] ?? "") ?? 50)))
+        case (.post, 4) where parts[0] == "cluster" && parts[1] == "bulk-action" && parts[2] == "guest":
+            return clusterBulkAction(parts[3], parameters: parameters, user: user)
         case (.get, 2) where parts == ["access", "permissions"]:
             let path = parameters["path"] ?? "/"
             return success(.object([path: .object(Dictionary(uniqueKeysWithValues: privileges(for: user).map { ($0, JSONValue.int(1)) }))]))
@@ -169,6 +173,54 @@ extension DemoState {
     }
 
     // MARK: - Power
+
+    /// The datacenter's bulk actions: one task, plus the usual task for every guest it covers on any node.
+    private func clusterBulkAction(_ action: String, parameters: [String: String], user: String) -> HTTPResponse? {
+        guard ["start", "shutdown", "suspend"].contains(action) else { return nil }
+        guard privileges(for: user).contains("VM.PowerMgmt") else { return failure(403, "Permission check failed (/, VM.PowerMgmt)") }
+        let chosen = parameters["vms"].map { Set($0.split(separator: Character(Self.listSeparator)).compactMap { Int($0) }) }
+        let online = Set(cluster.nodes.filter(\.isOnline).map(\.name))
+        let guests = cluster.guests.filter { guest in
+            guard online.contains(guest.node), !guest.isTemplate, chosen?.contains(guest.vmid) ?? true else { return false }
+            switch action {
+            case "start": return !guest.isRunning
+            case "shutdown": return guest.isRunning
+            default: return guest.isRunning
+            }
+        }
+        let response = startTask(node: cluster.nodes.first(where: \.isOnline)?.name ?? "pve", type: "bulk-\(action)", objectID: "", user: user,
+                                 duration: guests.isEmpty ? 0.5 : 4.5)
+        for guest in guests {
+            _ = startPowerTask(action, guest: guest, todisk: parameters["to-disk"] == "1", user: user)
+        }
+        return response
+    }
+
+    /// The cluster log, newest first: the demo's tasks starting and ending, plus a few daemon messages.
+    private func clusterLog(max: Int) -> [JSONValue] {
+        var entries: [(date: Date, node: String, tag: String, user: String?, message: String, priority: Int)] = []
+        for task in tasks {
+            entries.append((task.startedAt, task.node, "pvedaemon", task.user, "starting task \(task.upid)", 6))
+            let end = task.startedAt.addingTimeInterval(task.duration)
+            if end <= Date() {
+                entries.append((end, task.node, "pvedaemon", task.user, "end task \(task.upid) \(task.error ?? "OK")", task.error == nil ? 6 : 3))
+            }
+        }
+        for (index, node) in cluster.nodes.enumerated() {
+            entries.append((started.addingTimeInterval(-Double(600 + index * 60)), node.name, "pvedaemon", "root@pam", "successful auth for user 'root@pam'", 6))
+            if !node.isOnline {
+                entries.append((started.addingTimeInterval(-300), node.name, "corosync", nil, "link: host: \(node.name) link: 0 is down", 4))
+            }
+        }
+        return entries.sorted { $0.date > $1.date }.prefix(max).enumerated().map { index, entry in
+            var object: [String: JSONValue] = [
+                "uid": .int(10_000 - index), "id": .string("\(10_000 - index):\(entry.node)"), "time": .int(Int(entry.date.timeIntervalSince1970)),
+                "node": .string(entry.node), "tag": .string(entry.tag), "msg": .string(entry.message), "pri": .int(entry.priority), "pid": 1234,
+            ]
+            if let user = entry.user { object["user"] = .string(user) }
+            return .object(object)
+        }
+    }
 
     /// Node bulk actions: one task for the node, plus the usual task for every guest it covers.
     private func bulkAction(_ endpoint: String, node: String, parameters: [String: String], user: String) -> HTTPResponse {

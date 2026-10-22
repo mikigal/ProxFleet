@@ -2302,6 +2302,41 @@ struct LiveServerTests {
         #expect(DatacenterOptionsDraft(try await session.send(PVE.datacenterOptions())) == options)
     }
 
+    /// The datacenter's bulk actions start and shut down CT 202 and hibernate and resume VM 102; the cluster log lists
+    /// their tasks; the system report and a changelog load.
+    @Test(.timeLimit(.minutes(3))) func datacenterBulkActionsLogAndReport() async throws {
+        let (session, node) = try await rootSession()
+        let container = GuestReference(node: node, vmid: 202, kind: .container)
+        let vm = GuestReference(node: node, vmid: 102, kind: .virtualMachine)
+        try #require(try await session.send(PVE.guestStatus(container)).powerState == .stopped, "CT 202 should be stopped")
+        try #require(try await session.send(PVE.guestStatus(vm)).powerState == .running, "VM 102 should be running")
+
+        let start = try await session.send(PVE.clusterBulkAction(NodeBulkActionDraft(action: .start, vmids: [202])))
+        #expect(try await finishTask(session, node: node, start)?.succeeded == true)
+        #expect(try await session.send(PVE.guestStatus(container)).powerState == .running)
+        var shutdown = NodeBulkActionDraft(action: .shutdown, vmids: [202])
+        shutdown.timeout = 30
+        let stop = try await session.send(PVE.clusterBulkAction(shutdown))
+        #expect(try await finishTask(session, node: node, stop)?.succeeded == true)
+        #expect(try await session.send(PVE.guestStatus(container)).powerState == .stopped)
+
+        let hibernate = try await session.send(PVE.clusterBulkAction(NodeBulkActionDraft(action: .hibernate, vmids: [102])))
+        #expect(try await finishTask(session, node: node, hibernate)?.succeeded == true)
+        let hibernated = try await session.send(PVE.guestConfig(vm))
+        #expect(hibernated.values["vmstate"] != nil && hibernated.values["lock"] == "suspended")
+        let resume = try await session.send(PVE.clusterBulkAction(NodeBulkActionDraft(action: .start, vmids: [102])))
+        #expect(try await finishTask(session, node: node, resume)?.succeeded == true)
+        #expect(try await session.send(PVE.guestStatus(vm)).powerState == .running)
+
+        let log = try await session.send(PVE.clusterLog(max: 100))
+        #expect(log.contains { $0.upid == start && $0.message.hasPrefix("starting task") } && log.allSatisfy { $0.node == node })
+        let report = try await session.send(PVE.systemReport(node: node))
+        #expect(report.contains("==== general system info ====") && report.contains(node))
+        let version = try #require(try await session.send(PVE.packageVersions(node: node)).first { $0.package == "pve-manager" }?.version)
+        let changelog = try await session.send(PVE.packageChangelog(node: node, package: "pve-manager", version: version))
+        #expect(changelog.hasPrefix("pve-manager (\(version))"))
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()
