@@ -810,7 +810,9 @@ private struct VNCScreen: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
     func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
+        let scrollView = ScreenScrollView()
+        // The view also resizes without SwiftUI updating it, as when the full-screen console turns.
+        scrollView.onLayout = { [weak coordinator = context.coordinator] in coordinator?.layout(in: $0) }
         scrollView.backgroundColor = .black
         scrollView.delegate = context.coordinator
         scrollView.minimumZoomScale = 1
@@ -844,7 +846,7 @@ private struct VNCScreen: UIViewRepresentable {
         let imageView = UIImageView()
         private let cursorView = UIImageView()
         private weak var scrollView: UIScrollView?
-        private var lastBounds = CGRect.zero
+        private var lastBoundsSize = CGSize.zero
         private var lastImageSize = CGSize.zero
         private var lastCursor: CGImage?
         private var scrollRemainder: CGFloat = 0
@@ -943,9 +945,9 @@ private struct VNCScreen: UIViewRepresentable {
         func layout(in scrollView: UIScrollView) {
             let imageSize = model.screenSize
             guard imageSize.width > 0, scrollView.bounds.width > 0,
-                  scrollView.bounds != lastBounds || imageSize != lastImageSize
+                  scrollView.bounds.size != lastBoundsSize || imageSize != lastImageSize
             else { return }
-            lastBounds = scrollView.bounds
+            lastBoundsSize = scrollView.bounds.size
             lastImageSize = imageSize
             scrollView.zoomScale = 1
             let scale = min(scrollView.bounds.width / imageSize.width, scrollView.bounds.height / imageSize.height)
@@ -1172,6 +1174,16 @@ private struct VNCScreen: UIViewRepresentable {
         func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
             .hidden()
         }
+    }
+}
+
+/// Tells the screen to fit itself whenever its size changes.
+private final class ScreenScrollView: UIScrollView {
+    var onLayout: ((UIScrollView) -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout?(self)
     }
 }
 

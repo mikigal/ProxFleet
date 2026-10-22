@@ -36,6 +36,7 @@ final class ConsoleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Exit Full Screen"].firstMatch.waitForExistence(timeout: 5))
         let turned = expectation(for: NSPredicate { _, _ in self.isLaidOutInLandscape() }, evaluatedWith: nil)
         wait(for: [turned], timeout: 5)
+        snapshot("61-console-turned")
         XCUIDevice.shared.orientation = .portrait
         let turnedBack = expectation(for: NSPredicate { _, _ in !self.app.buttons["Exit Full Screen"].exists }, evaluatedWith: nil)
         wait(for: [turnedBack], timeout: 5)
@@ -47,7 +48,7 @@ final class ConsoleUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let landscape = expectation(for: NSPredicate { _, _ in self.isLaidOutInLandscape() }, evaluatedWith: nil)
         wait(for: [landscape], timeout: 5)
-        snapshot("61-console-landscape")
+        snapshot("62-console-landscape")
         XCTAssertFalse(app.staticTexts["Console Closed"].exists)
 
         // Leaving full screen brings back portrait.
