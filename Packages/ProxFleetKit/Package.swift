@@ -21,8 +21,11 @@ let package = Package(
         .target(name: "PVEKit", dependencies: ["ProxmoxCore"]),
         // App domain: saved servers, credentials, live connections.
         .target(name: "FleetCore", dependencies: ["ProxmoxCore", "ProxmoxURLSession", "PVEKit", "DemoServer"]),
-        // Console protocols: terminal (termproxy) and VNC (RFB) over WebSockets. Portable.
-        .target(name: "ProxmoxConsole", dependencies: ["ProxmoxCore", "PVEKit"]),
+        // The system zlib, which every platform the app may run on has.
+        .systemLibrary(name: "CZlib", path: "Sources/CZlib"),
+        // Console protocols: terminal (termproxy) and VNC (RFB) over WebSockets. Portable; JPEG decoding uses
+        // ImageIO where it exists.
+        .target(name: "ProxmoxConsole", dependencies: ["ProxmoxCore", "PVEKit", "CZlib"]),
         // In-memory fake Proxmox VE cluster used by demo mode, previews and tests.
         .target(name: "DemoServer", dependencies: ["ProxmoxCore"]),
 
@@ -31,7 +34,7 @@ let package = Package(
         .testTarget(name: "FleetCoreTests", dependencies: ["FleetCore", "DemoServer"]),
         // Runs against a real server only when PROXFLEET_TEST_SERVER_ENV points to an env file, see README.
         .testTarget(name: "LiveServerTests", dependencies: ["ProxmoxCore", "ProxmoxURLSession", "PVEKit", "ProxmoxConsole"]),
-        .testTarget(name: "ProxmoxConsoleTests", dependencies: ["ProxmoxConsole", "DemoServer"]),
+        .testTarget(name: "ProxmoxConsoleTests", dependencies: ["ProxmoxConsole", "DemoServer", "CZlib"]),
     ],
     swiftLanguageModes: [.v6]
 )

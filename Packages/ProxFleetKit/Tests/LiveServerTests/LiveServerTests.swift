@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import ProxmoxCore
 import ProxmoxURLSession
-import ProxmoxConsole
+@testable import ProxmoxConsole
 import PVEKit
 import Synchronization
 import Testing
@@ -205,6 +205,44 @@ struct LiveServerTests {
         #expect(framebuffer.width > 0 && framebuffer.height > 0)
         #expect(sawPixels)
         await client.close()
+    }
+
+    /// The same screen of VM 100 as Raw and as Tight, to see what the compression saves.
+    @Test func vmConsoleCompression() async throws {
+        let (session, node) = try await rootSession()
+        let vm = GuestReference(node: node, vmid: 100, kind: .virtualMachine)
+        try #require(try await session.send(PVE.guestStatus(vm)).powerState == .running)
+
+        func firstScreen(_ encodings: [VNCClient.Encoding], quality: VNCClient.Quality) async throws -> (bytes: Int, pixels: [UInt8], client: VNCClient) {
+            let client = try await VNCClient.open(vm, session: session, quality: quality, encodings: encodings)
+            // The first update may only announce features; wait for pixels, then for the rest of the screen.
+            for try await event in client.events {
+                if case .updated = event, await client.rectangleCounts.keys.contains(where: { $0 >= 0 }) { break }
+            }
+            try await Task.sleep(for: .seconds(2))
+            return (await client.receivedBytes, await client.framebuffer.pixels, client)
+        }
+        let raw = try await firstScreen([.raw], quality: .best)
+        await raw.client.close()
+        let tight = try await firstScreen([.tight, .hextile, .copyRect, .raw], quality: .best)
+        print("VNC first screen: raw \(raw.bytes) bytes, tight \(tight.bytes) bytes; encodings \(await tight.client.rectangleCounts), tight types \(await tight.client.tightCompressionCounts), scancodes \(await tight.client.supportsScancodes)")
+        #expect(await tight.client.rectangleCounts[VNCClient.Encoding.tight.rawValue] ?? 0 > 0)
+        #expect(tight.bytes < raw.bytes / 4)
+        // Lossless, apart from the blinking text cursor, which may differ between the two snapshots.
+        var differing: [Int] = []
+        for index in stride(from: 0, to: min(tight.pixels.count, raw.pixels.count), by: 4)
+        where tight.pixels[index..<index + 3] != raw.pixels[index..<index + 3] {
+            differing.append(index / 4)
+        }
+        let width = await tight.client.framebuffer.width
+        let xs = differing.map { $0 % width }, ys = differing.map { $0 / width }
+        print("VNC differing pixels: \(differing.count), x \(xs.min() ?? 0)...\(xs.max() ?? 0), y \(ys.min() ?? 0)...\(ys.max() ?? 0)")
+        #expect(differing.count < 200, "Tight without JPEG is lossless")
+        await tight.client.close()
+
+        let lossy = try await firstScreen([.tight, .hextile, .copyRect, .raw], quality: .dataSaver)
+        print("VNC first screen with JPEG allowed: \(lossy.bytes) bytes; tight types \(await lossy.client.tightCompressionCounts)")
+        await lossy.client.close()
     }
 
     /// Edits VM 101 (stopped) and VM 102 (running) from the seed script and puts everything back.
