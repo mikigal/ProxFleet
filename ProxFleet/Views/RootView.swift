@@ -5,14 +5,16 @@ struct RootView: View {
     @Environment(Fleet.self) private var fleet
     @State private var selection: UUID?
     @State private var compactColumn: NavigationSplitViewColumn
+    @State private var columnVisibility: NavigationSplitViewVisibility
 
     init(initialSelection: UUID?) {
         _selection = State(initialValue: initialSelection)
         _compactColumn = State(initialValue: initialSelection == nil ? .sidebar : .detail)
+        _columnVisibility = State(initialValue: initialSelection == nil ? .all : .detailOnly)
     }
 
     var body: some View {
-        NavigationSplitView(preferredCompactColumn: $compactColumn) {
+        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
             ServerListView(selection: $selection)
         } detail: {
             if let selection, let connection = fleet.connection(for: selection) {
@@ -22,6 +24,12 @@ struct RootView: View {
                 .id(selection)
             } else {
                 ContentUnavailableView("No Server Selected", systemImage: "server.rack", description: Text("Choose a server from the list."))
+            }
+        }
+        .onChange(of: selection) {
+            // On iPad the server list gets out of the way once a server is open; the toolbar button brings it back.
+            withAnimation {
+                columnVisibility = selection == nil ? .all : .detailOnly
             }
         }
         .onChange(of: fleet.profiles) {
