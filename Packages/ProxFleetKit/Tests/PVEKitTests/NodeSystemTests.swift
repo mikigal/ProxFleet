@@ -162,6 +162,57 @@ struct NodeSystemTests {
             == "mtu=9000&delete=autostart%2Cbridge_vids%2Cbridge_vlan_aware%2Ccidr%2Ccomments&type=bridge")
     }
 
+    /// Recorded from the test server after creating an OVS bridge, internal port and bond.
+    @Test func openVSwitchInterfaces() throws {
+        let json = #"""
+        [{"iface": "vmbr9", "type": "OVSBridge", "ovs_ports": "ovsint9 bond9", "ovs_type": "OVSBridge", "autostart": 1},
+         {"iface": "ovsint9", "type": "OVSIntPort", "autostart": 1, "cidr": "10.99.0.1/24", "ovs_type": "OVSIntPort", "ovs_bridge": "vmbr9", "ovs_tag": "20"},
+         {"iface": "bond9", "type": "OVSBond", "autostart": 1, "ovs_bridge": "vmbr9", "bond_mode": "active-backup", "ovs_bonds": "nic1 nic2"},
+         {"iface": "nic1", "type": "eth"}, {"iface": "nic2", "type": "eth"}, {"iface": "nic3", "type": "eth"}]
+        """#
+        let interfaces = try JSONDecoder().decode([NetworkInterface].self, from: Data(json.utf8))
+        let existing = interfaces
+        #expect(NetworkInterfaceDraft(creating: .ovsBridge, existing: existing).name == "vmbr0")
+        let newBond = NetworkInterfaceDraft(creating: .ovsBond, existing: existing)
+        #expect(newBond.name == "bond0" && newBond.bondMode == "active-backup" && newBond.ovsBridge == "vmbr9")
+
+        // Ports and bonds have no autostart; bonds no addresses.
+        var port = NetworkInterfaceDraft(creating: .ovsIntPort, existing: existing)
+        port.name = "mgmt"
+        port.cidr = "10.98.0.1/24"
+        port.ovsTag = "30"
+        #expect(PVE.createInterface(node: "pve", port).parameters.formEncoded
+            == "iface=mgmt&type=OVSIntPort&cidr=10.98.0.1%2F24&ovs_bridge=vmbr9&ovs_tag=30")
+        var bond = newBond
+        bond.ovsBonds = ["nic3"]
+        bond.cidr = "ignored"
+        bond.bondMode = "balance-slb"
+        #expect(PVE.createInterface(node: "pve", bond).parameters.formEncoded
+            == "iface=bond0&type=OVSBond&bond_mode=balance-slb&ovs_bonds=nic3&ovs_bridge=vmbr9")
+
+        let original = NetworkInterfaceDraft(try #require(interfaces.first { $0.name == "ovsint9" }))
+        #expect(original.ovsBridge == "vmbr9" && original.ovsTag == "20" && original.changes(from: original).isEmpty)
+        var edited = original
+        edited.ovsTag = ""
+        edited.ovsOptions = "vlan_mode=native-untagged"
+        let update = edited.changes(from: original)
+        #expect(update.values == ["ovs_options": "vlan_mode=native-untagged"] && update.deletions == ["ovs_tag"])
+
+        var bridge = NetworkInterfaceDraft(try #require(interfaces.first { $0.name == "vmbr9" }))
+        #expect(bridge.ovsPorts == ["ovsint9", "bond9"])
+        bridge.ovsPorts.append("nic1")
+        #expect(bridge.changes(from: NetworkInterfaceDraft(interfaces[0])).values == ["ovs_ports": "ovsint9 bond9 nic1"])
+
+        let network = try JSONDecoder().decode(NetworkConfiguration.self, from: Data(#"{"data": \#(json)}"#.utf8))
+        #expect(network.ovsBridges == ["vmbr9"])
+        #expect(network.freeInterfaces(types: ["eth"]) == ["nic3"])
+
+        var invalid = NetworkInterfaceDraft(creating: .ovsIntPort, existing: [])
+        invalid.name = "p1"
+        invalid.ovsTag = "5000"
+        #expect(invalid.problems.keys.sorted() == ["ovs_bridge", "ovs_tag"])
+    }
+
     @Test func problems() {
         var draft = NetworkInterfaceDraft(creating: .bridge, existing: [])
         #expect(draft.problems.isEmpty)

@@ -134,31 +134,52 @@ public struct NetworkConfiguration: EnvelopeDecodable, Sendable, Equatable {
     }
 
     /// Interfaces that can be a bridge port or bond member: physical ones, bonds and VLANs not used elsewhere.
-    public func freeInterfaces(excluding name: String? = nil) -> [String] {
-        let used = Set(interfaces.filter { $0.name != name }.flatMap { $0.bridgePorts + $0.bondSlaves })
+    /// OVS bonds only take physical interfaces.
+    public func freeInterfaces(excluding name: String? = nil, types: Set<String> = ["eth", "bond", "vlan"]) -> [String] {
+        let used = Set(interfaces.filter { $0.name != name }.flatMap { $0.bridgePorts + $0.bondSlaves + $0.ovsPorts + $0.ovsBonds })
         return interfaces
-            .filter { ["eth", "bond", "vlan"].contains($0.type) && $0.name != name && !used.contains($0.name) }
+            .filter { types.contains($0.type) && $0.name != name && !used.contains($0.name) }
             .map(\.name)
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// Open vSwitch bridges, for the bridge of an OVS port or bond.
+    public var ovsBridges: [String] {
+        interfaces.filter { $0.type == "OVSBridge" }.map(\.name).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 }
 
 /// Bonding modes of Linux bonds, in the order of the web interface.
 public enum BondMode {
     public static let all = ["balance-rr", "active-backup", "balance-xor", "broadcast", "802.3ad", "balance-tlb", "balance-alb"]
+    /// Modes of Open vSwitch bonds.
+    public static let openVSwitch = ["active-backup", "balance-slb", "lacp-balance-slb", "lacp-balance-tcp"]
     public static let hashPolicies = ["layer2", "layer2+3", "layer3+4"]
 
     public static func usesHashPolicy(_ mode: String) -> Bool { mode == "balance-xor" || mode == "802.3ad" }
+
+    /// The names the web interface shows.
+    public static func title(_ mode: String) -> String {
+        switch mode {
+        case "802.3ad": "LACP (802.3ad)"
+        case "lacp-balance-slb": "LACP (balance-slb)"
+        case "lacp-balance-tcp": "LACP (balance-tcp)"
+        default: mode
+        }
+    }
 }
 
 /// The settings of one interface as a form. Like `OptionsDraft`, it serializes the same way as the interface it
 /// was made from, so an update sends only what the user changed, plus `delete` for cleared settings.
 public struct NetworkInterfaceDraft: Equatable, Sendable {
-    /// Linux interface types that can be created.
+    /// Interface types that can be created, as in the web interface's Create menu. Open vSwitch ones need the
+    /// openvswitch-switch package on the node.
     public enum Kind: String, CaseIterable, Sendable, Identifiable {
         case bridge, bond, vlan
+        case ovsBridge = "OVSBridge", ovsBond = "OVSBond", ovsIntPort = "OVSIntPort"
 
         public var id: String { rawValue }
+        public var isOVS: Bool { rawValue.hasPrefix("OVS") }
     }
 
     public var type: String
@@ -179,16 +200,30 @@ public struct NetworkInterfaceDraft: Equatable, Sendable {
     public var hashPolicy = ""
     public var vlanRawDevice = ""
     public var vlanID = ""
+    /// Open vSwitch: a bridge's ports, a bond's members, the bridge of a port or bond, its VLAN tag and options.
+    public var ovsPorts: [String] = []
+    public var ovsBonds: [String] = []
+    public var ovsBridge = ""
+    public var ovsTag = ""
+    public var ovsOptions = ""
 
     /// A new interface with the web interface's defaults and the first free name, e.g. `vmbr1`.
     public init(creating kind: Kind, existing: [NetworkInterface]) {
         type = kind.rawValue
-        let prefix = kind == .bridge ? "vmbr" : kind == .bond ? "bond" : ""
+        let prefix = switch kind {
+        case .bridge, .ovsBridge: "vmbr"
+        case .bond, .ovsBond: "bond"
+        case .vlan, .ovsIntPort: ""
+        }
         if prefix.isEmpty {
             name = ""
         } else {
             let names = Set(existing.map(\.name))
             name = prefix + String((0...).first { !names.contains("\(prefix)\($0)") }!)
+        }
+        if kind == .ovsBond { bondMode = "active-backup" }
+        if kind == .ovsBond || kind == .ovsIntPort {
+            ovsBridge = existing.filter { $0.type == "OVSBridge" }.map(\.name).sorted { $0.localizedStandardCompare($1) == .orderedAscending }.first ?? ""
         }
     }
 
@@ -211,6 +246,11 @@ public struct NetworkInterfaceDraft: Equatable, Sendable {
         hashPolicy = interface.bondHashPolicy ?? ""
         vlanRawDevice = interface.vlanRawDevice ?? ""
         vlanID = interface.vlanID.map(String.init) ?? ""
+        ovsPorts = interface.ovsPorts
+        ovsBonds = interface.ovsBonds
+        ovsBridge = interface.ovsBridge ?? ""
+        ovsTag = interface.ovsTag.map(String.init) ?? ""
+        ovsOptions = interface.ovsOptions ?? ""
     }
 
     /// `vmbr0.20` style names carry the parent and VLAN ID themselves.
@@ -222,6 +262,14 @@ public struct NetworkInterfaceDraft: Equatable, Sendable {
     public var isBridge: Bool { type == "bridge" }
     public var isBond: Bool { type == "bond" }
     public var isVLAN: Bool { type == "vlan" }
+    public var isOVSBridge: Bool { type == "OVSBridge" }
+    public var isOVSBond: Bool { type == "OVSBond" }
+    /// Internal ports carry the node's own addresses on an OVS bridge; plain ports are interfaces attached to one.
+    public var isOVSPort: Bool { type == "OVSIntPort" || type == "OVSPort" }
+    /// OVS ports and bonds belong to a bridge and come up with it, so they have no autostart setting.
+    public var hasAutostart: Bool { !(isOVSPort || isOVSBond) }
+    /// OVS bonds only carry traffic of their bridge.
+    public var hasAddresses: Bool { !isOVSBond }
 
     private static func trimmed(_ text: String) -> String? {
         let value = text.trimmingCharacters(in: .whitespaces)
@@ -231,15 +279,17 @@ public struct NetworkInterfaceDraft: Equatable, Sendable {
     /// The settings this form manages; nil means "not set".
     func serialized() -> [String: String?] {
         var values: [String: String?] = [
-            "autostart": autostart ? "1" : nil,
-            "cidr": Self.trimmed(cidr),
-            "gateway": Self.trimmed(gateway),
-            "cidr6": Self.trimmed(cidr6),
-            "gateway6": Self.trimmed(gateway6),
             "mtu": Self.trimmed(mtu),
             "comments": Self.trimmed(comments),
         ]
         // updateValue keeps nil values, which mark settings to delete; assigning nil would drop the key.
+        if hasAutostart { values.updateValue(autostart ? "1" : nil, forKey: "autostart") }
+        if hasAddresses {
+            values.updateValue(Self.trimmed(cidr), forKey: "cidr")
+            values.updateValue(Self.trimmed(gateway), forKey: "gateway")
+            values.updateValue(Self.trimmed(cidr6), forKey: "cidr6")
+            values.updateValue(Self.trimmed(gateway6), forKey: "gateway6")
+        }
         if isBridge {
             values.updateValue(bridgePorts.isEmpty ? nil : bridgePorts.joined(separator: " "), forKey: "bridge_ports")
             values.updateValue(vlanAware ? "1" : nil, forKey: "bridge_vlan_aware")
@@ -254,6 +304,20 @@ public struct NetworkInterfaceDraft: Equatable, Sendable {
         if isVLAN, !namesVLAN {
             values.updateValue(Self.trimmed(vlanRawDevice), forKey: "vlan-raw-device")
             values.updateValue(Self.trimmed(vlanID), forKey: "vlan-id")
+        }
+        if isOVSBridge {
+            values.updateValue(ovsPorts.isEmpty ? nil : ovsPorts.joined(separator: " "), forKey: "ovs_ports")
+        }
+        if isOVSPort || isOVSBond {
+            values.updateValue(Self.trimmed(ovsBridge), forKey: "ovs_bridge")
+            values.updateValue(Self.trimmed(ovsTag), forKey: "ovs_tag")
+        }
+        if isOVSBond {
+            values.updateValue(bondMode, forKey: "bond_mode")
+            values.updateValue(ovsBonds.isEmpty ? nil : ovsBonds.joined(separator: " "), forKey: "ovs_bonds")
+        }
+        if isOVSBridge || isOVSPort || isOVSBond {
+            values.updateValue(Self.trimmed(ovsOptions), forKey: "ovs_options")
         }
         return values
     }
@@ -299,6 +363,12 @@ public struct NetworkInterfaceDraft: Equatable, Sendable {
             if let value = Self.trimmed(value), !value.contains("/") {
                 problems[key] = String(localized: "Include the prefix length, e.g. /24.")
             }
+        }
+        if (isOVSPort || isOVSBond), Self.trimmed(ovsBridge) == nil {
+            problems["ovs_bridge"] = String(localized: "Choose an OVS bridge.")
+        }
+        if let tag = Self.trimmed(ovsTag), !(Int(tag).map { (1...4094).contains($0) } ?? false) {
+            problems["ovs_tag"] = String(localized: "Enter a VLAN ID from 1 to 4094.")
         }
         if isVLAN, !namesVLAN {
             if Self.trimmed(vlanRawDevice) == nil {

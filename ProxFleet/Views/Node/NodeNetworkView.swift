@@ -19,6 +19,7 @@ struct NodeNetworkView: View {
         ("Bridges", ["bridge", "OVSBridge"]),
         ("Bonds", ["bond", "OVSBond"]),
         ("VLANs", ["vlan"]),
+        ("OVS Ports", ["OVSIntPort", "OVSPort"]),
         ("Physical Interfaces", ["eth"]),
     ]
 
@@ -56,8 +57,18 @@ struct NodeNetworkView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    ForEach(NetworkInterfaceDraft.Kind.allCases) { kind in
-                        Button(kind.title, systemImage: kind.systemImage) { creating = kind }
+                    Section {
+                        ForEach(NetworkInterfaceDraft.Kind.allCases.filter { !$0.isOVS }) { kind in
+                            Button(kind.title, systemImage: kind.systemImage) { creating = kind }
+                                .accessibilityIdentifier("network.add.\(kind.rawValue)")
+                        }
+                    }
+                    Section("Open vSwitch") {
+                        ForEach(NetworkInterfaceDraft.Kind.allCases.filter(\.isOVS)) { kind in
+                            Button(kind.title, systemImage: kind.systemImage) { creating = kind }
+                                .disabled(kind != .ovsBridge && detail.network?.ovsBridges.isEmpty != false)
+                                .accessibilityIdentifier("network.add.\(kind.rawValue)")
+                        }
                     }
                 } label: {
                     Label("Create", systemImage: "plus")
@@ -195,9 +206,10 @@ private struct NetworkInterfaceRow: View {
         var parts: [String] = [interface.typeTitle]
         if let cidr = interface.cidr { parts.append(cidr) }
         if let cidr6 = interface.cidr6 { parts.append(cidr6) }
-        let members = interface.bridgePorts + interface.bondSlaves
+        let members = interface.bridgePorts + interface.bondSlaves + interface.ovsPorts + interface.ovsBonds
         if !members.isEmpty { parts.append(members.joined(separator: ", ")) }
-        if let parent = interface.vlanRawDevice { parts.append(String(localized: "on \(parent)")) }
+        if let parent = interface.vlanRawDevice ?? interface.ovsBridge { parts.append(String(localized: "on \(parent)")) }
+        if let tag = interface.ovsTag { parts.append(String(localized: "Tag \(tag)")) }
         if interface.bridgeVLANAware { parts.append(String(localized: "VLAN aware")) }
         return parts.joined(separator: " · ")
     }
@@ -225,6 +237,7 @@ extension NetworkInterface {
         case "bridge", "OVSBridge": "point.3.connected.trianglepath.dotted"
         case "bond", "OVSBond": "link"
         case "vlan": "tag"
+        case "OVSIntPort", "OVSPort": "powerplug"
         default: "network"
         }
     }
@@ -236,14 +249,18 @@ extension NetworkInterfaceDraft.Kind {
         case .bridge: "Linux Bridge"
         case .bond: "Linux Bond"
         case .vlan: "Linux VLAN"
+        case .ovsBridge: "OVS Bridge"
+        case .ovsBond: "OVS Bond"
+        case .ovsIntPort: "OVS IntPort"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .bridge: "point.3.connected.trianglepath.dotted"
-        case .bond: "link"
+        case .bridge, .ovsBridge: "point.3.connected.trianglepath.dotted"
+        case .bond, .ovsBond: "link"
         case .vlan: "tag"
+        case .ovsIntPort: "powerplug"
         }
     }
 }
@@ -295,7 +312,7 @@ struct NetworkInterfaceEditor: View {
     let isNew: Bool
     var interface: NetworkInterface?
     let original: NetworkInterfaceDraft
-    @State private var draft: NetworkInterfaceDraft
+    @State fileprivate var draft: NetworkInterfaceDraft
     @Environment(\.dismiss) private var dismiss
 
     init(detail: NodeDetail, draft: NetworkInterfaceDraft, isNew: Bool, interface: NetworkInterface? = nil) {
@@ -306,7 +323,7 @@ struct NetworkInterfaceEditor: View {
         _draft = State(initialValue: draft)
     }
 
-    private var network: NetworkConfiguration? { detail.network }
+    fileprivate var network: NetworkConfiguration? { detail.network }
 
     var body: some View {
         NodeSettingsForm(title: isNew ? "New \(typeTitle)" : LocalizedStringKey(draft.name), detail: detail, hasChanges: isNew || draft != original, problems: draft.problems) { () throws(ConfigUpdateError) in
@@ -322,22 +339,23 @@ struct NetworkInterfaceEditor: View {
             if draft.isBridge { bridgeSection(errors) }
             if draft.isBond { bondSection(errors) }
             if draft.isVLAN { vlanSection(errors) }
-            addressSections(errors)
+            if draft.isOVSBridge { ovsBridgeSection(errors) }
+            if draft.isOVSBond { ovsBondSection(errors) }
+            if draft.isOVSPort || draft.isOVSBond { ovsPortSection(errors) }
+            if draft.hasAddresses { addressSections(errors) }
             Section {
                 LabeledTextField(title: "MTU", prompt: "1500", text: $draft.mtu, keyboard: .numberPad, identifier: "interface.mtu")
                 FieldError(message: errors["mtu"])
             } footer: {
                 Text("Leave empty for the default.")
             }
-            if let interface, interface.isOVS {
-                Section {
-                } footer: {
-                    Text("Open vSwitch ports, bonds and options can be changed in the web interface.")
-                }
-            }
             Section {
             } footer: {
-                Text("Changes take effect when you apply the configuration in the network list.")
+                if NetworkInterfaceDraft.Kind(rawValue: draft.type)?.isOVS == true || draft.type == "OVSPort" {
+                    Text("Changes take effect when you apply the configuration in the network list. Open vSwitch interfaces need the openvswitch-switch package on the node.")
+                } else {
+                    Text("Changes take effect when you apply the configuration in the network list.")
+                }
             }
         }
         .toolbar {
@@ -366,7 +384,9 @@ struct NetworkInterfaceEditor: View {
                 }
                 LabeledContent("Active", value: interface.isActive ? String(localized: "Yes") : String(localized: "No"))
             }
-            Toggle("Autostart", isOn: $draft.autostart)
+            if draft.hasAutostart {
+                Toggle("Autostart", isOn: $draft.autostart)
+            }
             LabeledContent("Comment") {
                 TextField("Comment", text: $draft.comments, prompt: Text("None"))
                     .multilineTextAlignment(.trailing)
@@ -396,8 +416,8 @@ struct NetworkInterfaceEditor: View {
     }
 
     /// Interfaces that can be added as ports or members, plus the ones already chosen.
-    private func candidates(chosen: [String]) -> [String] {
-        let free = network?.freeInterfaces(excluding: draft.name) ?? []
+    fileprivate func candidates(chosen: [String], types: Set<String> = ["eth", "bond", "vlan"]) -> [String] {
+        let free = network?.freeInterfaces(excluding: draft.name, types: types) ?? []
         return (chosen + free.filter { !chosen.contains($0) }).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
@@ -427,7 +447,7 @@ struct NetworkInterfaceEditor: View {
     private func bondSection(_ errors: [String: String]) -> some View {
         Section {
             Picker("Mode", selection: $draft.bondMode) {
-                ForEach(BondMode.all, id: \.self) { Text($0).tag($0) }
+                ForEach(BondMode.all, id: \.self) { Text(BondMode.title($0)).tag($0) }
             }
             if BondMode.usesHashPolicy(draft.bondMode) {
                 Picker("Hash Policy", selection: $draft.hashPolicy) {
@@ -477,12 +497,85 @@ struct NetworkInterfaceEditor: View {
     }
 }
 
+extension NetworkInterfaceEditor {
+    @ViewBuilder
+    fileprivate func ovsBridgeSection(_ errors: [String: String]) -> some View {
+        Section {
+            MemberPicker(candidates: candidates(chosen: draft.ovsPorts), selection: $draft.ovsPorts)
+            FieldError(message: errors["ovs_ports"])
+        } header: {
+            Text("Bridge Ports")
+        } footer: {
+            Text("OVS bonds and internal ports join their bridge on their own when they are created.")
+        }
+        ovsOptionsSection(errors)
+    }
+
+    @ViewBuilder
+    fileprivate func ovsBondSection(_ errors: [String: String]) -> some View {
+        Section {
+            Picker("Mode", selection: $draft.bondMode) {
+                ForEach(BondMode.openVSwitch, id: \.self) { Text(BondMode.title($0)).tag($0) }
+            }
+            .accessibilityIdentifier("interface.bondMode")
+            FieldError(message: errors["bond_mode"])
+        } header: {
+            Text("Bond")
+        } footer: {
+            Text("LACP modes need a matching setup on the switch.")
+        }
+        Section("Members") {
+            MemberPicker(candidates: candidates(chosen: draft.ovsBonds, types: ["eth"]), selection: $draft.ovsBonds)
+            FieldError(message: errors["ovs_bonds"])
+        }
+    }
+
+    /// The bridge, VLAN tag and options of an OVS port or bond.
+    @ViewBuilder
+    fileprivate func ovsPortSection(_ errors: [String: String]) -> some View {
+        Section {
+            if isNew {
+                Picker("OVS Bridge", selection: $draft.ovsBridge) {
+                    if draft.ovsBridge.isEmpty { Text("Choose").tag("") }
+                    ForEach(network?.ovsBridges ?? [], id: \.self) { Text($0).tag($0) }
+                }
+                .accessibilityIdentifier("interface.ovsBridge")
+            } else {
+                LabeledContent("OVS Bridge", value: draft.ovsBridge)
+            }
+            FieldError(message: errors["ovs_bridge"])
+            LabeledTextField(title: "VLAN Tag", prompt: "None", text: $draft.ovsTag, keyboard: .numberPad, identifier: "interface.ovsTag")
+            FieldError(message: errors["ovs_tag"])
+        } header: {
+            Text("Open vSwitch")
+        } footer: {
+            Text(draft.isOVSBond ? "Traffic of the bond is tagged with this VLAN on the bridge." : "An internal port gives the node an address on the OVS bridge, optionally in a VLAN.")
+        }
+        ovsOptionsSection(errors)
+    }
+
+    @ViewBuilder
+    private func ovsOptionsSection(_ errors: [String: String]) -> some View {
+        Section {
+            LabeledTextField(title: "OVS Options", prompt: "None", text: $draft.ovsOptions, identifier: "interface.ovsOptions")
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            FieldError(message: errors["ovs_options"])
+        } footer: {
+            Text("Extra settings passed to ovs-vsctl, such as other_config:rstp-enable=true.")
+        }
+    }
+}
+
 extension NetworkInterfaceDraft.Kind {
     var titleResource: LocalizedStringResource {
         switch self {
         case .bridge: "Linux Bridge"
         case .bond: "Linux Bond"
         case .vlan: "Linux VLAN"
+        case .ovsBridge: "OVS Bridge"
+        case .ovsBond: "OVS Bond"
+        case .ovsIntPort: "OVS IntPort"
         }
     }
 }

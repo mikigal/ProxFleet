@@ -8,7 +8,7 @@ struct DemoInterface: Sendable, Equatable {
     var name: String { values["iface"] ?? "" }
     var type: String { values["type"] ?? "" }
     var members: [String] {
-        ["bridge_ports", "slaves"].flatMap { (values[$0] ?? "").split(separator: " ").map(String.init) }
+        ["bridge_ports", "slaves", "ovs_ports", "ovs_bonds"].flatMap { (values[$0] ?? "").split(separator: " ").map(String.init) }
     }
 
     /// The stanza as ifupdown2 writes it, for the diff of pending changes.
@@ -21,9 +21,18 @@ struct DemoInterface: Sendable, Equatable {
             ("bridge_vids", "bridge-vids"), ("slaves", "bond-slaves"), ("bond_mode", "bond-mode"), ("bond-primary", "bond-primary"),
             ("bond_xmit_hash_policy", "bond-xmit-hash-policy"), ("vlan-raw-device", "vlan-raw-device"), ("vlan-id", "vlan-id"), ("mtu", "mtu"),
         ]
-        for (key, option) in keys {
+        for (key, option) in keys where !type.hasPrefix("OVS") || key == "cidr" || key == "gateway" || key == "mtu" {
             guard let value = values[key] else { continue }
             lines.append("\t\(option) \(key == "bridge_vlan_aware" ? "yes" : value)")
+        }
+        if type.hasPrefix("OVS") {
+            // Proxmox folds the tag and bond mode into ovs_options.
+            let options = [values["bond_mode"].map { "bond_mode=\($0)" }, values["ovs_tag"].map { "tag=\($0)" }, values["ovs_options"]].compactMap { $0 }
+            lines.append("\tovs_type \(type)")
+            for (key, option) in [("ovs_bridge", "ovs_bridge"), ("ovs_ports", "ovs_ports"), ("ovs_bonds", "ovs_bonds")] {
+                if let value = values[key] { lines.append("\t\(option) \(value)") }
+            }
+            if !options.isEmpty { lines.append("\tovs_options \(options.joined(separator: " "))") }
         }
         if type == "bridge" {
             if values["bridge_ports"] == nil { lines.append("\tbridge-ports none") }
@@ -42,7 +51,9 @@ extension DemoState {
     private static let configKeys: Set<String> = [
         "autostart", "cidr", "gateway", "cidr6", "gateway6", "mtu", "comments", "bridge_ports", "bridge_vlan_aware", "bridge_vids",
         "slaves", "bond_mode", "bond-primary", "bond_xmit_hash_policy", "vlan-raw-device", "vlan-id",
+        "ovs_ports", "ovs_bonds", "ovs_bridge", "ovs_tag", "ovs_options",
     ]
+    private static let creatableTypes: Set<String> = ["bridge", "bond", "vlan", "OVSBridge", "OVSBond", "OVSIntPort"]
 
     /// Routes for `dns`, `hosts`, `time` and `network` below `/nodes/{node}`. nil for other paths.
     func handleNodeSystem(_ method: HTTPMethod, node: String, rest: [String], parameters: [String: String], user: String) -> HTTPResponse? {
@@ -96,6 +107,12 @@ extension DemoState {
             var interfaces = pendingNetwork(node)
             guard let index = interfaces.firstIndex(where: { $0.name == path[1] }) else { return failure(500, "interface does not exist") }
             interfaces.remove(at: index)
+            // Proxmox drops a removed OVS port or bond from its bridge.
+            for other in interfaces.indices {
+                guard let ports = interfaces[other].values["ovs_ports"] else { continue }
+                let remaining = ports.split(separator: " ").filter { $0 != path[1] }
+                interfaces[other].values["ovs_ports"] = remaining.isEmpty ? nil : remaining.joined(separator: " ")
+            }
             pendingNetworks[node] = interfaces
             return success(nil)
         case (.put, ["network"]):
@@ -208,13 +225,21 @@ extension DemoState {
 
     private func createInterface(node: String, parameters: [String: String]) -> HTTPResponse {
         guard let name = parameters["iface"], !name.isEmpty else { return fieldFailure(["iface": "property is missing and it is not optional"]) }
-        guard let type = parameters["type"], ["bridge", "bond", "vlan"].contains(type) else {
+        guard let type = parameters["type"], Self.creatableTypes.contains(type) else {
             return fieldFailure(["type": "value is not supported in demo mode"])
         }
         var interfaces = pendingNetwork(node)
         guard !interfaces.contains(where: { $0.name == name }) else { return fieldFailure(["iface": "Interface '\(name)' already exists"]) }
         var interface = DemoInterface(values: ["iface": name, "type": type])
         for (key, value) in parameters where Self.configKeys.contains(key) { interface.values[key] = value }
+        if type.hasPrefix("OVS") { interface.values["autostart"] = "1" }
+        if type == "OVSBond" || type == "OVSIntPort" {
+            // Proxmox adds the port to its bridge.
+            guard let bridge = interface.values["ovs_bridge"], let index = interfaces.firstIndex(where: { $0.name == bridge && $0.type == "OVSBridge" }) else {
+                return fieldFailure(["ovs_bridge": "Bridge '\(interface.values["ovs_bridge"] ?? "")' does not exist."])
+            }
+            interfaces[index].values["ovs_ports"] = ((interfaces[index].values["ovs_ports"].map { [$0] } ?? []) + [name]).joined(separator: " ")
+        }
         if let error = validate(interface, in: interfaces) { return error }
         interfaces.append(interface)
         pendingNetworks[node] = interfaces
@@ -240,7 +265,12 @@ extension DemoState {
         if interface.values["gateway"] != nil, let owner = others.first(where: { $0.values["gateway"] != nil }) {
             return fieldFailure(["gateway": "Default gateway already exists on interface '\(owner.name)'."])
         }
-        let key = interface.type == "bond" ? "slaves" : "bridge_ports"
+        let key = switch interface.type {
+        case "bond": "slaves"
+        case "OVSBridge": "ovs_ports"
+        case "OVSBond": "ovs_bonds"
+        default: "bridge_ports"
+        }
         for member in interface.members {
             guard others.contains(where: { $0.name == member }) else { return fieldFailure([key: "No such interface '\(member)'."]) }
             if let owner = others.first(where: { $0.members.contains(member) }) {

@@ -225,6 +225,33 @@ struct NodeDetailTests {
         #expect(detail.network?.pendingChanges?.contains("-auto vmbr2") == true)
     }
 
+    @Test func openVSwitchPortsJoinTheirBridge() async throws {
+        let detail = NodeDetail(node: "pve1", connection: try await connection())
+        await detail.loadNetwork()
+        var bridge = NetworkInterfaceDraft(creating: .ovsBridge, existing: detail.network?.interfaces ?? [])
+        bridge.name = "vmbr5"
+        try await detail.createInterface(bridge)
+        var port = NetworkInterfaceDraft(creating: .ovsIntPort, existing: detail.network?.interfaces ?? [])
+        port.name = "mgmt5"
+        port.cidr = "10.55.0.1/24"
+        port.ovsTag = "55"
+        #expect(port.ovsBridge == "vmbr5")
+        try await detail.createInterface(port)
+        var bond = NetworkInterfaceDraft(creating: .ovsBond, existing: detail.network?.interfaces ?? [])
+        bond.ovsBonds = ["nic1"]
+        // nic1 is a port of vmbr1.
+        await #expect(throws: ConfigUpdateError.self) { try await detail.createInterface(bond) }
+
+        let network = try #require(detail.network)
+        #expect(network.interfaces.first { $0.name == "vmbr5" }?.ovsPorts == ["mgmt5"])
+        #expect(network.interfaces.first { $0.name == "mgmt5" }?.ovsTag == 55)
+        let pending = try #require(network.pendingChanges)
+        #expect(pending.contains("+\tovs_type OVSIntPort") && pending.contains("+\tovs_options tag=55"))
+
+        try await detail.deleteInterface("mgmt5")
+        #expect(detail.network?.interfaces.first { $0.name == "vmbr5" }?.ovsPorts == [])
+    }
+
     @Test func auditorCannotChangeSettings() async throws {
         let detail = NodeDetail(node: "pve1", connection: try await connection(username: "auditor"))
         await detail.loadSystemSettings()

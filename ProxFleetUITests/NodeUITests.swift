@@ -120,6 +120,50 @@ final class NodeUITests: XCTestCase {
     }
 
     @MainActor
+    func testOpenVSwitchBridgeAndInternalPort() {
+        app.launch()
+        openNode("pve1")
+        app.buttons["tab.more"].tap()
+        app.buttons["more.network"].tap()
+        XCTAssertTrue(app.buttons["interface.vmbr0"].waitForExistence(timeout: 10))
+
+        openAddMenu(showing: app.buttons["OVS Bridge"].firstMatch)
+        let options = app.textFields["interface.ovsOptions"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["interface.vmbr2"].waitForExistence(timeout: 10))
+
+        openAddMenu(showing: app.buttons["OVS IntPort"].firstMatch)
+        let name = app.textFields["interface.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("mgmt0")
+        XCTAssertTrue(app.buttons["interface.ovsBridge"].label.contains("vmbr2"))
+        let tag = app.textFields["interface.ovsTag"]
+        tag.tap()
+        tag.typeText("20")
+        let cidr = app.textFields["interface.cidr"]
+        cidr.tap()
+        cidr.typeText("10.20.0.1/24")
+        snapshot("57-node-new-ovs-port")
+        app.buttons["save"].tap()
+
+        let port = app.buttons["interface.mgmt0"]
+        XCTAssertTrue(port.waitForExistence(timeout: 10))
+        XCTAssertTrue(port.label.contains("on vmbr2") && port.label.contains("Tag 20"))
+        XCTAssertTrue(app.buttons["interface.vmbr2"].label.contains("mgmt0"))
+    }
+
+    /// Opens the Create menu, again if a closing sheet swallowed the tap, and picks an item.
+    private func openAddMenu(showing item: XCUIElement) {
+        for _ in 0..<5 where !item.exists {
+            app.buttons["network.add"].tap()
+            _ = item.waitForExistence(timeout: 2)
+        }
+        item.tap()
+    }
+
+    @MainActor
     func testDNSAndTimeZone() {
         app.launch()
         openNode("pve2")

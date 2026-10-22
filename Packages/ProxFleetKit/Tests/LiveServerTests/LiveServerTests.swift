@@ -982,6 +982,52 @@ struct LiveServerTests {
         #expect(try await session.send(PVE.network(node: node)).pendingChanges == nil)
     }
 
+    /// An OVS bridge without uplinks and an internal port with an address in a VLAN, applied to the node. Needs
+    /// openvswitch-switch on the node.
+    @Test(.timeLimit(.minutes(2))) func openVSwitch() async throws {
+        let (session, node) = try await rootSession()
+        let ovs = try await runOnNode(session, node: node, "dpkg-query -W -f='${Status}' openvswitch-switch")
+        try #require(ovs.output.contains("install ok installed"), "install openvswitch-switch on the node")
+        let before = try await session.send(PVE.network(node: node))
+        try #require(before.pendingChanges == nil, "the test server has unapplied network changes")
+
+        var bridge = NetworkInterfaceDraft(creating: .ovsBridge, existing: before.interfaces)
+        bridge.name = "vmbr96"
+        bridge.comments = "ProxFleet live test"
+        _ = try await session.send(PVE.createInterface(node: node, bridge))
+        var port = NetworkInterfaceDraft(creating: .ovsIntPort, existing: try await session.send(PVE.network(node: node)).interfaces)
+        port.name = "pfovs96"
+        port.cidr = "10.96.0.1/24"
+        port.ovsTag = "96"
+        #expect(port.ovsBridge == "vmbr96" && port.problems.isEmpty)
+        _ = try await session.send(PVE.createInterface(node: node, port))
+        let pending = try await session.send(PVE.network(node: node))
+        #expect(pending.interfaces.first { $0.name == "vmbr96" }?.ovsPorts == ["pfovs96"])
+        let created = try #require(pending.interfaces.first { $0.name == "pfovs96" })
+        #expect(created.ovsBridge == "vmbr96" && created.ovsTag == 96 && created.cidr == "10.96.0.1/24")
+
+        var edit = NetworkInterfaceDraft(created)
+        edit.ovsOptions = "vlan_mode=access"
+        _ = try await session.send(PVE.updateInterface(node: node, name: "pfovs96", type: "OVSIntPort", edit.changes(from: NetworkInterfaceDraft(created))))
+        let edited = try #require(try await session.send(PVE.network(node: node)).interfaces.first { $0.name == "pfovs96" })
+        #expect(edited.ovsOptions == "vlan_mode=access" && edited.ovsTag == 96)
+
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+        let applied = try await session.send(PVE.network(node: node))
+        #expect(applied.pendingChanges == nil)
+        #expect(applied.interfaces.first { $0.name == "pfovs96" }?.isActive == true)
+        let switchState = try await runOnNode(session, node: node, "ovs-vsctl list-ports vmbr96; ip -color=never -br addr show pfovs96")
+        #expect(switchState.output.contains("pfovs96") && switchState.output.contains("10.96.0.1/24"), "\(switchState.output)")
+
+        _ = try await session.send(PVE.deleteInterface(node: node, name: "pfovs96"))
+        #expect(try await session.send(PVE.network(node: node)).interfaces.first { $0.name == "vmbr96" }?.ovsPorts == [])
+        _ = try await session.send(PVE.deleteInterface(node: node, name: "vmbr96"))
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+        let after = try await session.send(PVE.network(node: node))
+        #expect(after.pendingChanges == nil && !after.interfaces.contains { $0.name == "vmbr96" || $0.name == "pfovs96" })
+        #expect(try await runOnNode(session, node: node, "ovs-vsctl br-exists vmbr96").status == 2)
+    }
+
     /// Disks, SMART and the storage panels. Read only: the test server has no spare disk.
     @Test func nodeDisks() async throws {
         let (session, node) = try await rootSession()
