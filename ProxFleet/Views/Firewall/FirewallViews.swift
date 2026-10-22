@@ -120,6 +120,11 @@ struct FirewallView: View {
                     ? String(localized: "Rules only apply to network devices with the firewall option, which \(unprotected.formatted(.list(type: .and))) lacks.")
                     : nil,
             ].compactMap { $0 }
+        case .vnet:
+            [
+                firewall.isDatacenterEnabled == false ? String(localized: "The datacenter firewall is off, so nothing is filtered here.") : nil,
+                String(localized: "Filters traffic forwarded through this VNet's bridge, between its guests and to other networks. Needs the nftables firewall on the nodes."),
+            ].compactMap { $0 }
         case .group:
             []
         }

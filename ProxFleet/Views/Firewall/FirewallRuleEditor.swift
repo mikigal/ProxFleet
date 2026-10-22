@@ -18,7 +18,11 @@ struct FirewallRuleEditor: View {
     init(firewall: Firewall, rule: FirewallRule?) {
         self.firewall = firewall
         self.rule = rule
-        let draft = rule.map(FirewallRuleDraft.init) ?? FirewallRuleDraft()
+        var draft = rule.map(FirewallRuleDraft.init) ?? FirewallRuleDraft()
+        // VNets only have forward rules.
+        if rule == nil, let first = firewall.scope.directions.first, !firewall.scope.directions.contains(where: { $0.rawValue == draft.type }) {
+            draft.type = first.rawValue
+        }
         original = draft
         _draft = State(initialValue: draft)
     }

@@ -1903,6 +1903,158 @@ struct LiveServerTests {
         _ = try await session.send(PVE.deleteGroup("pflive-pool"))
     }
 
+    /// Runs a command in the node's shell and returns its output, which ends before the exit status.
+    private func runOnNode(_ session: ProxmoxSession, node: String, _ command: String, timeout: TimeInterval = 30) async throws -> (output: String, status: Int?) {
+        let terminal = try await TerminalConnection.open(.node(node), session: session)
+        defer { terminal.close() }
+        try await terminal.resize(columns: 200, rows: 50)
+        let marker = "PFDONE\(Int.random(in: 100_000...999_999))"
+        // The marker is split in the command line, so only the command's own echo matches it.
+        try await terminal.send("{ \(command) ; } 2>&1; echo \"\(marker.prefix(3))\"\"\(marker.dropFirst(3))-$?\"\n")
+        var text = ""
+        let deadline = Date().addingTimeInterval(timeout)
+        for try await chunk in terminal.output {
+            text += String(decoding: chunk, as: UTF8.self)
+            if text.range(of: "\(marker)-\\d+", options: .regularExpression) != nil || Date() > deadline { break }
+        }
+        guard let range = text.range(of: "\(marker)-\\d+", options: .regularExpression) else { return (text, nil) }
+        return (String(text[..<range.lowerBound]), Int(text[range].split(separator: "-").last ?? ""))
+    }
+
+    /// A VLAN zone that is rolled back, then a simple zone with DHCP, a VNet, a subnet with ranges and a VNet
+    /// firewall, applied to the node; a VM's network device gets an address from the IPAM. Needs dnsmasq on the node.
+    @Test(.timeLimit(.minutes(3))) func sdn() async throws {
+        let (session, node) = try await rootSession()
+        try #require(try await !session.send(PVE.sdnZones()).contains { $0.id.hasPrefix("pf") }, "left over from an earlier run")
+        try #require(try await session.send(PVE.sdnZones()).allSatisfy { $0.state == nil }, "the server has pending SDN changes")
+        let dnsmasq = try await runOnNode(session, node: node, "dpkg-query -W -f='${Status}' dnsmasq")
+        try #require(dnsmasq.output.contains("install ok installed"), "install dnsmasq on the node for DHCP zones")
+
+        // Rolled back before anything is applied.
+        var vlanZone = SDNZoneDraft()
+        vlanZone.id = "pfvlan"
+        vlanZone.type = .vlan
+        vlanZone.bridge = "vmbr0"
+        #expect(vlanZone.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createSDNZone(vlanZone))
+        var vlanNet = SDNVNetDraft()
+        vlanNet.id = "pfvlnet"
+        vlanNet.zone = "pfvlan"
+        #expect(vlanNet.problems(isNew: true, zoneType: .vlan)["tag"] != nil)
+        vlanNet.tag = "30"
+        _ = try await session.send(PVE.createSDNVNet(vlanNet, zoneType: .vlan))
+        let pendingVLAN = try #require(try await session.send(PVE.sdnZones()).first { $0.id == "pfvlan" })
+        #expect(pendingVLAN.state == .new && pendingVLAN["bridge"] == "vmbr0" && pendingVLAN.running["bridge"] == nil)
+        #expect(try await session.send(PVE.sdnVNets()).first { $0.id == "pfvlnet" }?["tag"] == "30")
+        _ = try await session.send(PVE.rollbackSDN())
+        #expect(try await !session.send(PVE.sdnZones()).contains { $0.id == "pfvlan" })
+        #expect(try await !session.send(PVE.sdnVNets()).contains { $0.id == "pfvlnet" })
+
+        var zone = SDNZoneDraft()
+        zone.id = "pflive"
+        zone.mtu = "1450"
+        zone.automaticDHCP = true
+        #expect(zone.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createSDNZone(zone))
+        var vnet = SDNVNetDraft()
+        vnet.id = "pfnet"
+        vnet.zone = "pflive"
+        vnet.alias = "ProxFleet live test"
+        vnet.tag = "12"
+        #expect(vnet.problems(isNew: true, zoneType: .simple).isEmpty)
+        // The tag does not apply to simple zones and is not sent.
+        _ = try await session.send(PVE.createSDNVNet(vnet, zoneType: .simple))
+        var subnet = SDNSubnetDraft()
+        subnet.cidr = "10.77.0.0/24"
+        subnet.gateway = "10.77.0.1"
+        subnet.snat = true
+        subnet.ranges = [SDNDHCPRange(start: "10.77.0.100", end: "10.77.0.199")]
+        #expect(subnet.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createSDNSubnet(vnet: "pfnet", subnet))
+
+        let savedZone = try #require(try await session.send(PVE.sdnZones()).first { $0.id == "pflive" })
+        #expect(savedZone.state == .new && SDNZoneDraft(savedZone).automaticDHCP && SDNZoneDraft(savedZone).ipam == "pve")
+        let savedNet = try #require(try await session.send(PVE.sdnVNets()).first { $0.id == "pfnet" })
+        #expect(SDNVNetDraft(savedNet).alias == "ProxFleet live test" && savedNet["tag"] == nil)
+        let savedSubnet = try #require(try await session.send(PVE.sdnSubnets(vnet: "pfnet")).first)
+        #expect(savedSubnet["cidr"] == "10.77.0.0/24" && savedSubnet.ranges == subnet.ranges && savedSubnet.state == .new)
+        #expect(SDNSubnetDraft(savedSubnet).changes(from: SDNSubnetDraft(savedSubnet)).isEmpty)
+
+        let apply = try await session.send(PVE.applySDN())
+        #expect(try await finishTask(session, node: node, apply)?.succeeded == true)
+        #expect(try await session.send(PVE.sdnZoneStatus(node: node)).first { $0.zone == "pflive" }?.status == "available")
+        let applied = try #require(try await session.send(PVE.sdnSubnets(vnet: "pfnet")).first)
+        #expect(applied.state == nil && applied.runningRanges == subnet.ranges)
+        // dnsmasq may still be starting right after the task.
+        let bridge = try await runOnNode(session, node: node, """
+            for i in 1 2 3 4 5; do systemctl is-active --quiet dnsmasq@pflive && break; sleep 1; done; \
+            ip -br link show pfnet && systemctl is-active dnsmasq@pflive
+            """)
+        #expect(bridge.status == 0 && bridge.output.contains("pfnet"), "\(bridge.output)")
+
+        // Pending changes keep the applied values until the next Apply.
+        var editedSubnet = SDNSubnetDraft(applied)
+        let originalSubnet = editedSubnet
+        editedSubnet.ranges = [SDNDHCPRange(start: "10.77.0.50", end: "10.77.0.59"), SDNDHCPRange(start: "10.77.0.100", end: "10.77.0.199")]
+        editedSubnet.snat = false
+        editedSubnet.dnsZonePrefix = "lab"
+        _ = try await session.send(PVE.updateSDNSubnet(vnet: "pfnet", id: applied.id, editedSubnet.changes(from: originalSubnet)))
+        var editedNet = SDNVNetDraft(try #require(try await session.send(PVE.sdnVNets()).first { $0.id == "pfnet" }))
+        let originalNet = editedNet
+        editedNet.alias = ""
+        editedNet.isolatesPorts = true
+        _ = try await session.send(PVE.updateSDNVNet("pfnet", editedNet.changes(from: originalNet, zoneType: .simple)))
+        let changed = try #require(try await session.send(PVE.sdnSubnets(vnet: "pfnet")).first)
+        #expect(changed.state == .changed && changed.ranges.count == 2 && changed.runningRanges == subnet.ranges)
+        #expect(changed["snat"] == nil && changed.running["snat"] == "1" && changed["dnszoneprefix"] == "lab")
+        let changedNet = try #require(try await session.send(PVE.sdnVNets()).first { $0.id == "pfnet" })
+        #expect(changedNet.state == .changed && changedNet["alias"] == nil && changedNet["isolate-ports"] == "1")
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
+        #expect(try await session.send(PVE.sdnSubnets(vnet: "pfnet")).first?.runningRanges.count == 2)
+
+        // The VNet's firewall, with forward rules only.
+        let scope = FirewallScope.vnet("pfnet", zone: "pflive")
+        let options = try await session.send(PVE.firewallOptions(scope))
+        var optionsDraft = FirewallOptionsDraft(options, scope: scope)
+        let originalOptions = optionsDraft
+        optionsDraft.setFlag("enable", true)
+        optionsDraft.values["policy_forward"] = "DROP"
+        _ = try await session.send(PVE.updateFirewallOptions(scope, optionsDraft.changes(from: originalOptions)))
+        var rule = FirewallRuleDraft()
+        rule.type = "forward"
+        rule.macro = "SSH"
+        rule.comment = "pflive vnet"
+        _ = try await session.send(PVE.createFirewallRule(scope, rule))
+        let rules = try await session.send(PVE.firewallRules(scope))
+        #expect(rules.first?.type == "forward" && rules.first?.comment == "pflive vnet")
+        let savedOptions = try await session.send(PVE.firewallOptions(scope))
+        #expect(savedOptions.isEnabled(in: scope) && savedOptions.values["policy_forward"] == "DROP")
+        _ = try await session.send(PVE.deleteFirewallRule(scope, position: 0, digest: nil))
+        _ = try await session.send(PVE.updateFirewallOptions(scope, originalOptions.changes(from: FirewallOptionsDraft(savedOptions, scope: scope))))
+
+        // A network device on the VNet gets an address from the DHCP range when the VM starts.
+        let vm = GuestReference(node: node, vmid: 101, kind: .virtualMachine)
+        var attach = GuestConfigUpdate()
+        attach.set("net1", "model=virtio,bridge=pfnet")
+        _ = try await session.send(PVE.updateConfig(vm, attach))
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.powerAction(.start, on: vm)))?.succeeded == true)
+        let entries = try await session.send(PVE.ipamEntries("pve"))
+        let lease = entries.first { $0.vmid == 101 && $0.vnet == "pfnet" }
+        #expect(lease?.ip.hasPrefix("10.77.0.") == true && lease?.mac != nil, "\(entries)")
+        #expect(entries.contains { $0.isGateway && $0.ip == "10.77.0.1" })
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.powerAction(.stop, on: vm)))?.succeeded == true)
+        var detach = GuestConfigUpdate()
+        detach.set("net1", nil)
+        _ = try await session.send(PVE.updateConfig(vm, detach))
+
+        _ = try await session.send(PVE.deleteSDNSubnet(vnet: "pfnet", id: applied.id))
+        _ = try await session.send(PVE.deleteSDNVNet("pfnet"))
+        _ = try await session.send(PVE.deleteSDNZone("pflive"))
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
+        #expect(try await !session.send(PVE.sdnZones()).contains { $0.id == "pflive" })
+        #expect(try await session.send(PVE.sdnZoneStatus(node: node)).allSatisfy { $0.zone != "pflive" })
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()

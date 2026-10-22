@@ -8,6 +8,8 @@ public enum FirewallScope: Sendable, Hashable {
     case guest(GuestReference)
     /// The rules of a security group of the datacenter.
     case group(String)
+    /// An SDN VNet: forward rules for traffic between its guests and to other networks.
+    case vnet(String, zone: String)
 
     var basePath: String {
         switch self {
@@ -15,6 +17,7 @@ public enum FirewallScope: Sendable, Hashable {
         case .node(let node): "/nodes/\(node)/firewall"
         case .guest(let guest): guest.path + "/firewall"
         case .group(let name): "/cluster/firewall/groups/\(PVE.escapePath(name))"
+        case .vnet(let vnet, _): "/cluster/sdn/vnets/\(PVE.escapePath(vnet))/firewall"
         }
     }
 
@@ -34,7 +37,7 @@ public enum FirewallScope: Sendable, Hashable {
     public var hasAliasesAndIPSets: Bool {
         switch self {
         case .datacenter, .guest: true
-        case .node, .group: false
+        case .node, .group, .vnet: false
         }
     }
 
@@ -46,14 +49,17 @@ public enum FirewallScope: Sendable, Hashable {
     public var hasLog: Bool {
         switch self {
         case .node, .guest: true
-        case .datacenter, .group: false
+        case .datacenter, .group, .vnet: false
         }
     }
 
-    /// Directions the web interface offers here. Guests have no forward rules.
+    /// Directions the web interface offers here. Guests have no forward rules, VNets only those.
     public var directions: [FirewallRule.Direction] {
-        if case .guest = self { return [.in, .out] }
-        return [.in, .out, .forward]
+        switch self {
+        case .guest: [.in, .out]
+        case .vnet: [.forward]
+        default: [.in, .out, .forward]
+        }
     }
 
     /// The path whose privileges decide what the user may change.
@@ -62,13 +68,17 @@ public enum FirewallScope: Sendable, Hashable {
         case .datacenter, .group: "/"
         case .node(let node): "/nodes/\(node)"
         case .guest(let guest): guest.aclPath
+        case .vnet(let vnet, let zone): "/sdn/zones/\(zone)/\(vnet)"
         }
     }
 
     /// The privilege changes need on `aclPath`.
     public var modifyPrivilege: String {
-        if case .guest = self { return "VM.Config.Network" }
-        return "Sys.Modify"
+        switch self {
+        case .guest: "VM.Config.Network"
+        case .vnet: "SDN.Allocate"
+        default: "Sys.Modify"
+        }
     }
 }
 
@@ -463,6 +473,12 @@ public struct FirewallOptionSpec: Sendable, Equatable, Identifiable {
                       footer: String(localized: "Only lets the guest use its own addresses, or those of its ipfilter-net IP sets.")),
                 .init(key: "log_level_in", title: String(localized: "Log Level In"), kind: .choice(levels, default: "nolog")),
                 .init(key: "log_level_out", title: String(localized: "Log Level Out"), kind: .choice(levels, default: "nolog")),
+            ]
+        case .vnet:
+            return [
+                .init(key: "enable", title: String(localized: "Firewall"), kind: .flag(default: false)),
+                .init(key: "policy_forward", title: String(localized: "Forward Policy"), kind: .choice(["ACCEPT", "DROP"], default: "ACCEPT")),
+                .init(key: "log_level_forward", title: String(localized: "Log Level Forward"), kind: .choice(levels, default: "nolog")),
             ]
         case .group:
             return []

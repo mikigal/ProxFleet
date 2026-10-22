@@ -97,6 +97,10 @@ extension DemoState {
         } else if parts.count >= 3, parts[0] == "nodes", parts[2] == "firewall" {
             key = "node/\(parts[1])"
             rest = Array(parts.dropFirst(3))
+        } else if parts.count >= 5, parts[0] == "cluster", parts[1] == "sdn", parts[2] == "vnets", parts[4] == "firewall" {
+            guard sdn.vnets.contains(where: { $0.id == parts[3] }) else { return failure(500, "sdn vnet object '\(parts[3])' does not exist") }
+            key = "vnet/\(parts[3])"
+            rest = Array(parts.dropFirst(5))
         } else if parts.count >= 5, parts[0] == "nodes", ["qemu", "lxc"].contains(parts[2]), parts[4] == "firewall", let vmid = Int(parts[3]) {
             guard cluster.guests.contains(where: { $0.vmid == vmid }) else { return failure(500, "Configuration file 'nodes/\(parts[1])/\(parts[2])/\(vmid).conf' does not exist") }
             key = "guest/\(vmid)"
@@ -106,7 +110,7 @@ extension DemoState {
         }
         let isGuest = key.hasPrefix("guest/")
         if method != .get {
-            let needed = isGuest ? "VM.Config.Network" : "Sys.Modify"
+            let needed = isGuest ? "VM.Config.Network" : key.hasPrefix("vnet/") ? "SDN.Allocate" : "Sys.Modify"
             guard privileges(for: user).contains(needed) else {
                 let path = isGuest ? "/vms/\(key.dropFirst(6))" : key == "dc" ? "/" : "/nodes/\(key.dropFirst(5))"
                 return failure(403, "Permission check failed (\(path), \(needed))")

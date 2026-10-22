@@ -70,6 +70,7 @@ actor DemoState {
     var storageConfigs: [DemoStorageConfig]
     var backupJobs: [DemoBackupJob]
     var pools = DemoPool.sample
+    var sdn = DemoSDN.sample
     var access = DemoAccess.sample
     var notifications = DemoNotifications.sample
     var firewall: DemoFirewall

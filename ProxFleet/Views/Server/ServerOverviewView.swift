@@ -81,6 +81,12 @@ struct ServerOverviewView: View {
                     }
                     .accessibilityIdentifier("datacenter.firewall")
                     NavigationLink {
+                        SDNView(connection: connection)
+                    } label: {
+                        MoreRow(title: "SDN", systemImage: "point.3.connected.trianglepath.dotted", color: .green)
+                    }
+                    .accessibilityIdentifier("datacenter.sdn")
+                    NavigationLink {
                         NotificationsView(connection: connection)
                     } label: {
                         MoreRow(title: "Notifications", systemImage: "bell", color: .pink)
