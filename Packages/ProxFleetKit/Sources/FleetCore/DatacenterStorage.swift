@@ -41,17 +41,23 @@ public final class DatacenterStorage {
         if let privileges = await privileges { self.privileges = privileges }
     }
 
-    public func create(_ draft: StorageConfigDraft) async throws(ConfigUpdateError) {
-        try await perform(PVE.createStorage(draft))
+    /// Returns the encryption key Proxmox generated for a PBS storage, which it shows only this once.
+    @discardableResult
+    public func create(_ draft: StorageConfigDraft) async throws(ConfigUpdateError) -> String? {
+        let result = try await change(PVE.createStorage(draft))
         await reload()
+        return result?.encryptionKey
     }
 
-    /// Sends the changes with the digest of the configuration the form was opened with.
-    public func update(_ storage: String, _ update: GuestConfigUpdate, digest: String?) async throws(ConfigUpdateError) {
+    /// Sends the changes with the digest of the configuration the form was opened with. Returns a newly generated
+    /// PBS encryption key.
+    @discardableResult
+    public func update(_ storage: String, _ update: GuestConfigUpdate, digest: String?) async throws(ConfigUpdateError) -> String? {
         var update = update
         update.digest = digest
-        try await perform(PVE.updateStorage(storage, update))
+        let result = try await change(PVE.updateStorage(storage, update))
         await reload()
+        return result?.encryptionKey
     }
 
     public func delete(_ storage: String) async throws(ConfigUpdateError) {
@@ -67,6 +73,14 @@ public final class DatacenterStorage {
     private func reload() async {
         await load()
         await connection.refresh()
+    }
+
+    private func change(_ request: APIRequest<StorageChangeResult?>) async throws(ConfigUpdateError) -> StorageChangeResult? {
+        do {
+            return try await connection.session.send(request)
+        } catch {
+            throw ConfigUpdateError(error)
+        }
     }
 
     private func perform(_ request: APIRequest<Nothing>) async throws(ConfigUpdateError) {

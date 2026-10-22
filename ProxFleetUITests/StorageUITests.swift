@@ -36,8 +36,10 @@ final class StorageUITests: XCTestCase {
         snapshot("71-storage-download")
         app.buttons["download.start"].tap()
 
+        // The list sits below the usage history; scroll down once the download has finished.
         let fedora = app.descendants(matching: .any)["volume.fedora-server-43.iso"]
-        XCTAssertTrue(fedora.waitForExistence(timeout: 15))
+        for _ in 0..<15 where !fedora.waitForExistence(timeout: 1) { app.swipeUp() }
+        XCTAssertTrue(fedora.waitForExistence(timeout: 5))
         fedora.swipeLeft()
         app.buttons["Delete"].firstMatch.tap()
         let confirm = app.buttons["volume.delete.confirm"].firstMatch
@@ -56,9 +58,11 @@ final class StorageUITests: XCTestCase {
         app.buttons["tab.more"].tap()
         app.buttons["more.storage"].tap()
         app.buttons["storage.pve2.local-lvm"].tap()
-        XCTAssertTrue(app.staticTexts["VM Disks"].waitForExistence(timeout: 10))
+        // The content sits below the usage history.
         let disk = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'vm-103-disk-0'")).firstMatch
+        for _ in 0..<5 where !disk.waitForExistence(timeout: 2) { app.swipeUp() }
         XCTAssertTrue(disk.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["VM Disks"].exists)
         snapshot("72-storage-disks")
     }
 

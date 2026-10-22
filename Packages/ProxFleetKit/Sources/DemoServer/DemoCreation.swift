@@ -92,7 +92,7 @@ extension DemoState {
         cluster.guests.append(guest)
 
         // The configuration is what was sent, minus creation-only options, with disks allocated.
-        let creationOnly: Set<String> = ["vmid", "start", "pool", "password", "ssh-public-keys", "ostemplate", "storage"]
+        let creationOnly: Set<String> = ["vmid", "start", "pool", "password", "ssh-public-keys", "ostemplate", "storage", "import-working-storage", "live-restore"]
         createdConfigs[vmid] = [:]
         for key in parameters.keys.sorted() where !creationOnly.contains(key) {
             let value = allocateVolume(parameters[key]!, key: key, guest: guest)
@@ -104,7 +104,8 @@ extension DemoState {
             if createdConfigs[vmid]?["hostname"] == nil { createdConfigs[vmid]?["hostname"] = name }
         }
 
-        let start = parameters["start"] == "1"
+        // A live import starts the VM while its disks are imported.
+        let start = parameters["start"] == "1" || parameters["live-restore"] == "1"
         return startTask(node: node, type: isVM ? "qmcreate" : "vzcreate", objectID: String(vmid), user: user, duration: isVM ? 2 : 4) { guest in
             if start {
                 guest.isRunning = true

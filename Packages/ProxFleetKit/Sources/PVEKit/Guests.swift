@@ -102,6 +102,9 @@ public struct RRDPoint: Decodable, Sendable, Equatable, Identifiable {
     /// Nodes only: load average and the share of time spent waiting for I/O.
     public var loadAverage: Double?
     public var ioWait: Double?
+    /// Storages only: used and total bytes.
+    public var storageUsed: Double?
+    public var storageTotal: Double?
 
     public var id: Date { time }
 
@@ -129,6 +132,8 @@ public struct RRDPoint: Decodable, Sendable, Equatable, Identifiable {
         diskWrite = container.lossyDouble(AnyCodingKey("diskwrite"))
         loadAverage = container.lossyDouble(AnyCodingKey("loadavg"))
         ioWait = container.lossyDouble(AnyCodingKey("iowait"))
+        storageUsed = container.lossyDouble(AnyCodingKey("used"))
+        storageTotal = container.lossyDouble(AnyCodingKey("total"))
     }
 
     /// The first samples of a new guest carry only a timestamp.

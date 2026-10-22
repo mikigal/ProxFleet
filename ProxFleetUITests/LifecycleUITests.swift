@@ -134,8 +134,13 @@ final class LifecycleUITests: XCTestCase {
         let protected = app.switches["backup.protected"]
         XCTAssertTrue(protected.waitForExistence(timeout: 5))
         protected.switches.firstMatch.tap()
-        expectation(for: NSPredicate(format: "isEnabled == false"), evaluatedWith: app.buttons["backup.delete"])
+        // The form is disabled while the change is saved; wait until the switch shows the saved state.
+        expectation(for: NSPredicate(format: "value == '1' AND isEnabled == true"), evaluatedWith: protected)
         waitForExpectations(timeout: 10)
+        // Delete is below Restore and Prune.
+        app.swipeUp()
+        XCTAssertTrue(app.buttons["backup.delete"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["backup.delete"].isEnabled)
         protected.switches.firstMatch.tap()
         expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: app.buttons["backup.delete"])
         waitForExpectations(timeout: 10)

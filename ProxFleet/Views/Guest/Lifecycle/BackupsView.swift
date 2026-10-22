@@ -17,7 +17,7 @@ struct BackupsView: View {
                 Section {
                     ForEach(backups) { backup in
                         NavigationLink {
-                            BackupDetailView(detail: detail, backup: backup)
+                            BackupDetailView(source: detail, backup: backup, guest: detail)
                         } label: {
                             BackupRow(backup: backup)
                         }
@@ -94,7 +94,36 @@ struct BackupsView: View {
     }
 }
 
-private struct BackupRow: View {
+/// Where a backup screen finds the current state of a backup and runs its actions: a guest's backup list
+/// or the content of a storage.
+@MainActor
+protocol BackupSource: AnyObject {
+    var connection: ServerConnection { get }
+    /// The node whose storages hold the backups.
+    var backupNode: String { get }
+    func backup(withID id: String) -> BackupVolume?
+    func runBackupAction(_ request: APIRequest<String?>) async throws(ConfigUpdateError)
+}
+
+extension GuestDetail: BackupSource {
+    var backupNode: String { reference.node }
+    func backup(withID id: String) -> BackupVolume? { backups?.first { $0.volumeID == id } }
+}
+
+extension StorageDetail: BackupSource {
+    var backupNode: String { node }
+    func backup(withID id: String) -> BackupVolume? { backups?.first { $0.volumeID == id } }
+}
+
+extension BackupVolume {
+    /// The kind of guest the backup holds, from its subtype or its file name.
+    var guestKind: GuestKind {
+        if let subtype { return subtype == "lxc" ? .container : .virtualMachine }
+        return fileName.contains("-lxc-") || volumeID.contains("/ct/") ? .container : .virtualMachine
+    }
+}
+
+struct BackupRow: View {
     let backup: BackupVolume
 
     var body: some View {
@@ -124,12 +153,15 @@ private struct BackupRow: View {
     }
 }
 
-/// One backup: details, notes, protection, its configuration, restore and deletion.
-private struct BackupDetailView: View {
-    let detail: GuestDetail
+/// One backup: details, notes, protection, its configuration, restore, pruning and deletion.
+struct BackupDetailView: View {
+    let source: any BackupSource
     let backup: BackupVolume
+    /// The guest's own screen, which can restore over the guest; nil from a storage, where restores create a new guest.
+    let guest: GuestDetail?
     @State private var notes: String
     @State private var showsRestore = false
+    @State private var showsPrune = false
     @State private var confirmsDeletion = false
     @State private var isWorking = false
     @State private var errorMessage: String?
@@ -138,14 +170,17 @@ private struct BackupDetailView: View {
     @State private var openedGuest: GuestReference?
     @Environment(\.dismiss) private var dismiss
 
-    init(detail: GuestDetail, backup: BackupVolume) {
-        self.detail = detail
+    init(source: any BackupSource, backup: BackupVolume, guest: GuestDetail?) {
+        self.source = source
         self.backup = backup
+        self.guest = guest
         _notes = State(initialValue: backup.notes)
     }
 
     /// The backup as last loaded, so protection and notes reflect changes made here.
-    private var current: BackupVolume { detail.backups?.first { $0.volumeID == backup.volumeID } ?? backup }
+    private var current: BackupVolume { source.backup(withID: backup.volumeID) ?? backup }
+    private var node: String { source.backupNode }
+    private var canRestore: Bool { guest?.can("VM.Backup") ?? true }
 
     var body: some View {
         Form {
@@ -174,7 +209,7 @@ private struct BackupDetailView: View {
                     .accessibilityIdentifier("backup.notes")
                 if notes.trimmingCharacters(in: .whitespacesAndNewlines) != current.notes {
                     Button("Save Notes") {
-                        Task { await perform(PVE.updateBackup(node: detail.reference.node, volume: backup.volumeID, notes: notes)) }
+                        Task { await perform(PVE.updateBackup(node: node, volume: backup.volumeID, notes: notes)) }
                     }
                     .accessibilityIdentifier("backup.notes.save")
                 }
@@ -183,7 +218,7 @@ private struct BackupDetailView: View {
             }
             Section {
                 Toggle("Protected", isOn: Binding(get: { current.isProtected }, set: { protect in
-                    Task { await perform(PVE.updateBackup(node: detail.reference.node, volume: backup.volumeID, isProtected: protect)) }
+                    Task { await perform(PVE.updateBackup(node: node, volume: backup.volumeID, isProtected: protect)) }
                 }))
                 .accessibilityIdentifier("backup.protected")
             } footer: {
@@ -191,11 +226,19 @@ private struct BackupDetailView: View {
             }
             Section {
                 NavigationLink("Show Configuration") {
-                    BackupConfigurationView(node: detail.reference.node, backup: backup, connection: detail.connection)
+                    BackupConfigurationView(node: node, backup: backup, connection: source.connection)
                 }
-                if detail.can("VM.Backup") {
+                if canRestore {
                     Button("Restore…") { showsRestore = true }
                         .accessibilityIdentifier("backup.restore")
+                }
+                if current.vmid != nil {
+                    Button("Prune Backups…") { showsPrune = true }
+                        .accessibilityIdentifier("backup.prune")
+                }
+            } footer: {
+                if current.vmid != nil {
+                    Text("Pruning removes older backups of this guest on \(current.storage) by retention rules.")
                 }
             }
             Section {
@@ -225,24 +268,31 @@ private struct BackupDetailView: View {
             newGuest = nil
         }) {
             NavigationStack {
-                RestoreView(detail: detail, backup: current) { target in
-                    if target.vmid == detail.reference.vmid {
-                        Task { await detail.reloadAfterRestore() }
+                RestoreView(connection: source.connection, node: node, backup: current, guest: guest) { target in
+                    if let guest, target.vmid == guest.reference.vmid {
+                        Task { await guest.reloadAfterRestore() }
                     } else {
                         newGuest = target
                     }
                 }
             }
-            .serverDestinations(detail.connection)
+            .serverDestinations(source.connection)
+        }
+        .sheet(isPresented: $showsPrune) {
+            if let vmid = current.vmid {
+                NavigationStack {
+                    PruneBackupsView(source: source, storage: current.storage, kind: current.guestKind, vmid: vmid)
+                }
+            }
         }
         .navigationDestination(item: $openedGuest) { reference in
-            GuestDetailView(reference: reference, connection: detail.connection)
+            GuestDetailView(reference: reference, connection: source.connection)
         }
         .alert("Delete Backup?", isPresented: $confirmsDeletion) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 Task {
-                    if await perform(PVE.deleteBackup(node: detail.reference.node, volume: backup.volumeID)) { dismiss() }
+                    if await perform(PVE.deleteBackup(node: node, volume: backup.volumeID)) { dismiss() }
                 }
             }
         } message: {
@@ -256,7 +306,7 @@ private struct BackupDetailView: View {
         errorMessage = nil
         defer { isWorking = false }
         do {
-            try await detail.runBackupAction(request)
+            try await source.runBackupAction(request)
             notes = current.notes
             return true
         } catch {
@@ -368,28 +418,36 @@ private struct BackupNowView: View {
 }
 
 /// Restores a backup over its guest or as a new guest, like the web interface's Restore dialog.
-private struct RestoreView: View {
-    let detail: GuestDetail
+struct RestoreView: View {
+    let connection: ServerConnection
+    let node: String
+    /// The guest whose screen the restore started from; without it, the restore creates a new guest.
+    let guest: GuestDetail?
     let onRestored: (GuestReference) -> Void
     @State private var draft: RestoreDraft
     /// Values of the backup's configuration, shown as placeholders of the overrides.
     @State private var backupValues: [String: String] = [:]
 
-    init(detail: GuestDetail, backup: BackupVolume, onRestored: @escaping (GuestReference) -> Void) {
-        self.detail = detail
+    init(connection: ServerConnection, node: String, backup: BackupVolume, guest: GuestDetail?, onRestored: @escaping (GuestReference) -> Void) {
+        self.connection = connection
+        self.node = node
+        self.guest = guest
         self.onRestored = onRestored
-        var draft = RestoreDraft(backup: backup, source: detail.reference)
-        draft.sourceIsRunning = detail.powerState != .stopped
+        let source = guest?.reference ?? GuestReference(node: node, vmid: backup.vmid ?? 0, kind: backup.guestKind)
+        var draft = RestoreDraft(backup: backup, source: source)
+        draft.overwrites = guest != nil
+        draft.sourceIsRunning = (guest?.powerState ?? .stopped) != .stopped
         _draft = State(initialValue: draft)
     }
 
-    private var isVM: Bool { detail.reference.kind == .virtualMachine }
+    private var isVM: Bool { draft.source.kind == .virtualMachine }
     private var kindName: String { isVM ? "VM" : "CT" }
+    private var guestName: String { guest?.name ?? "" }
 
     var body: some View {
         CreationWizard<SinglePageStep, _>(
             title: "Restore",
-            connection: detail.connection,
+            connection: connection,
             reference: draft.target,
             problems: draft.problems,
             makeRequest: { PVE.restore(draft) },
@@ -397,33 +455,37 @@ private struct RestoreView: View {
             actionTitle: "Restore",
             workingTitle: "Restoring \(kindName) \(String(draft.target.vmid))…",
             confirmation: draft.overwrites ? (
-                String(localized: "Replace \(kindName) \(String(detail.reference.vmid))?"),
-                String(localized: "The current disks and configuration of \(detail.name) are deleted and replaced by the backup. This cannot be undone.")
+                String(localized: "Replace \(kindName) \(String(draft.source.vmid))?"),
+                String(localized: "The current disks and configuration of \(guestName) are deleted and replaced by the backup. This cannot be undone.")
             ) : nil
         ) { _, errors in
             Section {
                 if let date = draft.backup.date {
                     LabeledContent("Backup", value: date.formatted(date: .abbreviated, time: .shortened))
                 }
-                Picker("Restore To", selection: $draft.overwrites) {
-                    Text("This \(kindName) (\(String(detail.reference.vmid)))").tag(true)
-                    Text("New \(kindName)").tag(false)
+                if guest != nil {
+                    Picker("Restore To", selection: $draft.overwrites) {
+                        Text("This \(kindName) (\(String(draft.source.vmid)))").tag(true)
+                        Text("New \(kindName)").tag(false)
+                    }
+                    .accessibilityIdentifier("restore.target")
+                    FieldError(message: errors["force"])
+                } else if let vmid = draft.backup.vmid {
+                    LabeledContent("Backup Of", value: "\(kindName) \(String(vmid))")
                 }
-                .accessibilityIdentifier("restore.target")
-                FieldError(message: errors["force"])
                 if !draft.overwrites {
-                    GuestIDField(connection: detail.connection, vmid: $draft.vmid, error: errors["vmid"])
+                    GuestIDField(connection: connection, vmid: $draft.vmid, error: errors["vmid"])
                 }
             } footer: {
                 if draft.overwrites {
-                    Text("The current disks and configuration of \(detail.name) are replaced by the backup.")
+                    Text("The current disks and configuration of \(guestName) are replaced by the backup.")
                 } else {
                     Text("The new guest gets the configuration of the backup, including its name.")
                 }
             }
             Section {
                 NodeStoragePicker(
-                    title: "Storage", connection: detail.connection, node: detail.reference.node, content: isVM ? "images" : "rootdir",
+                    title: "Storage", connection: connection, node: node, content: isVM ? "images" : "rootdir",
                     selection: $draft.storage, defaultTitle: isVM ? "From Backup Configuration" : nil
                 )
                 FieldError(message: errors["storage"])
@@ -485,7 +547,7 @@ private struct RestoreView: View {
     private var isLiveRestore: Bool { isVM && draft.backup.isOnBackupServer && draft.liveRestore }
 
     /// High availability needs a cluster.
-    private var isCluster: Bool { (detail.connection.snapshot?.nodes.count ?? 0) > 1 }
+    private var isCluster: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 }
 
     @ViewBuilder
     private func overrideField(_ title: LocalizedStringKey, value: Binding<Int?>, key: String, errors: [String: String]) -> some View {
@@ -499,7 +561,7 @@ private struct RestoreView: View {
 
     private func loadBackupValues() async {
         guard backupValues.isEmpty,
-              let text = try? await detail.connection.send(PVE.backupConfiguration(node: detail.reference.node, volume: draft.backup.volumeID))
+              let text = try? await connection.send(PVE.backupConfiguration(node: node, volume: draft.backup.volumeID))
         else { return }
         for line in GuestConfig.displayLines(ofBackupConfiguration: text) {
             // Snapshot sections come after the current configuration.
@@ -509,6 +571,109 @@ private struct RestoreView: View {
             if ["name", "hostname", "cores", "sockets", "memory"].contains(key) {
                 backupValues[key] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             }
+        }
+    }
+}
+
+/// Removes a guest's older backups on one storage by retention rules, with a preview of what stays, like the web
+/// interface's Prune dialog.
+struct PruneBackupsView: View {
+    let source: any BackupSource
+    let storage: String
+    let kind: GuestKind
+    let vmid: Int
+    @State private var options = PruneOptions()
+    /// The storage's own retention settings, which apply while no field is set.
+    @State private var storageOptions = PruneOptions()
+    @State private var candidates: [PruneCandidate]?
+    @State private var errorMessage: String?
+    @State private var isPruning = false
+    @State private var confirms = false
+    @Environment(\.dismiss) private var dismiss
+
+    private var chosen: PruneOptions? { options.serialized == nil ? nil : options }
+    private var removals: Int { candidates?.filter { !$0.isKept }.count ?? 0 }
+
+    var body: some View {
+        Form {
+            Section {
+                RetentionFields(prune: $options, error: options.problems["prune-backups"])
+            } header: {
+                Text("Keep")
+            } footer: {
+                Text("With no field set, the retention settings of \(storage) apply. Protected backups are always kept.")
+            }
+            Section {
+                if let candidates {
+                    if candidates.isEmpty {
+                        Text("No Backups").foregroundStyle(.secondary)
+                    }
+                    ForEach(candidates) { candidate in
+                        HStack {
+                            Text(candidate.date?.formatted(date: .abbreviated, time: .shortened) ?? candidate.volumeID)
+                                .strikethrough(!candidate.isKept)
+                                .foregroundStyle(candidate.isKept ? .primary : .secondary)
+                            Spacer()
+                            Text(candidate.isKept ? (candidate.keepReason ?? String(localized: "Keep")) : String(localized: "Remove"))
+                                .font(.caption)
+                                .foregroundStyle(candidate.isKept ? Color.secondary : Color.red)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                } else {
+                    ProgressView()
+                }
+            } header: {
+                Text("Result")
+            }
+            ErrorSection(message: errorMessage)
+        }
+        .navigationTitle("Prune \(kind == .virtualMachine ? "VM" : "CT") \(String(vmid))")
+        .navigationBarTitleDisplayMode(.inline)
+        .disabled(isPruning)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                ProgressButton("Prune", isWorking: isPruning) { confirms = true }
+                    .disabled(removals == 0 || !options.problems.isEmpty)
+                    .accessibilityIdentifier("prune.start")
+            }
+        }
+        .alert("Remove \(removals) Backups?", isPresented: $confirms) {
+            Button("Cancel", role: .cancel) {}
+            Button("Prune", role: .destructive) { Task { await prune() } }
+        } message: {
+            Text("The backups marked Remove are deleted permanently.")
+        }
+        .task {
+            if let config = try? await source.connection.send(PVE.storageConfig(storage)) {
+                storageOptions = PruneOptions(config.values["prune-backups"])
+            }
+        }
+        .task(id: options) {
+            guard options.problems.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            do {
+                let found = try await source.connection.send(PVE.prunePreview(node: source.backupNode, storage: storage, kind: kind, vmid: vmid, options: chosen))
+                candidates = PruneCandidate.withKeepReasons(found, options: chosen ?? storageOptions)
+                errorMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func prune() async {
+        isPruning = true
+        defer { isPruning = false }
+        do {
+            try await source.runBackupAction(PVE.pruneBackups(node: source.backupNode, storage: storage, kind: kind, vmid: vmid, options: chosen))
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

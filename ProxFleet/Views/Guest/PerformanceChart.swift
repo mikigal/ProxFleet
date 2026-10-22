@@ -4,6 +4,8 @@ import SwiftUI
 
 enum PerformanceMetric: String, CaseIterable, Identifiable {
     case cpu, load, memory, network, disk
+    /// Storages: used space against the total.
+    case usage
 
     var id: String { rawValue }
 
@@ -18,6 +20,7 @@ enum PerformanceMetric: String, CaseIterable, Identifiable {
         case .memory: "Memory"
         case .network: "Network"
         case .disk: "Disk I/O"
+        case .usage: "Usage"
         }
     }
 }
@@ -70,6 +73,8 @@ struct PerformanceChart: View {
                     point.diskRead.map { Sample(time: point.time, series: "Read", value: $0) },
                     point.diskWrite.map { Sample(time: point.time, series: "Write", value: $0) },
                 ].compactMap { $0 }
+            case .usage:
+                return point.storageUsed.map { [Sample(time: point.time, series: "Used", value: $0)] } ?? []
             }
         }
     }
@@ -78,9 +83,15 @@ struct PerformanceChart: View {
         points.compactMap(\.memoryTotal).max()
     }
 
+    private var storageLimit: Double? {
+        points.compactMap(\.storageTotal).max()
+    }
+
     var body: some View {
         if samples.isEmpty {
-            ContentUnavailableView("No Data Yet", systemImage: "chart.xyaxis.line", description: Text("The server records history while the guest or node runs."))
+            ContentUnavailableView("No Data Yet", systemImage: "chart.xyaxis.line", description: Text(metric == .usage
+                ? "The server records the usage while the storage is active."
+                : "The server records history while the guest or node runs."))
                 .frame(height: 180)
         } else {
             Chart(samples) { sample in
@@ -120,6 +131,8 @@ struct PerformanceChart: View {
             return 0...max(samples.map(\.value).max() ?? 0, 0.05) * 1.1
         case .memory:
             return 0...(memoryLimit ?? (samples.map(\.value).max() ?? 1))
+        case .usage:
+            return 0...max(storageLimit ?? (samples.map(\.value).max() ?? 1), 1)
         case .network, .disk:
             return 0...max(samples.map(\.value).max() ?? 1, 1) * 1.1
         case .load:
@@ -131,6 +144,7 @@ struct PerformanceChart: View {
         switch metric {
         case .cpu: value.formatted(.percent.precision(.fractionLength(0)))
         case .memory: Int64(value).formatted(.byteCount(style: .memory))
+        case .usage: value == 0 ? "0" : Int64(value).formatted(.byteCount(style: .file))
         case .network, .disk: Int64(value).formatted(.byteCount(style: .binary)) + "/s"
         case .load: value.formatted(.number.precision(.fractionLength(0...1)))
         }

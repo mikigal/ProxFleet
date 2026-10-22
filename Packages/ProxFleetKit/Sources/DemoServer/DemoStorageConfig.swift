@@ -9,7 +9,7 @@ struct DemoStorageConfig: Sendable {
 
     var content: [String] { (values["content"] ?? "").split(separator: ",").map(String.init) }
     var isEnabled: Bool { values["disable"] != "1" }
-    var isShared: Bool { ["nfs", "cifs", "pbs", "rbd", "cephfs"].contains(type) || values["shared"] == "1" }
+    var isShared: Bool { ["nfs", "cifs", "pbs", "rbd", "cephfs", "iscsi", "zfs", "esxi"].contains(type) || values["shared"] == "1" }
 
     func isAvailable(on node: String) -> Bool {
         guard isEnabled else { return false }
@@ -22,6 +22,7 @@ struct DemoStorageConfig: Sendable {
         switch id {
         case "local": (100, 23)
         case "local-lvm": (800, 310)
+        case _ where type == "esxi": (0, 0)
         default: Self.fakeUsage(id: id, type: type)
         }
     }
@@ -47,6 +48,10 @@ struct DemoStorageConfig: Sendable {
                     "fingerprint": "6A:21:8B:4F:C2:93:1D:E0:57:AA:3C:66:0B:D4:91:7F:E2:48:C5:10:9D:73:2B:FA:84:06:CE:51:39:E7:12:AD",
                     "prune-backups": "keep-last=3,keep-daily=14",
                 ]),
+                // An ESXi host whose guests can be imported.
+                DemoStorageConfig(id: "esxi-lab", type: "esxi", values: [
+                    "server": "10.0.10.20", "username": "root", "content": "import", "skip-cert-verification": "1",
+                ]),
             ]
         }
         return configs
@@ -57,9 +62,15 @@ struct DemoStorageConfig: Sendable {
 extension DemoState {
     private static let editableKeys: Set<String> = [
         "content", "nodes", "disable", "shared", "prune-backups", "max-protected-backups", "options", "subdir", "domain",
-        "username", "password", "smbversion", "namespace", "fingerprint", "port", "sparse", "blocksize",
+        "username", "password", "smbversion", "namespace", "fingerprint", "port", "sparse", "blocksize", "preallocation",
+        "snapshot-as-volume-chain", "saferemove", "monhost", "keyring", "krbd", "nowritecache", "skip-cert-verification",
+        "encryption-key", "comstar_hg", "comstar_tg", "lio_tpg",
     ]
-    private static let creationKeys: Set<String> = editableKeys.union(["path", "server", "export", "share", "datastore", "vgname", "thinpool", "pool"])
+    private static let creationKeys: Set<String> = editableKeys.union([
+        "path", "server", "export", "share", "datastore", "vgname", "thinpool", "pool", "base", "portal", "target", "iscsiprovider", "fs-name",
+    ])
+    /// Settings that are written but never read back.
+    private static let secretKeys: Set<String> = ["password", "keyring"]
 
     func storageDigest() -> String {
         let text = storageConfigs.map { "\($0.id)\($0.type)\($0.values.sorted { $0.key < $1.key })" }.joined()
@@ -67,7 +78,7 @@ extension DemoState {
     }
 
     private func configJSON(_ config: DemoStorageConfig) -> JSONValue {
-        var object = config.values.filter { $0.key != "password" }.mapValues { JSONValue.string($0) }
+        var object = config.values.filter { !Self.secretKeys.contains($0.key) }.mapValues { JSONValue.string($0) }
         object["storage"] = .string(config.id)
         object["type"] = .string(config.type)
         object["digest"] = .string(storageDigest())
@@ -94,6 +105,8 @@ extension DemoState {
             let required: [String: [String]] = [
                 "dir": ["path"], "btrfs": ["path"], "nfs": ["server", "export"], "cifs": ["server", "share"],
                 "pbs": ["server", "datastore", "username", "password"], "lvm": ["vgname"], "lvmthin": ["vgname", "thinpool"], "zfspool": ["pool"],
+                "iscsi": ["portal", "target"], "cephfs": [], "rbd": ["pool"], "zfs": ["portal", "pool", "target", "blocksize"],
+                "esxi": ["server", "username", "password"],
             ]
             guard let keys = required[type] else { return fieldFailure(["type": "type '\(type)' is not supported in demo mode"]) }
             var missing: [String: String] = [:]
@@ -103,8 +116,9 @@ extension DemoState {
             var values: [String: String] = [:]
             for (key, value) in parameters where Self.creationKeys.contains(key) { values[key] = value }
             if values["content"] == nil { values["content"] = type == "pbs" ? "backup" : ["lvm", "lvmthin", "zfspool"].contains(type) ? "images,rootdir" : "images,iso,vztmpl,backup,rootdir,snippets" }
+            let generatedKey = Self.applyEncryptionKey(to: &values)
             storageConfigs.append(DemoStorageConfig(id: id, type: type, values: values))
-            return success(["storage": .string(id), "type": .string(type)])
+            return success(Self.changeResult(id: id, type: type, generatedKey: generatedKey))
         case (.put, 2):
             guard let index = storageConfigs.firstIndex(where: { $0.id == parts[1] }) else { return failure(500, "storage '\(parts[1])' does not exist") }
             if let digest = parameters["digest"], digest != storageDigest() {
@@ -115,7 +129,8 @@ extension DemoState {
             }
             for key in (parameters["delete"] ?? "").split(separator: ",") { storageConfigs[index].values[String(key)] = nil }
             for (key, value) in parameters where Self.editableKeys.contains(key) { storageConfigs[index].values[key] = value }
-            return success(["storage": .string(parts[1]), "type": .string(storageConfigs[index].type)])
+            let generatedKey = parameters["encryption-key"] == nil ? nil : Self.applyEncryptionKey(to: &storageConfigs[index].values)
+            return success(Self.changeResult(id: parts[1], type: storageConfigs[index].type, generatedKey: generatedKey))
         case (.delete, 2):
             guard let index = storageConfigs.firstIndex(where: { $0.id == parts[1] }) else { return failure(500, "storage '\(parts[1])' does not exist") }
             storageConfigs.remove(at: index)
@@ -123,6 +138,22 @@ extension DemoState {
         default:
             return nil
         }
+    }
+
+    /// Turns `encryption-key=autogen` or an uploaded key into the stored fingerprint, like Proxmox; returns a generated key.
+    private static func applyEncryptionKey(to values: inout [String: String]) -> String? {
+        guard let key = values["encryption-key"] else { return nil }
+        let fingerprint = (0..<32).map { _ in String(format: "%02x", Int.random(in: 0...255)) }.joined(separator: ":")
+        values["encryption-key"] = fingerprint
+        guard key == "autogen" else { return nil }
+        let data = Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
+        return #"{"kdf":null,"created":"2026-10-22T10:00:00+02:00","modified":"2026-10-22T10:00:00+02:00","data":"\#(data)","fingerprint":"\#(fingerprint)"}"#
+    }
+
+    private static func changeResult(id: String, type: String, generatedKey: String?) -> JSONValue {
+        var result: [String: JSONValue] = ["storage": .string(id), "type": .string(type)]
+        if let generatedKey { result["config"] = ["encryption-key": .string(generatedKey)] }
+        return .object(result)
     }
 
     /// `GET /nodes/{node}/scan/...`. nil for other paths.
@@ -136,6 +167,8 @@ extension DemoState {
             return success([["path": "/mnt/tank/proxmox", "options": "10.0.10.0/24"], ["path": "/mnt/tank/media", "options": "10.0.10.0/24"]])
         case "cifs":
             return success([["share": "backups", "description": "Backup share"], ["share": "isos", "description": "Installation media"]])
+        case "iscsi":
+            return success([["portal": .string(parameters["portal"] ?? ""), "target": "iqn.2005-10.org.freenas.ctl:proxmox"]])
         case "pbs":
             guard parameters["password"] == "secret" || parameters["password"]?.hasPrefix("PBS") == true else {
                 return failure(500, "pbs error: authentication failed")

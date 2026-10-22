@@ -450,9 +450,21 @@ enum CDROMMedia: Hashable {
 struct AddDiskEditor: View {
     let detail: GuestDetail
     let config: GuestConfig
-    @State private var disk = NewVMDisk()
+    @State private var disk: NewVMDisk
     @State private var slot = 0
     @State private var storages: [StorageInfo] = []
+
+    /// `importSource` starts with importing that image, e.g. from a storage's import content.
+    init(detail: GuestDetail, config: GuestConfig, importSource: String? = nil) {
+        self.detail = detail
+        self.config = config
+        var disk = NewVMDisk()
+        if let importSource {
+            disk.isImport = true
+            disk.importSource = importSource
+        }
+        _disk = State(initialValue: disk)
+    }
 
     var body: some View {
         ConfigEditor(title: "Add Hard Disk", detail: detail, makeUpdate: update, footer: "New disks are available to the guest right away if it supports hot-plugging.") { errors in

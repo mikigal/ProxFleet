@@ -1109,6 +1109,190 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.storageVolumes(node: node, storage: "local", content: .iso)).contains { $0.fileName.hasPrefix("proxfleet-live") })
     }
 
+    /// Storage features found missing against the web interface: usage history, decompressing downloads, OCI images,
+    /// pruning, importing an OVA as a VM, and the RBD, ZFS over iSCSI and iSCSI storage types.
+    @Test(.timeLimit(.minutes(5))) func storageContentAndTypes() async throws {
+        let (session, node) = try await rootSession()
+        func finish(_ upid: String?) async throws -> TaskStatus? { try await finishTask(session, node: node, upid) }
+        try #require(try await !session.send(PVE.storageConfigs()).contains { $0.storage.hasPrefix("pflive") }, "left over from an earlier run")
+
+        let history = try await session.send(PVE.storageRRD(node: node, storage: "local", timeframe: .hour))
+        #expect(history.contains { ($0.storageTotal ?? 0) > 0 && ($0.storageUsed ?? 0) > 0 })
+
+        // A gzip file saved decompressed under the ISO name.
+        var iso = StorageFileDraft(content: .iso)
+        iso.url = "https://ftp.gnu.org/gnu/hello/hello-2.12.tar.gz"
+        iso.applyQueriedName("proxfleet-live-hello.iso.gz")
+        #expect(iso.fileName == "proxfleet-live-hello.iso" && iso.decompression == "gz")
+        #expect(try await finish(try await session.send(PVE.downloadURL(node: node, storage: "local", iso)))?.succeeded == true)
+        let decompressed = try #require(try await session.send(PVE.storageVolumes(node: node, storage: "local", content: .iso)).first { $0.fileName == "proxfleet-live-hello.iso" })
+        // The archive is about 1 MiB compressed and several times that unpacked.
+        #expect((decompressed.size ?? 0) > 3_000_000)
+        #expect(try await finish(try await session.send(PVE.deleteVolume(node: node, storage: "local", volume: decompressed.volumeID)))?.succeeded == true)
+
+        var oci = OCIPullDraft()
+        oci.reference = "docker.io/library/alpine"
+        let tags = try await session.send(PVE.ociTags(node: node, reference: oci.reference))
+        #expect(tags.contains("latest"))
+        oci.fileName = "proxfleet-live-alpine"
+        #expect(oci.problems.isEmpty)
+        #expect(try await finish(try await session.send(PVE.pullOCIImage(node: node, storage: "local", oci)))?.succeeded == true)
+        let template = try #require(try await session.send(PVE.storageVolumes(node: node, storage: "local", content: .vztmpl)).first { $0.fileName.hasPrefix("proxfleet-live-alpine") })
+        #expect(try await finish(try await session.send(PVE.deleteVolume(node: node, storage: "local", volume: template.volumeID)))?.succeeded == true)
+
+        // Two backups of container 202; keeping the last one prunes the older.
+        let container = GuestReference(node: node, vmid: 202, kind: .container)
+        try #require(try await session.send(PVE.backups(node: node, storage: "local", vmid: 202)).isEmpty, "CT 202 has backups on local")
+        var backup = BackupDraft(guest: container)
+        backup.storage = "local"
+        for _ in 0..<2 {
+            #expect(try await finish(try await session.send(PVE.backupNow(backup)))?.succeeded == true)
+            // Backups of the same second would share a name.
+            try await Task.sleep(for: .seconds(1))
+        }
+        var keepLast = PruneOptions()
+        keepLast.counts = ["keep-last": "1"]
+        let preview = try await session.send(PVE.prunePreview(node: node, storage: "local", kind: .container, vmid: 202, options: keepLast))
+        #expect(PruneCandidate.withKeepReasons(preview, options: keepLast).map(\.keepReason) == ["keep-last: 1", nil])
+        #expect(try await finish(try await session.send(PVE.pruneBackups(node: node, storage: "local", kind: .container, vmid: 202, options: keepLast)))?.succeeded == true)
+        let remaining = try await session.send(PVE.backups(node: node, storage: "local", vmid: 202))
+        #expect(remaining.count == 1)
+        for volume in remaining {
+            _ = try await finish(try await session.send(PVE.deleteBackup(node: node, volume: volume.volumeID)))
+        }
+
+        // An OVA built from the CirrOS image, kept for later runs; its disks are extracted to a directory storage.
+        let ova = "local:import/proxfleet-cirros.ova"
+        if try await !session.send(PVE.storageVolumes(node: node, storage: "local", content: .import)).contains(where: { $0.volumeID == ova }) {
+            let file = try await Self.makeCirrosOVA()
+            defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+            var upload = StorageFileDraft(content: .import)
+            upload.fileName = "proxfleet-cirros.ova"
+            let upid = try await session.upload(PVE.uploadFile(node: node, storage: "local", upload), fileField: "filename", fileName: upload.fileName, source: file) { _, _ in }
+            #expect(try await finish(upid)?.succeeded == true)
+        }
+        var directory = StorageConfigDraft(type: .dir)
+        directory.storage = "pflive-work"
+        directory.path = "/var/lib/vz/pflive-work"
+        directory.content = ["images"]
+        directory.preallocation = "off"
+        _ = try await session.send(PVE.createStorage(directory))
+        #expect(try await session.send(PVE.storageConfig("pflive-work")).values["preallocation"] == "off")
+        var draft = GuestImportDraft(metadata: try await session.send(PVE.importMetadata(node: node, volume: ova)), node: node, volume: ova)
+        #expect(draft.needsExtracting && draft.name == "proxfleet-cirros" && draft.disks.count == 1)
+        draft.vmid = try await session.send(PVE.nextVMID()).value
+        draft.defaultStorage = "local-lvm"
+        draft.defaultBridge = "vmbr0"
+        draft.workingStorage = "pflive-work"
+        draft.uniqueMACAddresses = true
+        let imported = try await finish(try await session.send(PVE.importGuest(draft)))
+        #expect(imported?.succeeded == true, "\(imported?.exitStatus ?? "")")
+        let vm = GuestReference(node: node, vmid: draft.vmid, kind: .virtualMachine)
+        let config = try await session.send(PVE.guestConfig(vm))
+        #expect(config.name == "proxfleet-cirros" && config["scsi0"]?.contains("size=112M") == true && config["net0"]?.hasPrefix("vmxnet3=") == true)
+        #expect(try await finish(try await session.send(PVE.destroy(vm, purge: true, destroyUnreferencedDisks: true)))?.succeeded == true)
+        _ = try await session.send(PVE.deleteStorage("pflive-work"))
+
+        // Storage types whose servers do not exist: RBD and ZFS over iSCSI are stored as they are, iSCSI checks its portal.
+        var rbd = StorageConfigDraft(type: .rbd)
+        rbd.storage = "pflive-rbd"
+        rbd.pool = "vms"
+        rbd.usesClusterCeph = false
+        rbd.monitors = "127.0.0.1"
+        rbd.keyring = "[client.admin]\n\tkey = AQBpmGNnAAAAABAAZ6gpFzBsHtaE1q1Y4ZZ9vw=="
+        rbd.usesKRBD = true
+        rbd.isEnabled = false
+        #expect(rbd.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createStorage(rbd))
+        let storedRBD = try #require(StorageConfigDraft(try await session.send(PVE.storageConfig("pflive-rbd"))))
+        #expect(!storedRBD.usesClusterCeph && storedRBD.usesKRBD && storedRBD.pool == "vms" && storedRBD.monitors == "127.0.0.1")
+        var editedRBD = storedRBD
+        editedRBD.monitors = "127.0.0.2 127.0.0.3"
+        editedRBD.usesKRBD = false
+        _ = try await session.send(PVE.updateStorage("pflive-rbd", editedRBD.changes(from: storedRBD)))
+        let rbdAgain = try #require(StorageConfigDraft(try await session.send(PVE.storageConfig("pflive-rbd"))))
+        #expect(rbdAgain.monitors == "127.0.0.2 127.0.0.3" && !rbdAgain.usesKRBD)
+        _ = try await session.send(PVE.deleteStorage("pflive-rbd"))
+
+        var zfs = StorageConfigDraft(type: .zfs)
+        zfs.storage = "pflive-zfs"
+        zfs.portal = "127.0.0.1"
+        zfs.pool = "tank/pve"
+        zfs.target = "iqn.2003-01.org.example:pve"
+        zfs.iscsiProvider = .lio
+        zfs.lioTargetPortalGroup = "tpg1"
+        zfs.isEnabled = false
+        _ = try await session.send(PVE.createStorage(zfs))
+        let storedZFS = try #require(StorageConfigDraft(try await session.send(PVE.storageConfig("pflive-zfs"))))
+        #expect(storedZFS.iscsiProvider == .lio && storedZFS.lioTargetPortalGroup == "tpg1" && storedZFS.blockSize == "4k" && storedZFS.content == ["images"])
+        _ = try await session.send(PVE.deleteStorage("pflive-zfs"))
+
+        var iscsi = StorageConfigDraft(type: .iscsi)
+        iscsi.storage = "pflive-iscsi"
+        iscsi.portal = "127.0.0.1"
+        iscsi.target = "iqn.2003-01.org.example:san"
+        do {
+            _ = try await session.send(PVE.createStorage(iscsi))
+            Issue.record("an iSCSI storage without a portal should be refused")
+            _ = try? await session.send(PVE.deleteStorage("pflive-iscsi"))
+        } catch ProxmoxError.api(_, let message, _) {
+            #expect(message?.contains("not online") == true)
+        }
+        #expect(try await !session.send(PVE.storageConfigs()).contains { $0.storage.hasPrefix("pflive") })
+    }
+
+    /// An OVA with an OVF descriptor and the CirrOS disk, written as a ustar archive.
+    private static func makeCirrosOVA() async throws -> URL {
+        let (disk, _) = try await URLSession.shared.data(from: URL(string: "https://download.cirros-cloud.net/0.6.3/cirros-0.6.3-x86_64-disk.img")!)
+        let ovf = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" \
+        xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData" \
+        xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData">
+          <References><File ovf:href="cirros-disk1.qcow2" ovf:id="file1"/></References>
+          <DiskSection><Info>Disks</Info><Disk ovf:capacity="117440512" ovf:diskId="vmdisk1" ovf:fileRef="file1" \
+        ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/></DiskSection>
+          <NetworkSection><Info>Networks</Info><Network ovf:name="VM Network"><Description>VM Network</Description></Network></NetworkSection>
+          <VirtualSystem ovf:id="proxfleet-cirros"><Info>A virtual machine</Info><Name>proxfleet-cirros</Name>
+            <OperatingSystemSection ovf:id="101"><Info>Guest OS</Info></OperatingSystemSection>
+            <VirtualHardwareSection><Info>Virtual hardware</Info>
+              <Item><rasd:ElementName>1 virtual CPU</rasd:ElementName><rasd:InstanceID>1</rasd:InstanceID><rasd:ResourceType>3</rasd:ResourceType><rasd:VirtualQuantity>1</rasd:VirtualQuantity></Item>
+              <Item><rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits><rasd:ElementName>Memory</rasd:ElementName><rasd:InstanceID>2</rasd:InstanceID><rasd:ResourceType>4</rasd:ResourceType><rasd:VirtualQuantity>256</rasd:VirtualQuantity></Item>
+              <Item><rasd:Address>0</rasd:Address><rasd:ElementName>SCSI Controller</rasd:ElementName><rasd:InstanceID>3</rasd:InstanceID><rasd:ResourceSubType>lsilogic</rasd:ResourceSubType><rasd:ResourceType>6</rasd:ResourceType></Item>
+              <Item><rasd:AddressOnParent>0</rasd:AddressOnParent><rasd:ElementName>Hard Disk 1</rasd:ElementName><rasd:HostResource>ovf:/disk/vmdisk1</rasd:HostResource><rasd:InstanceID>4</rasd:InstanceID><rasd:Parent>3</rasd:Parent><rasd:ResourceType>17</rasd:ResourceType></Item>
+              <Item><rasd:AutomaticAllocation>true</rasd:AutomaticAllocation><rasd:Connection>VM Network</rasd:Connection><rasd:ElementName>Network adapter 1</rasd:ElementName><rasd:InstanceID>5</rasd:InstanceID><rasd:ResourceSubType>VmxNet3</rasd:ResourceSubType><rasd:ResourceType>10</rasd:ResourceType></Item>
+            </VirtualHardwareSection>
+          </VirtualSystem>
+        </Envelope>
+        """
+        var archive = Data()
+        for (name, contents) in [("cirros.ovf", Data(ovf.utf8)), ("cirros-disk1.qcow2", disk)] {
+            var header = Data(count: 512)
+            func put(_ text: String, at offset: Int) { header.replaceSubrange(offset..<offset + text.utf8.count, with: Data(text.utf8)) }
+            put(name, at: 0)
+            put("0000644\0", at: 100)
+            put("0000000\0", at: 108)
+            put("0000000\0", at: 116)
+            put(String(format: "%011o\0", contents.count), at: 124)
+            put(String(format: "%011o\0", Int(Date().timeIntervalSince1970)), at: 136)
+            put("        ", at: 148)
+            put("0", at: 156)
+            put("ustar\0", at: 257)
+            put("00", at: 263)
+            let checksum = header.reduce(0) { $0 + Int($1) }
+            put(String(format: "%06o\0 ", checksum), at: 148)
+            archive.append(header)
+            archive.append(contents)
+            archive.append(Data(count: (512 - contents.count % 512) % 512))
+        }
+        archive.append(Data(count: 1024))
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appending(path: "proxfleet-cirros.ova")
+        try archive.write(to: file)
+        return file
+    }
+
     /// A directory storage and an LVM storage on a volume group of a spare disk: created, changed and removed again.
     @Test(.timeLimit(.minutes(2))) func storageDefinitions() async throws {
         let (session, node) = try await rootSession()

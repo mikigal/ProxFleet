@@ -2,6 +2,7 @@ import FleetCore
 import ProxmoxCore
 import PVEKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The datacenter's storage definitions: add, edit, disable, restrict to nodes and remove.
 struct DatacenterStorageView: View {
@@ -101,6 +102,11 @@ extension StorageBackend {
         case .lvmthin: "LVM-Thin"
         case .zfspool: "ZFS"
         case .btrfs: "Btrfs"
+        case .iscsi: "iSCSI"
+        case .cephfs: "CephFS"
+        case .rbd: "RBD"
+        case .zfs: "ZFS over iSCSI"
+        case .esxi: "ESXi"
         }
     }
 
@@ -112,6 +118,9 @@ extension StorageBackend {
         case .lvm: "square.stack.3d.up"
         case .lvmthin: "square.stack.3d.down.forward"
         case .zfspool: "cylinder.split.1x2"
+        case .iscsi, .zfs: "server.rack"
+        case .cephfs, .rbd: "circle.hexagongrid"
+        case .esxi: "square.and.arrow.down.on.square"
         }
     }
 }
@@ -177,7 +186,7 @@ extension StorageContentType {
     }
 }
 
-/// Ceph, iSCSI, ESXi and other storages the app does not edit yet.
+/// iSCSI direct, DRBD and other storages the app does not edit.
 private struct UnsupportedStorageView: View {
     let config: StorageConfig
 
@@ -209,6 +218,8 @@ struct StorageConfigEditor: View {
     @State private var showsProblems = false
     @State private var errorMessage: String?
     @State private var fieldErrors: [String: String] = [:]
+    /// A key Proxmox generated for a PBS storage, shown once before the editor closes.
+    @State private var generatedKey: String?
     @Environment(\.dismiss) private var dismiss
 
     init(storage: DatacenterStorage, draft: StorageConfigDraft, digest: String?, isNew: Bool) {
@@ -252,10 +263,16 @@ struct StorageConfigEditor: View {
                     }
                 }
                 StorageConnectionSection(storage: storage, draft: $draft, isNew: isNew, errors: errors)
-                if draft.type != .pbs {
+                if draft.type.hasContentChoice {
                     contentSection
                 }
                 nodesSection
+                if draft.type == .pbs {
+                    PBSEncryptionSection(draft: $draft, isNew: isNew, error: errors["encryption-key"])
+                }
+                if draft.type.supportsPreallocation || draft.type.supportsVolumeChainSnapshots {
+                    advancedSection
+                }
                 if draft.holdsBackups {
                     retentionSection
                 }
@@ -267,6 +284,12 @@ struct StorageConfigEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .disabled(isSaving)
         .interactiveDismissDisabled(isSaving)
+        .sheet(isPresented: Binding(get: { generatedKey != nil }, set: { if !$0 { generatedKey = nil; dismiss() } })) {
+            NavigationStack {
+                EncryptionKeyView(storage: draft.storage, key: generatedKey ?? "")
+            }
+            .interactiveDismissDisabled()
+        }
         .toolbar {
             if isNew {
                 ToolbarItem(placement: .cancellationAction) {
@@ -316,6 +339,34 @@ struct StorageConfigEditor: View {
         }
     }
 
+    private var advancedSection: some View {
+        Section {
+            if draft.type.supportsPreallocation {
+                Picker("Preallocation", selection: $draft.preallocation) {
+                    Text("Default (Metadata)").tag("")
+                    Text("Off").tag("off")
+                    Text("Metadata").tag("metadata")
+                    Text("Falloc").tag("falloc")
+                    Text("Full").tag("full")
+                }
+                FieldError(message: errors["preallocation"])
+            }
+            if draft.type.supportsVolumeChainSnapshots {
+                Toggle("Snapshots as Volume-Chain", isOn: $draft.volumeChainSnapshots)
+                    .disabled(!isNew && draft.type != .lvm)
+                FieldError(message: errors["snapshot-as-volume-chain"])
+            }
+        } header: {
+            Text("Advanced")
+        } footer: {
+            if draft.type.supportsVolumeChainSnapshots {
+                Text(draft.type == .lvm
+                    ? "Snapshots as a volume chain are a technology preview. Keep them on while qcow2 images exist on the storage."
+                    : "Snapshots as a volume chain are a technology preview and can only be turned on when the storage is added.")
+            }
+        }
+    }
+
     private var retentionSection: some View {
         Section {
             RetentionFields(prune: $draft.prune, error: errors["prune-backups"])
@@ -338,12 +389,14 @@ struct StorageConfigEditor: View {
         errorMessage = nil
         defer { isSaving = false }
         do {
-            if isNew {
-                try await storage.create(draft)
+            let key = isNew
+                ? try await storage.create(draft)
+                : try await storage.update(draft.storage, draft.changes(from: original), digest: digest)
+            if let key {
+                generatedKey = key
             } else {
-                try await storage.update(draft.storage, draft.changes(from: original), digest: digest)
+                dismiss()
             }
-            dismiss()
         } catch .invalid(let message, let fields) {
             fieldErrors = fields
             errorMessage = message ?? String(localized: "Check the highlighted fields.")
@@ -363,6 +416,11 @@ private struct StorageConnectionSection: View {
     @State private var thinPools: [StorageScanResult]?
     @State private var isScanning = false
     @State private var scanError: String?
+    /// LVM on iSCSI: the iSCSI storage whose LUN becomes the volume group's base; empty for an existing group.
+    @State private var baseStorage = ""
+    @State private var luns: [StorageVolume]?
+    /// The cluster's own Ceph pools or file systems; nil while unknown, empty when Ceph is not set up.
+    @State private var cephChoices: [StorageScanResult]?
 
     var body: some View {
         Section {
@@ -372,7 +430,11 @@ private struct StorageConnectionSection: View {
             case .nfs:
                 fixedField("Server", text: $draft.server, prompt: "192.168.1.10", key: "server")
                 scanPicker("Export", selection: $draft.export, key: "export", fixed: !isNew)
-                LabeledTextField(title: "Mount Options", prompt: "vers=4.2", text: $draft.mountOptions)
+                Picker("NFS Version", selection: $draft.nfsVersion) {
+                    Text("Default").tag("")
+                    ForEach(StorageConfigDraft.nfsVersions, id: \.self) { Text($0).tag($0) }
+                }
+                LabeledTextField(title: "Mount Options", prompt: "soft", text: $draft.mountOptions)
             case .cifs:
                 fixedField("Server", text: $draft.server, prompt: "192.168.1.10", key: "server")
                 LabeledTextField(title: "User", prompt: "Guest", text: $draft.username)
@@ -396,7 +458,7 @@ private struct StorageConnectionSection: View {
                 scanPicker("Datastore", selection: $draft.datastore, key: "datastore", fixed: !isNew)
                 LabeledTextField(title: "Namespace", prompt: "Root", text: $draft.namespace)
             case .lvm:
-                scanPicker("Volume Group", selection: $draft.volumeGroup, key: "vgname", fixed: !isNew)
+                lvmFields
             case .lvmthin:
                 scanPicker("Volume Group", selection: $draft.volumeGroup, key: "vgname", fixed: !isNew)
                 thinPoolPicker
@@ -404,6 +466,23 @@ private struct StorageConnectionSection: View {
                 scanPicker("ZFS Pool", selection: $draft.pool, key: "pool", fixed: !isNew)
                 Toggle("Thin Provisioning", isOn: $draft.sparse)
                 LabeledTextField(title: "Block Size", prompt: "16k", text: $draft.blockSize)
+            case .iscsi:
+                fixedField("Portal", text: $draft.portal, prompt: "192.168.1.20", key: "portal")
+                scanPicker("Target", selection: $draft.target, key: "target", fixed: !isNew)
+                Toggle("Use LUNs Directly", isOn: $draft.usesLUNsDirectly)
+                    .accessibilityIdentifier("iscsi.luns")
+            case .cephfs, .rbd:
+                cephFields
+            case .zfs:
+                zfsOverISCSIFields
+            case .esxi:
+                fixedField("Server", text: $draft.server, prompt: "esxi.example.com", key: "server")
+                LabeledTextField(title: "Port", prompt: "443", text: $draft.port, keyboard: .numberPad)
+                FieldError(message: errors["port"])
+                LabeledTextField(title: "User", prompt: "root", text: $draft.username, identifier: "esxi.user")
+                FieldError(message: errors["username"])
+                passwordField
+                Toggle("Skip Certificate Verification", isOn: $draft.skipsCertificateVerification)
             }
             if let scanError {
                 Label(scanError, systemImage: "exclamationmark.triangle")
@@ -415,12 +494,139 @@ private struct StorageConnectionSection: View {
         } footer: {
             if !isNew {
                 Text("The location cannot change after the storage was added. Remove it and add it again instead.")
-            } else if draft.type.isOnNetwork, let node = storage.scanNode {
+            } else if draft.type == .iscsi {
+                Text("Without LUNs used directly, the storage only provides LUNs as the base of an LVM storage.")
+            } else if draft.type == .esxi {
+                Text("Guests on the ESXi host show up as import content of this storage and can be imported as VMs.")
+            } else if draft.type.isOnNetwork, !draft.type.isCeph, let node = storage.scanNode {
                 Text("Scan asks the server from \(node), so it must be reachable from the nodes.")
             }
         }
         .task(id: draft.type) {
             if isNew, [.lvm, .lvmthin, .zfspool].contains(draft.type) { await scan() }
+            if isNew, draft.type.isCeph { await loadCephChoices() }
+        }
+    }
+
+    /// An existing volume group, or a new one on a LUN of an iSCSI storage.
+    @ViewBuilder
+    private var lvmFields: some View {
+        if isNew {
+            Picker("Base Storage", selection: $baseStorage) {
+                Text("Existing Volume Groups").tag("")
+                ForEach(iscsiStorages, id: \.self) { Text("\($0) (iSCSI)").tag($0) }
+            }
+            .onChange(of: baseStorage) {
+                draft.baseVolume = ""
+                Task { await loadLUNs() }
+            }
+            if baseStorage.isEmpty {
+                scanPicker("Volume Group", selection: $draft.volumeGroup, key: "vgname", fixed: false)
+            } else {
+                Picker("Base Volume", selection: $draft.baseVolume) {
+                    Text("Choose").tag("")
+                    ForEach(luns ?? []) { lun in
+                        Text(lun.size.map { "\(lun.fileName) (\(Format.bytes($0)))" } ?? lun.fileName).tag(lun.volumeID)
+                    }
+                }
+                FieldError(message: errors["base"])
+                LabeledTextField(title: "Volume Group", prompt: "vg-san", text: $draft.volumeGroup, identifier: "storage.vgname")
+                FieldError(message: errors["vgname"])
+            }
+        } else {
+            LabeledContent("Volume Group", value: draft.volumeGroup)
+            if !draft.baseVolume.isEmpty {
+                LabeledContent("Base Volume", value: draft.baseVolume)
+            }
+        }
+        Toggle("Wipe Removed Volumes", isOn: $draft.wipesRemovedVolumes)
+    }
+
+    private var iscsiStorages: [String] {
+        (storage.configs ?? []).filter { $0.type == "iscsi" }.map(\.storage)
+    }
+
+    /// The cluster's own Ceph, or an external one with monitors and a key.
+    @ViewBuilder
+    private var cephFields: some View {
+        let isRBD = draft.type == .rbd
+        if isNew {
+            Toggle(isRBD ? "Use Proxmox VE Ceph Pool" : "Use Proxmox VE CephFS", isOn: $draft.usesClusterCeph)
+                .disabled(cephChoices?.isEmpty ?? true)
+        }
+        if isRBD || draft.usesClusterCeph {
+            let key = isRBD ? "pool" : "fs-name"
+            let selection = isRBD ? $draft.pool : $draft.fsName
+            if !isNew {
+                LabeledContent(isRBD ? "Pool" : "File System", value: selection.wrappedValue.isEmpty ? String(localized: "Default") : selection.wrappedValue)
+            } else if draft.usesClusterCeph, let choices = cephChoices, !choices.isEmpty {
+                Picker(isRBD ? "Pool" : "File System", selection: selection) {
+                    if !isRBD { Text("Default").tag("") }
+                    ForEach(choices) { Text($0.name).tag($0.name) }
+                }
+            } else {
+                LabeledTextField(title: isRBD ? "Pool" : "File System", prompt: isRBD ? "rbd" : "Default", text: selection, identifier: "storage.\(key)")
+            }
+            FieldError(message: errors[key])
+        }
+        if !draft.usesClusterCeph {
+            LabeledTextField(title: "Monitors", prompt: "10.0.0.1 10.0.0.2", text: $draft.monitors, identifier: "storage.monhost")
+            FieldError(message: errors["monhost"])
+            if isNew {
+                LabeledTextField(title: "User", prompt: "admin", text: $draft.username)
+            } else {
+                LabeledContent("User", value: draft.username)
+            }
+            FieldError(message: errors["username"])
+            TextField(isRBD ? "Keyring" : "Secret Key", text: $draft.keyring, prompt: Text(isNew ? (isRBD ? "Keyring" : "Secret Key") : "Unchanged"), axis: .vertical)
+                .lineLimit(1...6)
+                .font(.callout.monospaced())
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("storage.keyring")
+            FieldError(message: errors["keyring"])
+        }
+        if isRBD {
+            Toggle("KRBD", isOn: $draft.usesKRBD)
+            if isNew {
+                LabeledTextField(title: "Namespace", prompt: "None", text: $draft.namespace)
+            } else if !draft.namespace.isEmpty {
+                LabeledContent("Namespace", value: draft.namespace)
+            }
+        }
+        if isNew, cephChoices?.isEmpty == true {
+            Text("Ceph is not set up on this cluster, so the storage needs an external Ceph cluster.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// A ZFS pool on another host, whose volumes are exported over iSCSI.
+    @ViewBuilder
+    private var zfsOverISCSIFields: some View {
+        fixedField("Portal", text: $draft.portal, prompt: "192.168.1.20", key: "portal")
+        fixedField("Pool", text: $draft.pool, prompt: "tank/proxmox", key: "pool")
+        fixedField("Block Size", text: $draft.blockSize, prompt: "4k", key: "blocksize")
+        fixedField("Target", text: $draft.target, prompt: "iqn.2003-01.org.linux-iscsi.san:target", key: "target")
+        if isNew {
+            Picker("iSCSI Provider", selection: $draft.iscsiProvider) {
+                ForEach(ISCSIProvider.allCases) { Text($0.title).tag($0) }
+            }
+        } else {
+            LabeledContent("iSCSI Provider", value: draft.iscsiProvider.title)
+        }
+        switch draft.iscsiProvider {
+        case .comstar:
+            fixedField("Target Group", text: $draft.comstarTargetGroup, prompt: "Optional", key: "comstar_tg")
+            fixedField("Host Group", text: $draft.comstarHostGroup, prompt: "Optional", key: "comstar_hg")
+        case .lio:
+            fixedField("Target Portal Group", text: $draft.lioTargetPortalGroup, prompt: "tpg1", key: "lio_tpg")
+        case .istgt, .iet:
+            EmptyView()
+        }
+        Toggle("Thin Provisioning", isOn: $draft.sparse)
+        if draft.iscsiProvider.hasWriteCache {
+            Toggle("Write Cache", isOn: $draft.writeCache)
         }
     }
 
@@ -479,7 +685,7 @@ private struct StorageConnectionSection: View {
                         if isScanning { ProgressView() }
                     }
                 }
-                .disabled(draft.server.trimmingCharacters(in: .whitespaces).isEmpty || isScanning || storage.scanNode == nil)
+                .disabled(scanAddress.isEmpty || isScanning || storage.scanNode == nil)
                 .accessibilityIdentifier("storage.scan")
             }
         }
@@ -500,9 +706,14 @@ private struct StorageConnectionSection: View {
         }
     }
 
+    /// The server or portal a network scan asks.
+    private var scanAddress: String {
+        (draft.type == .iscsi ? draft.portal : draft.server).trimmingCharacters(in: .whitespaces)
+    }
+
     private func scan() async {
         guard let node = storage.scanNode else { return }
-        let server = draft.server.trimmingCharacters(in: .whitespaces)
+        let server = scanAddress
         let request: APIRequest<[StorageScanResult]>
         switch draft.type {
         case .nfs: request = PVE.scanNFS(node: node, server: server)
@@ -510,7 +721,8 @@ private struct StorageConnectionSection: View {
         case .pbs: request = PVE.scanPBS(node: node, server: server, username: draft.username, password: draft.password, fingerprint: draft.fingerprint, port: Int(draft.port))
         case .lvm, .lvmthin: request = PVE.scanVolumeGroups(node: node)
         case .zfspool: request = PVE.scanZFSPools(node: node)
-        case .dir, .btrfs: return
+        case .iscsi: request = PVE.scanISCSI(node: node, portal: server)
+        case .dir, .btrfs, .cephfs, .rbd, .zfs, .esxi: return
         }
         isScanning = true
         scanError = nil
@@ -523,9 +735,143 @@ private struct StorageConnectionSection: View {
         }
     }
 
+    private func loadLUNs() async {
+        luns = nil
+        guard let node = storage.scanNode, !baseStorage.isEmpty else { return }
+        luns = try? await storage.connection.send(PVE.storageVolumes(node: node, storage: baseStorage, content: .images))
+    }
+
+    /// Pools or file systems of the cluster's Ceph; without Ceph the storage must be external.
+    private func loadCephChoices() async {
+        guard let node = storage.scanNode else {
+            cephChoices = []
+            draft.usesClusterCeph = false
+            return
+        }
+        let request = draft.type == .rbd ? PVE.cephPools(node: node) : PVE.cephFilesystems(node: node)
+        cephChoices = (try? await storage.scan(request)) ?? []
+        if cephChoices?.isEmpty == true {
+            draft.usesClusterCeph = false
+        } else if draft.type == .rbd, draft.pool.isEmpty {
+            draft.pool = cephChoices?.first?.name ?? ""
+        }
+    }
+
     private func scanThinPools() async {
         guard let node = storage.scanNode, !draft.volumeGroup.isEmpty else { return }
         thinPools = try? await storage.scan(PVE.scanThinPools(node: node, volumeGroup: draft.volumeGroup))
         if let first = thinPools?.first, draft.thinPool.isEmpty { draft.thinPool = first.name }
+    }
+}
+
+// MARK: - PBS encryption
+
+/// Client-side encryption of backups on a Proxmox Backup Server: none, a generated key or an uploaded one.
+private struct PBSEncryptionSection: View {
+    @Binding var draft: StorageConfigDraft
+    let isNew: Bool
+    let error: String?
+    @State private var picksFile = false
+
+    var body: some View {
+        Section {
+            if draft.hasEncryptionKey {
+                LabeledContent("Encryption Key") {
+                    Label(keySummary, systemImage: "lock.fill")
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(.green)
+                }
+                Picker("Key", selection: $draft.encryptionMode) {
+                    Text("Keep").tag(PBSEncryptionMode.keep)
+                    Text("Remove").tag(PBSEncryptionMode.none)
+                    Text("Generate New").tag(PBSEncryptionMode.autogenerate)
+                    Text("Upload Other").tag(PBSEncryptionMode.upload)
+                }
+                .accessibilityIdentifier("pbs.encryption")
+            } else {
+                Picker("Encryption", selection: Binding(get: { draft.encryptionMode == .keep ? .none : draft.encryptionMode }, set: { draft.encryptionMode = $0 })) {
+                    Text("None").tag(PBSEncryptionMode.none)
+                    Text("Generate Key").tag(PBSEncryptionMode.autogenerate)
+                    Text("Upload Key").tag(PBSEncryptionMode.upload)
+                }
+                .accessibilityIdentifier("pbs.encryption")
+            }
+            if draft.encryptionMode == .upload {
+                TextField("Key", text: $draft.encryptionKey, prompt: Text("{\"kdf\": …, \"data\": …}"), axis: .vertical)
+                    .lineLimit(2...8)
+                    .font(.caption.monospaced())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Choose Key File", systemImage: "doc") { picksFile = true }
+            }
+            FieldError(message: error)
+        } header: {
+            Text("Encryption")
+        } footer: {
+            if draft.hasEncryptionKey, draft.encryptionMode != .keep {
+                Label("Removing or replacing the key breaks restoring the backups made with it.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            } else if draft.encryptionMode == .autogenerate {
+                Text("The key is shown once after saving. Keep it safe: without it, encrypted backups cannot be restored.")
+            } else {
+                Text("Backups are encrypted on the node before they reach the backup server.")
+            }
+        }
+        .fileImporter(isPresented: $picksFile, allowedContentTypes: [.json, .data]) { result in
+            guard case .success(let url) = result else { return }
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            if let text = try? String(contentsOf: url, encoding: .utf8) { draft.encryptionKey = text }
+        }
+    }
+
+    private var keySummary: String {
+        guard let info = draft.encryptionKeyInfo, info.contains(":") else { return String(localized: "Active") }
+        // The web interface shows the first eight bytes of the fingerprint.
+        return info.split(separator: ":").prefix(8).joined(separator: ":")
+    }
+}
+
+/// The key Proxmox generated for an encrypted PBS storage, shown once so it can be saved.
+private struct EncryptionKeyView: View {
+    let storage: String
+    let key: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section {
+                Text(key)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                Button("Copy Key", systemImage: "doc.on.doc") { UIPasteboard.general.string = key }
+                ShareLink(item: KeyFile(name: "pve-storage-\(storage).enc", text: key), preview: SharePreview("pve-storage-\(storage).enc")) {
+                    Label("Save Key File", systemImage: "square.and.arrow.up")
+                }
+            } footer: {
+                Text("Save the key in a password manager and keep a copy offline. Losing it makes every backup encrypted with it unusable.")
+            }
+        }
+        .navigationTitle("Save the Encryption Key")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+    }
+}
+
+/// A text file to share, e.g. an encryption key.
+private struct KeyFile: Transferable {
+    let name: String
+    let text: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .data) { file in
+            let url = FileManager.default.temporaryDirectory.appending(path: file.name)
+            try Data(file.text.utf8).write(to: url)
+            return SentTransferredFile(url)
+        }
     }
 }

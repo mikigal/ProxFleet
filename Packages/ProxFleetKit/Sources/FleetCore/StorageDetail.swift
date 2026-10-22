@@ -13,12 +13,23 @@ public final class StorageDetail {
 
     public private(set) var status: StorageStatus?
     public private(set) var volumes: [StorageVolume]?
+    /// The backups on the storage, with notes and protection; nil when it holds no backups.
+    public private(set) var backups: [BackupVolume]?
+    /// Usage over the chosen timeframe.
+    public private(set) var history: [RRDPoint] = []
     public private(set) var privileges: Set<String>?
     public private(set) var loadError: String?
     /// The running upload: file name and the fraction sent so far.
     public private(set) var upload: (fileName: String, fraction: Double)?
     /// Why the last upload failed, for screens that let it run on after their form closed.
     public var uploadError: String?
+
+    public var timeframe: RRDTimeframe = .day {
+        didSet {
+            guard timeframe != oldValue else { return }
+            Task { await loadHistory() }
+        }
+    }
 
     public init(node: String, storage: String, connection: ServerConnection) {
         self.node = node
@@ -47,14 +58,47 @@ public final class StorageDetail {
     public func load() async {
         async let privileges = try? connection.session.privileges(on: "/storage/\(storage)")
         do {
-            status = try await connection.session.send(PVE.storageStatus(node: node, storage: storage))
+            let status = try await connection.session.send(PVE.storageStatus(node: node, storage: storage))
+            self.status = status
             volumes = try await connection.session.send(PVE.storageVolumes(node: node, storage: storage))
+            backups = status.content.contains("backup") ? try await connection.session.send(PVE.backups(node: node, storage: storage)) : nil
             loadError = nil
         } catch is CancellationError {
         } catch {
             loadError = error.localizedDescription
         }
         if let privileges = await privileges { self.privileges = privileges }
+    }
+
+    public func loadHistory() async {
+        if let points = try? await connection.session.send(PVE.storageRRD(node: node, storage: storage, timeframe: timeframe)) {
+            history = points.filter { $0.storageTotal != nil }
+        }
+    }
+
+    /// Changes, deletes or prunes backups and waits for the task, then reloads the content.
+    public func runBackupAction(_ request: APIRequest<String?>) async throws(ConfigUpdateError) {
+        do {
+            try await runTask(request)
+        } catch {
+            await load()
+            throw error
+        }
+        await load()
+    }
+
+    /// Lets the node pull an OCI image as a container template. Returns once the task started.
+    public func pullOCIImage(_ draft: OCIPullDraft) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        do {
+            let upid = try await connection.session.send(PVE.pullOCIImage(node: node, storage: storage, draft))
+            return try connection.tasks.track(upid, reportsFailure: true)
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+    }
+
+    public func ociTags(of reference: String) async throws -> [String] {
+        try await connection.session.send(PVE.ociTags(node: node, reference: reference))
     }
 
     // MARK: - Actions

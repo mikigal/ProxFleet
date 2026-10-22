@@ -146,8 +146,13 @@ struct StorageDetailView: View {
     @State private var fileTarget: StorageContentType?
     @State private var downloadTarget: StorageContentType?
     @State private var downloadsTemplates = false
+    @State private var pullsOCIImage = false
     @State private var deleting: StorageVolume?
     @State private var errorMessage: String?
+    /// A guest created by an import, opened once the import sheet is gone.
+    @State private var importing: StorageVolume?
+    @State private var importedGuest: GuestReference?
+    @State private var openedGuest: GuestReference?
 
     init(node: String, storage: String, connection: ServerConnection) {
         _detail = State(initialValue: StorageDetail(node: node, storage: storage, connection: connection))
@@ -171,6 +176,18 @@ struct StorageDetailView: View {
                         Label("The storage is not active on \(detail.node).", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
                     }
+                }
+                if status.total > 0 {
+                    Section {
+                        PerformanceChart(points: detail.history, metric: .usage, timeframe: detail.timeframe)
+                        Picker("Timeframe", selection: Binding(get: { detail.timeframe }, set: { detail.timeframe = $0 })) {
+                            ForEach(RRDTimeframe.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    } header: {
+                        Text("Usage History")
+                    }
+                    .task { await detail.loadHistory() }
                 }
             }
             if let upload = detail.upload {
@@ -197,7 +214,37 @@ struct StorageDetailView: View {
                     .accessibilityIdentifier("storage.content")
                 }
             }
-            if let selected, detail.volumes != nil {
+            if selected == .backup, let backups = detail.backups {
+                Section {
+                    if backups.isEmpty {
+                        Text("No Backups").foregroundStyle(.secondary)
+                    }
+                    ForEach(backups.sorted { ($0.vmid ?? 0, $1.date ?? .distantPast) < ($1.vmid ?? 0, $0.date ?? .distantPast) }) { backup in
+                        NavigationLink {
+                            BackupDetailView(source: detail, backup: backup, guest: nil)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let vmid = backup.vmid {
+                                    Text([String(vmid), guestName(vmid)].compactMap { $0 }.joined(separator: " · "))
+                                        .font(.subheadline.weight(.semibold))
+                                }
+                                BackupRow(backup: backup)
+                            }
+                        }
+                        .swipeActions {
+                            if canAllocate, !backup.isProtected, let volume = detail.volumes?.first(where: { $0.volumeID == backup.volumeID }) {
+                                Button("Delete", systemImage: "trash") { deleting = volume }
+                                    .tint(.red)
+                            }
+                        }
+                        .accessibilityIdentifier("backup.\(backup.fileName)")
+                    }
+                } header: {
+                    Text("Backups")
+                } footer: {
+                    Text("Restore a backup as a new guest from its details, also when the guest no longer exists.")
+                }
+            } else if let selected, detail.volumes != nil {
                 let volumes = detail.volumes(of: selected)
                 Section {
                     if volumes.isEmpty {
@@ -206,6 +253,8 @@ struct StorageDetailView: View {
                     }
                     ForEach(volumes) { volume in
                         VolumeRow(volume: volume, content: selected, guestName: guestName(volume.vmid))
+                            .contentShape(Rectangle())
+                            .onTapGesture { if selected == .import, volume.isImportable { importing = volume } }
                             .swipeActions {
                                 // Not `role: .destructive`: that hides the row on a full swipe, but this only asks first.
                                 if canAllocate, !volume.isProtected {
@@ -214,6 +263,9 @@ struct StorageDetailView: View {
                                 }
                             }
                             .contextMenu {
+                                if selected == .import, volume.isImportable {
+                                    Button(volume.isGuestArchive ? "Import Guest" : "Import as Disk", systemImage: "square.and.arrow.down") { importing = volume }
+                                }
                                 Button("Copy Volume ID", systemImage: "doc.on.doc") { UIPasteboard.general.string = volume.volumeID }
                                 if canAllocate, !volume.isProtected {
                                     Button("Delete", systemImage: "trash", role: .destructive) { deleting = volume }
@@ -225,6 +277,8 @@ struct StorageDetailView: View {
                 } footer: {
                     if selected == .images || selected == .rootdir {
                         Text("Disks still used by a guest cannot be deleted here; remove them from the guest's hardware first.")
+                    } else if selected == .import {
+                        Text("Tap an OVA, OVF or ESXi guest to import it as a VM, or a disk image to import it into a VM.")
                     }
                 }
             }
@@ -252,6 +306,8 @@ struct StorageDetailView: View {
                                 .accessibilityIdentifier("storage.download.\(type.rawValue)")
                             if type == .vztmpl {
                                 Button("Download Templates", systemImage: "square.and.arrow.down") { downloadsTemplates = true }
+                                Button("Pull from OCI Registry", systemImage: "shippingbox") { pullsOCIImage = true }
+                                    .accessibilityIdentifier("storage.oci")
                             }
                         }
                     }
@@ -276,6 +332,32 @@ struct StorageDetailView: View {
             NavigationStack {
                 TemplateDownloadView(connection: detail.connection, node: detail.node) { _ in }
             }
+        }
+        .sheet(isPresented: $pullsOCIImage) {
+            NavigationStack {
+                OCIPullView(detail: detail)
+            }
+        }
+        .sheet(item: $importing, onDismiss: {
+            openedGuest = importedGuest
+            importedGuest = nil
+        }) { volume in
+            NavigationStack {
+                if volume.isGuestArchive {
+                    GuestImportView(connection: detail.connection, node: detail.node, volume: volume.volumeID) { importedGuest = $0 }
+                } else {
+                    ImportDiskTargetView(connection: detail.connection, node: detail.node, volume: volume.volumeID)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Cancel") { importing = nil }
+                            }
+                        }
+                }
+            }
+            .serverDestinations(detail.connection)
+        }
+        .navigationDestination(item: $openedGuest) { reference in
+            GuestDetailView(reference: reference, connection: detail.connection)
         }
         .confirmationDialog("Delete \(deleting?.fileName ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible, presenting: deleting) { volume in
             Button("Delete", role: .destructive) { Task { await delete(volume) } }
@@ -307,6 +389,13 @@ struct StorageDetailView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+extension StorageVolume {
+    /// Import content the web interface can import: guest archives and ESXi guests, or disk images.
+    var isImportable: Bool { ["ova", "ovf", "vmx", "raw", "qcow2", "vmdk"].contains(format ?? "") }
+    /// An OVA, OVF or ESXi guest, imported as a new VM; other images become a disk of an existing VM.
+    var isGuestArchive: Bool { ["ova", "ovf", "vmx"].contains(format ?? "") }
 }
 
 private struct VolumeRow: View {
@@ -466,6 +555,8 @@ struct DownloadURLView: View {
     @State private var showsProblems = false
     @State private var errorMessage: String?
     @State private var fieldErrors: [String: String] = [:]
+    /// The name taken from the URL, replaced again while the URL is edited.
+    @State private var lastGuessedName = ""
     @Environment(\.dismiss) private var dismiss
 
     init(detail: StorageDetail, content: StorageContentType, onDownloaded: ((String) -> Void)? = nil) {
@@ -502,6 +593,16 @@ struct DownloadURLView: View {
                 LabeledTextField(title: "File Name", prompt: "image.iso", text: $draft.fileName, identifier: "download.name")
                 FieldError(message: errors["filename"])
                 Toggle("Verify Certificates", isOn: $draft.verifyCertificates)
+                if draft.content == .iso {
+                    Picker("Decompress", selection: $draft.decompression) {
+                        Text("None").tag("")
+                        Text("LZO").tag("lzo")
+                        Text("GZIP").tag("gz")
+                        Text("ZSTD").tag("zst")
+                        Text("BZIP2").tag("bz2")
+                    }
+                    .accessibilityIdentifier("download.decompression")
+                }
             } footer: {
                 Text("The node downloads the file itself, so the URL must be reachable from \(detail.node). The download continues as a task.")
             }
@@ -512,8 +613,9 @@ struct DownloadURLView: View {
         .navigationBarTitleDisplayMode(.inline)
         .disabled(isStarting)
         .onChange(of: draft.url) { _, url in
-            if draft.fileName.isEmpty || draft.fileName == metadata?.fileName {
-                draft.fileName = StorageFileDraft.fileName(from: url)
+            if draft.fileName.isEmpty || draft.fileName == metadata?.fileName || draft.fileName == lastGuessedName {
+                draft.applyQueriedName(StorageFileDraft.fileName(from: url))
+                lastGuessedName = draft.fileName
             }
         }
         .toolbar {
@@ -534,7 +636,7 @@ struct DownloadURLView: View {
         do {
             let metadata = try await detail.metadata(of: draft.url.trimmingCharacters(in: .whitespaces), verifyCertificates: draft.verifyCertificates)
             self.metadata = metadata
-            if let name = metadata.fileName { draft.fileName = name }
+            if let name = metadata.fileName { draft.applyQueriedName(name) }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -623,3 +725,103 @@ private struct ChecksumSection: View {
     }
 }
 
+
+/// Pulls an OCI image (e.g. from Docker Hub) as a container template, like the web interface's Pull from OCI Registry.
+private struct OCIPullView: View {
+    let detail: StorageDetail
+    @State private var draft = OCIPullDraft()
+    @State private var tags: [String] = []
+    @State private var isQuerying = false
+    @State private var isStarting = false
+    @State private var showsProblems = false
+    @State private var errorMessage: String?
+    @State private var fieldErrors: [String: String] = [:]
+    @Environment(\.dismiss) private var dismiss
+
+    private var errors: [String: String] { (showsProblems ? draft.problems : [:]).merging(fieldErrors) { _, server in server } }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledTextField(title: "Reference", prompt: "docker.io/library/alpine", text: $draft.reference, keyboard: .URL, identifier: "oci.reference")
+                    .onSubmit { draft.takeTagFromReference() }
+                FieldError(message: errors["reference"])
+                Button {
+                    Task { await queryTags() }
+                } label: {
+                    HStack {
+                        Text("Query Tags")
+                        Spacer()
+                        if isQuerying { ProgressView() }
+                    }
+                }
+                .disabled(draft.reference.trimmingCharacters(in: .whitespaces).isEmpty || isQuerying)
+                .accessibilityIdentifier("oci.query")
+                if tags.isEmpty {
+                    LabeledTextField(title: "Tag", prompt: "latest", text: $draft.tag, identifier: "oci.tag")
+                } else {
+                    Picker("Tag", selection: $draft.tag) {
+                        ForEach(tags.contains(draft.tag) ? tags : [draft.tag] + tags, id: \.self) { Text($0).tag($0) }
+                    }
+                    .pickerStyle(.navigationLink)
+                }
+                FieldError(message: errors["tag"])
+                LabeledTextField(title: "File Name", prompt: "reference_tag", text: $draft.fileName)
+                FieldError(message: errors["filename"])
+            } footer: {
+                Text("\(detail.node) downloads the image itself and saves it on \(detail.storage) as a container template.")
+            }
+            ErrorSection(message: errorMessage)
+        }
+        .navigationTitle("Pull from OCI Registry")
+        .navigationBarTitleDisplayMode(.inline)
+        .disabled(isStarting)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                ProgressButton("Download", isWorking: isStarting) { Task { await start() } }
+                    .accessibilityIdentifier("oci.start")
+            }
+        }
+    }
+
+    private func queryTags() async {
+        draft.takeTagFromReference()
+        isQuerying = true
+        errorMessage = nil
+        defer { isQuerying = false }
+        do {
+            // Newest tags tend to come last; show them first.
+            tags = try await detail.ociTags(of: draft.reference.trimmingCharacters(in: .whitespaces)).reversed()
+            if !tags.contains(draft.tag), let first = tags.first, draft.tag.isEmpty { draft.tag = first }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func start() async {
+        draft.takeTagFromReference()
+        showsProblems = true
+        fieldErrors = [:]
+        guard draft.problems.isEmpty else { return }
+        isStarting = true
+        errorMessage = nil
+        defer { isStarting = false }
+        do {
+            let task = try await detail.pullOCIImage(draft)
+            let detail = detail
+            Task {
+                _ = await detail.connection.tasks.result(of: task.id)
+                await detail.load()
+            }
+            dismiss()
+        } catch .invalid(let message, let fields) {
+            fieldErrors = fields
+            errorMessage = message
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}

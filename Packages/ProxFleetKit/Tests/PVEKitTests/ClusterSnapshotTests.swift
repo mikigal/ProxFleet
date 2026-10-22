@@ -88,8 +88,8 @@ struct ClusterSnapshotTests {
         #expect(snapshot.virtualMachines.count == 7)
         #expect(snapshot.containers.count == 4)
         #expect(snapshot.guests.first { $0.vmid == 105 }?.state == .unknown) // on the offline node
-        // local and local-lvm on each node, plus the shared NFS and PBS storages.
-        #expect(snapshot.storages.count == 12)
+        // local and local-lvm on each node, plus the shared NFS, PBS and ESXi storages.
+        #expect(snapshot.storages.count == 15)
         let nas = snapshot.storages.filter { $0.name == "nas" }
         #expect(nas.count == 3 && nas.allSatisfy(\.isShared))
     }

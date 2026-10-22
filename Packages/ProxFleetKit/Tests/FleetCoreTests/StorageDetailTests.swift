@@ -72,7 +72,7 @@ struct StorageDetailTests {
         let connection = try await connection()
         let storage = DatacenterStorage(connection: connection)
         await storage.load()
-        #expect(storage.configs?.map(\.storage) == ["local", "local-lvm", "nas", "pbs"])
+        #expect(storage.configs?.map(\.storage) == ["esxi-lab", "local", "local-lvm", "nas", "pbs"])
         #expect(storage.canModify && storage.scanNode == "pve1")
 
         let exports = try await storage.scan(PVE.scanNFS(node: "pve1", server: "10.0.10.5"))
@@ -113,6 +113,85 @@ struct StorageDetailTests {
 
         try await storage.delete("media")
         #expect(storage.configs?.contains { $0.storage == "media" } == false)
+    }
+
+    @Test func newStorageTypesAndEncryptionKeys() async throws {
+        let storage = DatacenterStorage(connection: try await connection())
+        await storage.load()
+        let esxi = try #require(storage.configs?.first { $0.storage == "esxi-lab" })
+        #expect(StorageConfigDraft(esxi)?.skipsCertificateVerification == true)
+
+        var iscsi = StorageConfigDraft(type: .iscsi)
+        iscsi.storage = "san"
+        iscsi.portal = "10.0.10.30"
+        let targets = try await storage.scan(PVE.scanISCSI(node: "pve1", portal: "10.0.10.30"))
+        iscsi.target = try #require(targets.first?.name)
+        iscsi.usesLUNsDirectly = false
+        try await storage.create(iscsi)
+        #expect(storage.configs?.first { $0.storage == "san" }?.content == ["none"])
+
+        var pbs = StorageConfigDraft(type: .pbs)
+        pbs.storage = "encrypted"
+        pbs.server = "10.0.10.6"
+        pbs.datastore = "main"
+        pbs.username = "backup@pbs"
+        pbs.password = "secret"
+        pbs.encryptionMode = .autogenerate
+        let key = try #require(try await storage.create(pbs))
+        #expect(key.contains("\"data\""))
+        let created = try #require(storage.configs?.first { $0.storage == "encrypted" })
+        let draft = try #require(StorageConfigDraft(created))
+        #expect(draft.hasEncryptionKey)
+        // Saving other changes keeps the key.
+        var edit = draft
+        edit.namespace = "lab"
+        #expect(try await storage.update("encrypted", edit.changes(from: draft), digest: created.digest) == nil)
+        #expect(storage.configs?.first { $0.storage == "encrypted" }?.values["encryption-key"] == created.values["encryption-key"])
+    }
+
+    @Test func historyPruningOCIAndImports() async throws {
+        let connection = try await connection()
+        let detail = StorageDetail(node: "pve1", storage: "local", connection: connection)
+        await detail.load()
+        await detail.loadHistory()
+        #expect(detail.history.count == 70 && detail.history.allSatisfy { ($0.storageUsed ?? 0) > 0 })
+        #expect(detail.backups?.map(\.vmid).contains(202) == true)
+
+        // VM 100 has two local backups, one protected; keeping the last one removes nothing else.
+        var options = PruneOptions()
+        options.counts = ["keep-last": "1"]
+        let preview = try await connection.send(PVE.prunePreview(node: "pve1", storage: "local", kind: .virtualMachine, vmid: 100, options: options))
+        #expect(preview.map(\.mark) == ["keep", "protected"])
+        let lxc = try await connection.send(PVE.prunePreview(node: "pve1", storage: "local", kind: .container, vmid: 200, options: nil))
+        #expect(lxc.map(\.mark) == ["keep"])
+
+        var oci = OCIPullDraft()
+        oci.reference = "docker.io/library/alpine"
+        #expect(try await detail.ociTags(of: oci.reference).contains("latest"))
+        let task = try await detail.pullOCIImage(oci)
+        #expect(await connection.tasks.result(of: task.id) == .succeeded)
+        await detail.load()
+        #expect(detail.volumes(of: .vztmpl).contains { $0.fileName == "alpine_latest.tar" })
+
+        let ova = try #require(detail.volumes(of: .import).first { $0.format == "ova" })
+        var draft = GuestImportDraft(metadata: try await connection.send(PVE.importMetadata(node: "pve1", volume: ova.volumeID)), node: "pve1", volume: ova.volumeID)
+        #expect(draft.needsExtracting && draft.disks.map(\.id) == ["efidisk0", "scsi0"])
+        draft.vmid = try await connection.send(PVE.nextVMID()).value
+        draft.defaultStorage = "local-lvm"
+        draft.defaultBridge = "vmbr0"
+        draft.liveImport = true
+        let importing = try await connection.start(PVE.importGuest(draft))
+        #expect(await connection.tasks.result(of: importing.id) == .succeeded)
+        let imported = GuestDetail(reference: GuestReference(node: "pve1", vmid: draft.vmid, kind: .virtualMachine), connection: connection)
+        await imported.load()
+        #expect(imported.name == "home-assistant-16.2" && imported.powerState == .running)
+        #expect(imported.config?["scsi0"]?.hasPrefix("local-lvm:vm-\(draft.vmid)-disk-") == true && imported.config?["efidisk0"] != nil)
+
+        let esxi = StorageDetail(node: "pve1", storage: "esxi-lab", connection: connection)
+        await esxi.load()
+        let guest = try #require(esxi.volumes(of: .import).first { $0.fileName.hasPrefix("win") })
+        let windows = GuestImportDraft(metadata: try await connection.send(PVE.importMetadata(node: "pve1", volume: guest.volumeID)), node: "pve1", volume: guest.volumeID)
+        #expect(windows.isWindows && windows.prepareForVirtIOSCSI && windows.warnings.count == 2)
     }
 
     @Test func auditorCannotChangeStorageDefinitions() async throws {
