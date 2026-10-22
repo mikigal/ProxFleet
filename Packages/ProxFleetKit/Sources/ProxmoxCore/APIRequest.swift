@@ -43,6 +43,16 @@ public struct APIParameters: Sendable, Equatable, ExpressibleByDictionaryLiteral
         }
     }
 
+    /// Adds a value without replacing others of the same name, for array parameters such as `target=a&target=b`.
+    public mutating func append(_ name: String, _ value: APIValue) {
+        items.append((name: name, value: value))
+    }
+
+    /// Every value of a name, in order.
+    public func values(_ name: String) -> [APIValue] {
+        items.filter { $0.name == name }.map(\.value)
+    }
+
     /// `application/x-www-form-urlencoded` representation.
     public var formEncoded: String {
         items.map { "\(Self.escape($0.name))=\(Self.escape($0.value.encoded))" }.joined(separator: "&")

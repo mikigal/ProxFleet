@@ -68,6 +68,7 @@ actor DemoState {
     var storageConfigs: [DemoStorageConfig]
     var backupJobs: [DemoBackupJob]
     var access = DemoAccess.sample
+    var notifications = DemoNotifications.sample
     var firewall: DemoFirewall
     /// Repositories enabled or disabled by `path#index`, and standard repositories added, by node.
     var repositoryStates: [String: [String: Bool]] = [:]
@@ -272,12 +273,16 @@ actor DemoState {
         return HTTPResponse(statusCode: 200, headers: ["Content-Type": "application/json"], body: body.encoded())
     }
 
+    static let listSeparator = "\u{1E}"
+
     private static func parameters(of request: HTTPRequest) -> [String: String] {
         let encoded = request.body.flatMap { String(data: $0, encoding: .utf8) } ?? request.url.query(percentEncoded: true) ?? ""
         var result: [String: String] = [:]
         for pair in encoded.split(separator: "&") {
             let parts = pair.split(separator: "=", maxSplits: 1).map { String($0).removingPercentEncoding ?? String($0) }
-            result[parts[0]] = parts.count > 1 ? parts[1] : ""
+            let value = parts.count > 1 ? parts[1] : ""
+            // Array parameters repeat their name; their values are kept together, split by `listSeparator`.
+            result[parts[0]] = result[parts[0]].map { $0 + Self.listSeparator + value } ?? value
         }
         return result
     }

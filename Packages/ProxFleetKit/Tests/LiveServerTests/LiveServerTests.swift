@@ -1272,6 +1272,115 @@ struct LiveServerTests {
         #expect(try await !session.send(ProxmoxAccess.realms()).contains { $0.realm == "pflive" })
     }
 
+    /// Temporary notification endpoints and a matcher, and datacenter options changed and put back.
+    @Test func notificationsAndDatacenterOptions() async throws {
+        let (session, _) = try await rootSession()
+        try #require(try await !session.send(PVE.notificationTargets()).contains { $0.name.hasPrefix("pflive") }, "left over from an earlier run")
+
+        var mail = NotificationEndpointDraft(type: .sendmail)
+        mail.name = "pflive-mail"
+        mail.mailto = ["ops@example.com", "dev@example.com"]
+        mail.comment = "ProxFleet live test"
+        var smtp = NotificationEndpointDraft(type: .smtp)
+        smtp.name = "pflive-smtp"
+        smtp.server = "smtp.invalid"
+        smtp.fromAddress = "pve@example.com"
+        smtp.mailto = ["ops@example.com"]
+        smtp.username = "pve"
+        smtp.secret = "smtp-secret"
+        var gotify = NotificationEndpointDraft(type: .gotify)
+        gotify.name = "pflive-gotify"
+        gotify.server = "https://gotify.invalid"
+        gotify.secret = "token"
+        var webhook = NotificationEndpointDraft(type: .webhook)
+        webhook.name = "pflive-hook"
+        webhook.url = "https://hooks.invalid/{{ secrets.path }}"
+        webhook.body = #"{"text": "{{ title }}"}"#
+        webhook.headers = [WebhookPair(name: "Content-Type", value: "application/json")]
+        webhook.secrets = [WebhookPair(name: "path", value: "abc123")]
+        for draft in [mail, smtp, gotify, webhook] {
+            #expect(draft.problems(isNew: true).isEmpty, "\(draft.type)")
+            _ = try await session.send(PVE.createNotificationEndpoint(draft))
+        }
+        let targets = try await session.send(PVE.notificationTargets())
+        #expect(Set(targets.filter { $0.name.hasPrefix("pflive") }.map(\.type)) == ["sendmail", "smtp", "gotify", "webhook"])
+
+        let mailConfig = try await session.send(PVE.notificationEndpoint(.sendmail, name: "pflive-mail"))
+        let savedMail = NotificationEndpointDraft(type: .sendmail, name: "pflive-mail", mailConfig)
+        #expect(savedMail.mailto == ["ops@example.com", "dev@example.com"] && savedMail.mailtoUsers == ["root@pam"])
+        #expect(savedMail.changes(from: savedMail).isEmpty)
+        var editedMail = savedMail
+        editedMail.mailto = ["ops@example.com"]
+        editedMail.mailtoUsers = ["root@pam"]
+        editedMail.comment = ""
+        _ = try await session.send(PVE.updateNotificationEndpoint(.sendmail, name: "pflive-mail", editedMail.changes(from: savedMail), digest: mailConfig.digest))
+        let reread = NotificationEndpointDraft(type: .sendmail, name: "pflive-mail", try await session.send(PVE.notificationEndpoint(.sendmail, name: "pflive-mail")))
+        #expect(reread.mailto == ["ops@example.com"] && reread.mailtoUsers == ["root@pam"] && reread.comment.isEmpty)
+
+        let hookConfig = try await session.send(PVE.notificationEndpoint(.webhook, name: "pflive-hook"))
+        var savedHook = NotificationEndpointDraft(type: .webhook, name: "pflive-hook", hookConfig)
+        #expect(savedHook.body == webhook.body && savedHook.headers.first?.value == "application/json")
+        #expect(savedHook.secrets.map(\.name) == ["path"] && savedHook.secrets.first?.isStored == true)
+        // Changing a header keeps the stored secret, which is sent by name only.
+        let original = savedHook
+        savedHook.headers.append(WebhookPair(name: "X-Source", value: "pve"))
+        _ = try await session.send(PVE.updateNotificationEndpoint(.webhook, name: "pflive-hook", savedHook.changes(from: original), digest: hookConfig.digest))
+        let hookAfter = NotificationEndpointDraft(type: .webhook, name: "pflive-hook", try await session.send(PVE.notificationEndpoint(.webhook, name: "pflive-hook")))
+        #expect(hookAfter.headers.count == 2 && hookAfter.secrets.map(\.name) == ["path"])
+
+        var matcher = NotificationMatcherDraft()
+        matcher.name = "pflive-matcher"
+        matcher.targets = ["pflive-mail", "pflive-hook"]
+        matcher.severities = [.warning, .error]
+        matcher.fields = [MatcherFieldRule(field: "type", value: "vzdump"), MatcherFieldRule(isRegex: true, field: "hostname", value: "^pve")]
+        matcher.calendars = ["mon..fri 8-17"]
+        matcher.matchesAll = false
+        #expect(matcher.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createNotificationMatcher(matcher))
+        let savedMatcher = try #require(try await session.send(PVE.notificationMatchers()).first { $0.name == "pflive-matcher" })
+        let matcherDraft = NotificationMatcherDraft(savedMatcher)
+        #expect(matcherDraft.targets == ["pflive-mail", "pflive-hook"] && matcherDraft.severities == [.warning, .error])
+        #expect(matcherDraft.fields == matcher.fields && matcherDraft.calendars == ["mon..fri 8-17"] && !matcherDraft.matchesAll)
+        #expect(matcherDraft.changes(from: matcherDraft).isEmpty)
+        var editedMatcher = matcherDraft
+        editedMatcher.calendars = []
+        editedMatcher.targets = ["pflive-mail"]
+        _ = try await session.send(PVE.updateNotificationMatcher("pflive-matcher", editedMatcher.changes(from: matcherDraft), digest: nil))
+        let matcherAfter = NotificationMatcherDraft(try #require(try await session.send(PVE.notificationMatchers()).first { $0.name == "pflive-matcher" }))
+        #expect(matcherAfter.calendars.isEmpty && matcherAfter.targets == ["pflive-mail"])
+        #expect(try await session.send(PVE.matcherFieldValues()).contains { $0.field == "type" && $0.value == "vzdump" })
+
+        // Sending through an unreachable server fails, but the request itself is valid.
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.testNotificationTarget("pflive-gotify")) }
+
+        _ = try await session.send(PVE.deleteNotificationMatcher("pflive-matcher"))
+        for draft in [mail, smtp, gotify, webhook] {
+            _ = try await session.send(PVE.deleteNotificationEndpoint(draft.type, name: draft.name))
+        }
+        #expect(try await !session.send(PVE.notificationTargets()).contains { $0.name.hasPrefix("pflive") })
+
+        let optionsConfig = try await session.send(PVE.datacenterOptions())
+        let options = DatacenterOptionsDraft(optionsConfig)
+        #expect(options.changes(from: options).isEmpty)
+        var edited = options
+        edited.tagShape = "dense"
+        edited.tagOrdering = "config"
+        edited.bandwidthLimits["restore"] = "102400"
+        edited.nextIDLower = "1000"
+        edited.migrationType = "insecure"
+        edited.haShutdownPolicy = "migrate"
+        edited.emailFrom = "pve@example.com"
+        #expect(edited.problems.isEmpty)
+        _ = try await session.send(PVE.updateDatacenterOptions(edited.changes(from: options)))
+        let saved = DatacenterOptionsDraft(try await session.send(PVE.datacenterOptions()))
+        print("Datacenter options after edit: \(try await session.send(PVE.datacenterOptions()).values)")
+        #expect(saved.tagShape == "dense" && saved.tagOrdering == "config" && saved.bandwidthLimits["restore"] == "102400")
+        #expect(saved.nextIDLower == "1000" && saved.migrationType == "insecure" && saved.haShutdownPolicy == "migrate" && saved.emailFrom == "pve@example.com")
+        #expect(saved.changes(from: saved).isEmpty)
+        _ = try await session.send(PVE.updateDatacenterOptions(options.changes(from: saved)))
+        #expect(DatacenterOptionsDraft(try await session.send(PVE.datacenterOptions())) == options)
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()

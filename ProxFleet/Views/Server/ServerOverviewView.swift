@@ -63,6 +63,18 @@ struct ServerOverviewView: View {
                         MoreRow(title: "Firewall", systemImage: "flame", color: .red)
                     }
                     .accessibilityIdentifier("datacenter.firewall")
+                    NavigationLink {
+                        NotificationsView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Notifications", systemImage: "bell", color: .pink)
+                    }
+                    .accessibilityIdentifier("datacenter.notifications")
+                    NavigationLink {
+                        DatacenterOptionsView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Options", systemImage: "gearshape", color: .gray)
+                    }
+                    .accessibilityIdentifier("datacenter.options")
                 }
             }
         }
