@@ -28,6 +28,20 @@ public struct BackupJob: Decodable, Sendable, Equatable, Identifiable {
     public var isProtected: Bool
     public var repeatMissed: Bool
     public var nextRun: Date?
+    /// KiB/s; nil uses the datacenter's limit.
+    public var bandwidthLimit: String?
+    public var zstdThreads: String?
+    /// `max-workers` and `pbs-entries-max`.
+    public var performance: PropertyString
+    /// `enabled` and `storage`: VM writes during the backup go to a temporary image on that storage.
+    public var fleecing: PropertyString
+    /// `legacy`, `data` or `metadata`; container backups to Proxmox Backup Server only.
+    public var pbsChangeDetection: String?
+    /// `auto`, `notification-system` or `legacy-sendmail`.
+    public var notificationMode: String?
+    public var mailto: String?
+    /// `always` or `failure`, for `legacy-sendmail`.
+    public var mailNotification: String?
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
@@ -68,6 +82,25 @@ public struct BackupJob: Decodable, Sendable, Equatable, Identifiable {
         isProtected = container.lossyBool(AnyCodingKey("protected")) ?? false
         repeatMissed = container.lossyBool(AnyCodingKey("repeat-missed")) ?? false
         nextRun = container.lossyInt(AnyCodingKey("next-run")).map { Date(timeIntervalSince1970: TimeInterval($0)) }
+        bandwidthLimit = text("bwlimit")
+        zstdThreads = text("zstd")
+        // Like `prune-backups`, these property strings come as objects.
+        func property(_ key: String) -> PropertyString {
+            if let nested = try? container.nestedContainer(keyedBy: AnyCodingKey.self, forKey: AnyCodingKey(key)) {
+                var property = PropertyString(items: [])
+                for inner in nested.allKeys.sorted(by: { $0.stringValue < $1.stringValue }) {
+                    if let value = nested.lossyString(inner) { property[inner.stringValue] = value }
+                }
+                return property
+            }
+            return PropertyString(parsing: text(key) ?? "")
+        }
+        performance = property("performance")
+        fleecing = property("fleecing")
+        pbsChangeDetection = text("pbs-change-detection-mode")
+        notificationMode = text("notification-mode")
+        mailto = text("mailto")
+        mailNotification = text("mailnotification")
     }
 
     /// The `vzdump` calls that run the job now, one per node, as the web interface's Run Now does: jobs for all
@@ -81,6 +114,14 @@ public struct BackupJob: Decodable, Sendable, Equatable, Identifiable {
         if let notesTemplate { base["notes-template"] = .string(notesTemplate) }
         if isProtected { base["protected"] = true }
         if let prune = prune?.serialized { base["prune-backups"] = .string(prune) }
+        if let bandwidthLimit { base["bwlimit"] = .string(bandwidthLimit) }
+        if let zstdThreads { base["zstd"] = .string(zstdThreads) }
+        if !performance.items.isEmpty { base["performance"] = .string(performance.stringValue) }
+        if !fleecing.items.isEmpty { base["fleecing"] = .string(fleecing.stringValue) }
+        if let pbsChangeDetection { base["pbs-change-detection-mode"] = .string(pbsChangeDetection) }
+        if let notificationMode { base["notification-mode"] = .string(notificationMode) }
+        if let mailto { base["mailto"] = .string(mailto) }
+        if let mailNotification { base["mailnotification"] = .string(mailNotification) }
 
         func request(_ node: String, _ extra: APIParameters) -> (node: String, request: APIRequest<String?>) {
             var parameters = base
@@ -166,6 +207,25 @@ public struct BackupJobDraft: Equatable, Sendable {
     public var prune = PruneOptions()
     public var isProtected = false
     public var repeatMissed = false
+    /// Set only when creating; empty lets the server pick an ID. Notification matchers can match on it.
+    public var jobID = ""
+    /// KiB/s; empty uses the datacenter's limit.
+    public var bandwidthLimit = ""
+    /// Empty for the default (1); 0 uses half of the cores.
+    public var zstdThreads = ""
+    /// QEMU I/O workers (VMs only); empty for the default (16).
+    public var ioWorkers = ""
+    public var fleecing = false
+    public var fleecingStorage = ""
+    /// `legacy`, `data`, `metadata` or empty for the default.
+    public var pbsChangeDetection = ""
+    /// Notifications through the datacenter's targets and matchers, or mail with sendmail as before PVE 8.1.
+    public var usesLegacySendmail = false
+    public var mailto = ""
+    /// `always` or `failure`.
+    public var mailNotification = "always"
+    private var otherPerformance = PropertyString(items: [])
+    private var otherFleecing = PropertyString(items: [])
 
     public init() {}
 
@@ -193,6 +253,22 @@ public struct BackupJobDraft: Equatable, Sendable {
         prune = job.prune ?? PruneOptions()
         isProtected = job.isProtected
         repeatMissed = job.repeatMissed
+        bandwidthLimit = job.bandwidthLimit ?? ""
+        zstdThreads = job.zstdThreads ?? ""
+        var performance = job.performance
+        ioWorkers = performance["max-workers"] ?? ""
+        performance["max-workers"] = nil
+        otherPerformance = performance
+        var fleecing = job.fleecing
+        self.fleecing = (fleecing["enabled"] ?? fleecing.defaultValue) == "1"
+        fleecingStorage = fleecing["storage"] ?? ""
+        fleecing.items.removeAll { $0.key == nil || $0.key == "enabled" || $0.key == "storage" }
+        otherFleecing = fleecing
+        pbsChangeDetection = job.pbsChangeDetection ?? ""
+        // `auto` means sendmail when recipients are set, as the web interface reads it.
+        usesLegacySendmail = job.notificationMode == "legacy-sendmail" || (job.notificationMode ?? "auto" == "auto" && job.mailto != nil)
+        mailto = job.mailto ?? ""
+        mailNotification = job.mailNotification ?? "always"
     }
 
     private static func text(_ value: String) -> String? {
@@ -220,11 +296,29 @@ public struct BackupJobDraft: Equatable, Sendable {
         set("prune-backups", customRetention ? (prune.serialized ?? "keep-all=1") : nil)
         set("protected", isProtected ? "1" : nil)
         set("repeat-missed", repeatMissed ? "1" : nil)
+        set("bwlimit", Self.text(bandwidthLimit))
+        set("zstd", Self.text(zstdThreads))
+        var performance = PropertyString(items: [])
+        if let workers = Self.text(ioWorkers) { performance["max-workers"] = workers }
+        performance.items += otherPerformance.items
+        set("performance", performance.items.isEmpty ? nil : performance.stringValue)
+        var fleecing = PropertyString(items: [])
+        if self.fleecing {
+            fleecing["enabled"] = "1"
+            if let storage = Self.text(fleecingStorage) { fleecing["storage"] = storage }
+        }
+        fleecing.items += otherFleecing.items
+        set("fleecing", fleecing.items.isEmpty ? nil : fleecing.stringValue)
+        set("pbs-change-detection-mode", Self.text(pbsChangeDetection))
+        set("notification-mode", usesLegacySendmail ? "legacy-sendmail" : "notification-system")
+        set("mailto", usesLegacySendmail ? Self.text(mailto) : nil)
+        set("mailnotification", usesLegacySendmail && mailNotification != "always" ? mailNotification : nil)
         return values
     }
 
     var creationParameters: APIParameters {
         var parameters = APIParameters()
+        if let id = Self.text(jobID) { parameters["id"] = .string(id) }
         for (key, value) in serialized().sorted(by: { $0.key < $1.key }) {
             if let value { parameters[key] = .string(value) }
         }
@@ -250,6 +344,16 @@ public struct BackupJobDraft: Equatable, Sendable {
         case .pool where Self.text(pool) == nil: problems["pool"] = String(localized: "Choose a pool.")
         default: break
         }
+        if let id = Self.text(jobID), !(id.first?.isLetter == true && id.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "-_".unicodeScalars.contains($0)) }) {
+            problems["id"] = String(localized: "Start with a letter and use letters, digits, - and _.")
+        }
+        func number(_ text: String, _ key: String, _ range: ClosedRange<Int>, _ message: String) {
+            if let value = Self.text(text), !(Int(value).map(range.contains) ?? false) { problems[key] = message }
+        }
+        number(bandwidthLimit, "bwlimit", 0...Int.max, String(localized: "Use a whole number of KiB/s, or leave it empty."))
+        number(zstdThreads, "zstd", 0...256, String(localized: "Use a whole number of threads; 0 uses half of the cores."))
+        number(ioWorkers, "performance", 1...256, String(localized: "Use a number from 1 to 256."))
+        if usesLegacySendmail, Self.text(mailto) == nil { problems["mailto"] = String(localized: "Enter at least one recipient.") }
         return problems
     }
 }
@@ -278,5 +382,55 @@ extension PVE {
 
     public static func guestsWithoutBackupJob() -> APIRequest<[UnprotectedGuest]> {
         APIRequest(.get, "/cluster/backup-info/not-backed-up")
+    }
+
+    public static func backupJobVolumes(_ id: String) -> APIRequest<BackupJobVolumes> {
+        APIRequest(.get, "/cluster/backup/\(escapePath(id))/included_volumes")
+    }
+}
+
+/// `GET /cluster/backup/{id}/included_volumes`: the guests a job covers and which of their disks it backs up.
+public struct BackupJobVolumes: Decodable, Sendable, Equatable {
+    public struct Guest: Decodable, Sendable, Equatable, Identifiable {
+        public var id: Int
+        public var name: String?
+        /// `qemu`, `lxc` or `unknown` for guests that no longer exist.
+        public var type: String
+        public var volumes: [Volume]
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: AnyCodingKey.self)
+            id = container.lossyInt(AnyCodingKey("id")) ?? 0
+            name = container.lossyString(AnyCodingKey("name"))
+            type = container.lossyString(AnyCodingKey("type")) ?? "unknown"
+            volumes = (try? container.decode([Volume].self, forKey: AnyCodingKey("children"))) ?? []
+        }
+    }
+
+    public struct Volume: Decodable, Sendable, Equatable, Identifiable {
+        /// `202:rootfs`.
+        public var id: String
+        public var name: String
+        public var isIncluded: Bool
+        /// Why: `rootfs`, `default`, `mountpoint`, `disabled`, `efidisk`…
+        public var reason: String?
+
+        /// The configuration key, e.g. `scsi0`.
+        public var key: String { String(id.split(separator: ":").last ?? Substring(id)) }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: AnyCodingKey.self)
+            id = container.lossyString(AnyCodingKey("id")) ?? ""
+            name = container.lossyString(AnyCodingKey("name")) ?? ""
+            isIncluded = container.lossyBool(AnyCodingKey("included")) ?? false
+            reason = container.lossyString(AnyCodingKey("reason"))
+        }
+    }
+
+    public var guests: [Guest]
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        guests = (try? container.decode([Guest].self, forKey: AnyCodingKey("children"))) ?? []
     }
 }

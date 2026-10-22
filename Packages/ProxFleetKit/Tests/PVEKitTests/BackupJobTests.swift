@@ -57,7 +57,45 @@ struct BackupJobTests {
         draft.comment = "Weekly"
         #expect(draft.problems.isEmpty)
         #expect(PVE.createBackupJob(draft).parameters.formEncoded
-            == "comment=Weekly&compress=zstd&enabled=1&mode=snapshot&notes-template=%7B%7Bguestname%7D%7D&schedule=sat%2002%3A00&storage=pbs&vmid=100%2C201")
+            == "comment=Weekly&compress=zstd&enabled=1&mode=snapshot&notes-template=%7B%7Bguestname%7D%7D&notification-mode=notification-system&schedule=sat%2002%3A00&storage=pbs&vmid=100%2C201")
+        draft.jobID = "weekly-pbs"
+        draft.bandwidthLimit = "10240"
+        draft.zstdThreads = "0"
+        draft.ioWorkers = "8"
+        draft.fleecing = true
+        draft.fleecingStorage = "local-lvm"
+        draft.pbsChangeDetection = "metadata"
+        draft.usesLegacySendmail = true
+        draft.mailNotification = "failure"
+        #expect(draft.problems.keys.sorted() == ["mailto"])
+        draft.mailto = "root@pam"
+        #expect(PVE.createBackupJob(draft).parameters.formEncoded == "id=weekly-pbs&bwlimit=10240&comment=Weekly&compress=zstd&enabled=1"
+            + "&fleecing=enabled%3D1%2Cstorage%3Dlocal-lvm&mailnotification=failure&mailto=root%40pam&mode=snapshot&notes-template=%7B%7Bguestname%7D%7D"
+            + "&notification-mode=legacy-sendmail&pbs-change-detection-mode=metadata&performance=max-workers%3D8&schedule=sat%2002%3A00&storage=pbs&vmid=100%2C201&zstd=0")
+        draft.ioWorkers = "0"
+        draft.jobID = "1st"
+        #expect(draft.problems.keys.sorted() == ["id", "performance"])
+    }
+
+    @Test func advancedOptionsRoundTrip() throws {
+        let json = #"""
+        {"id":"job1","schedule":"21:00","storage":"local","all":1,"bwlimit":10240,"zstd":2,"performance":{"max-workers":"4","pbs-entries-max":"2000"},
+         "fleecing":{"enabled":1,"storage":"local-lvm"},"mailto":"root@pam","mailnotification":"failure"}
+        """#
+        let job = try JSONDecoder().decode(BackupJob.self, from: Data(json.utf8))
+        let draft = BackupJobDraft(job)
+        #expect(draft.ioWorkers == "4" && draft.fleecing && draft.fleecingStorage == "local-lvm" && draft.zstdThreads == "2")
+        // `auto` with recipients reads as sendmail, as in the web interface.
+        #expect(draft.usesLegacySendmail && draft.mailNotification == "failure")
+        var edited = draft
+        edited.ioWorkers = ""
+        edited.fleecing = false
+        let update = edited.changes(from: draft)
+        // Unknown performance settings stay.
+        #expect(update.values["performance"] == "pbs-entries-max=2000" && update.deletions == ["fleecing"])
+        #expect(draft.changes(from: draft).isEmpty)
+        let runs = job.runNowRequests(in: ClusterSnapshot(topology: .standalone, nodes: [], guests: [], storages: [], fetchedAt: Date()))
+        #expect(runs.isEmpty)
     }
 
     @Test func runNowGoesToTheNodesOfTheGuests() async throws {

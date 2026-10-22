@@ -1390,6 +1390,97 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.backupJobs()).contains { $0.id == job.id })
     }
 
+    /// A job with every advanced option of the web interface runs a fleecing backup of a VM; Backup Now prunes and
+    /// mails with sendmail.
+    @Test(.timeLimit(.minutes(3))) func backupJobAdvancedOptions() async throws {
+        let (session, node) = try await rootSession()
+        try #require(try await !session.send(PVE.backupJobs()).contains { $0.id == "pflive-job" }, "left over from an earlier run")
+        var draft = BackupJobDraft()
+        draft.jobID = "pflive-job"
+        draft.storage = "local"
+        draft.selectionMode = .guests
+        draft.guests = [102]
+        draft.isEnabled = false
+        draft.bandwidthLimit = "512000"
+        draft.zstdThreads = "0"
+        draft.ioWorkers = "4"
+        draft.fleecing = true
+        draft.fleecingStorage = "local-lvm"
+        draft.pbsChangeDetection = "metadata"
+        draft.usesLegacySendmail = true
+        draft.mailto = "root@pam"
+        draft.mailNotification = "failure"
+        draft.notesTemplate = "{{guestname}} pflive"
+        #expect(draft.problems.isEmpty)
+        _ = try await session.send(PVE.createBackupJob(draft))
+        let job = try #require(try await session.send(PVE.backupJobs()).first { $0.id == "pflive-job" })
+        let saved = BackupJobDraft(job)
+        #expect(saved.ioWorkers == "4" && saved.fleecing && saved.fleecingStorage == "local-lvm" && saved.zstdThreads == "0")
+        #expect(saved.bandwidthLimit == "512000" && saved.pbsChangeDetection == "metadata")
+        #expect(saved.usesLegacySendmail && saved.mailto == "root@pam" && saved.mailNotification == "failure")
+        #expect(saved.changes(from: saved).isEmpty)
+
+        let volumes = try await session.send(PVE.backupJobVolumes("pflive-job"))
+        let guest = try #require(volumes.guests.first)
+        #expect(volumes.guests.count == 1 && guest.id == 102 && guest.type == "qemu")
+        #expect(guest.volumes.contains { $0.key == "scsi0" && $0.isIncluded })
+
+        let runs = job.runNowRequests(in: try await session.fetchClusterSnapshot())
+        #expect(runs.first?.request.parameters["fleecing"] == "enabled=1,storage=local-lvm")
+        let upid = try #require(try await session.send(runs[0].request))
+        #expect(try await finishTask(session, node: node, upid)?.succeeded == true)
+        let log = try await session.send(PVE.taskLog(node: node, upid: upid, start: 0, limit: 500)).map(\.text).joined(separator: "\n")
+        #expect(log.contains("fleecing"), "\(log.suffix(1500))")
+        let backup = try #require(try await session.send(PVE.backups(node: node, storage: "local", vmid: 102)).first { $0.notes == "db-server pflive" })
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.deleteBackup(node: node, volume: backup.volumeID)))?.succeeded == true)
+
+        var edited = saved
+        edited.fleecing = false
+        edited.ioWorkers = ""
+        edited.usesLegacySendmail = false
+        _ = try await session.send(PVE.updateBackupJob(job.id, edited.changes(from: saved)))
+        let changed = try #require(try await session.send(PVE.backupJobs()).first { $0.id == "pflive-job" })
+        #expect(changed.fleecing.items.isEmpty && changed.performance.items.isEmpty && changed.notificationMode == "notification-system" && changed.mailto == nil)
+        _ = try await session.send(PVE.deleteBackupJob(job.id))
+
+        // Prune removes older backups by the storage's retention, here briefly the last one only.
+        try #require(try await session.send(PVE.backups(node: node, storage: "local", vmid: 202)).isEmpty, "CT 202 has backups on local")
+        var retention = GuestConfigUpdate()
+        retention.set("prune-backups", "keep-last=1")
+        _ = try await session.send(PVE.updateStorage("local", retention))
+        var now = BackupDraft(guest: GuestReference(node: node, vmid: 202, kind: .container))
+        now.storage = "local"
+        now.mode = .stop
+        now.notes = "pflive backup now"
+        var failure: (any Error)?
+        do {
+            for prunes in [false, true] {
+                // Archive names have seconds, so the second backup needs a new one.
+                try await Task.sleep(for: .seconds(1.1))
+                now.prunes = prunes
+                now.usesLegacySendmail = prunes
+                now.mailto = "root@pam"
+                let task = try await session.send(PVE.backupNow(now))
+                #expect(try await finishTask(session, node: node, task)?.succeeded == true)
+                if prunes {
+                    let log = try await session.send(PVE.taskLog(node: node, upid: task, start: 0, limit: 500)).map(\.text).joined(separator: "\n")
+                    #expect(log.contains("prune older backups") && log.contains("notified via target `<root@pam>`"), "\(log.suffix(1200))")
+                }
+            }
+        } catch {
+            failure = error
+        }
+        var restore = GuestConfigUpdate()
+        restore.set("prune-backups", nil)
+        _ = try await session.send(PVE.updateStorage("local", restore))
+        if let failure { throw failure }
+        let made = try await session.send(PVE.backups(node: node, storage: "local", vmid: 202))
+        #expect(made.count == 1)
+        for backup in made {
+            #expect(try await finishTask(session, node: node, try await session.send(PVE.deleteBackup(node: node, volume: backup.volumeID)))?.succeeded == true)
+        }
+    }
+
     /// A group, a user in it, a custom role, a permission and an API token: created, changed and removed again.
     @Test func usersAndPermissions() async throws {
         let (session, _) = try await rootSession()

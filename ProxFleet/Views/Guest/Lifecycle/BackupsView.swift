@@ -413,6 +413,22 @@ private struct BackupNowView: View {
             } footer: {
                 Text("In notes, {{guestname}}, {{vmid}}, {{node}} and {{cluster}} are replaced. A protected backup is kept until you remove the protection.")
             }
+            Section {
+                Toggle("Prune Older Backups", isOn: $draft.prunes)
+                    .accessibilityIdentifier("backup.prune")
+                Picker("Notify", selection: $draft.usesLegacySendmail) {
+                    Text("Global Settings").tag(false)
+                    Text("Sendmail (Legacy)").tag(true)
+                }
+                if draft.usesLegacySendmail {
+                    LabeledTextField(title: "Recipients", prompt: "root@pam", text: $draft.mailto, keyboard: .emailAddress, identifier: "backup.mailto")
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    FieldError(message: errors["mailto"])
+                }
+            } footer: {
+                Text("Prune removes this guest's older backups on the storage by the storage's retention settings afterwards. Notifications go to the datacenter's matchers and targets, or by sendmail to the recipients.")
+            }
         }
     }
 }

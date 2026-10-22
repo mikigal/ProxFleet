@@ -254,8 +254,22 @@ struct BackupJobEditor: View {
                 selectionSection
                 optionsSection
                 retentionSection
+                notificationSection
+                advancedSection
             }
             .disabled(!list.canModify)
+            if let job {
+                Section {
+                    NavigationLink {
+                        BackupJobVolumesView(list: list, job: job)
+                    } label: {
+                        Label("Included Disks", systemImage: "internaldrive")
+                    }
+                    .accessibilityIdentifier("backupjob.volumes")
+                } footer: {
+                    Text("Which disks of the job's guests are backed up, and why.")
+                }
+            }
             ErrorSection(message: errorMessage)
         }
         .navigationTitle(isNew ? "New Backup Job" : (job?.comment ?? "Backup Job"))
@@ -287,6 +301,12 @@ struct BackupJobEditor: View {
 
     private var generalSection: some View {
         Section {
+            if isNew {
+                LabeledTextField(title: "Job ID", prompt: "Automatic", text: $draft.jobID, identifier: "backupjob.id")
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                FieldError(message: errors["id"])
+            }
             Toggle("Enabled", isOn: $draft.isEnabled)
             Picker("Storage", selection: $draft.storage) {
                 if draft.storage.isEmpty { Text("Choose").tag("") }
@@ -434,6 +454,78 @@ struct BackupJobEditor: View {
         }
     }
 
+    private var notificationSection: some View {
+        Section {
+            Picker("Notify", selection: $draft.usesLegacySendmail) {
+                Text("Global Settings").tag(false)
+                Text("Sendmail (Legacy)").tag(true)
+            }
+            .accessibilityIdentifier("backupjob.notification")
+            if draft.usesLegacySendmail {
+                LabeledTextField(title: "Recipients", prompt: "root@pam, ops@example.com", text: $draft.mailto, keyboard: .emailAddress, identifier: "backupjob.mailto")
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                FieldError(message: errors["mailto"])
+                Picker("When", selection: $draft.mailNotification) {
+                    Text("Always").tag("always")
+                    Text("On Failure Only").tag("failure")
+                }
+            }
+        } header: {
+            Text("Notifications")
+        } footer: {
+            Text(draft.usesLegacySendmail
+                ? "Mails the recipients with sendmail, as before notification targets existed. Users are mailed at the address of their account."
+                : "Uses the datacenter's notification matchers and targets. Matchers can match this job by its ID.")
+        }
+    }
+
+    private var advancedSection: some View {
+        Section {
+            LabeledContent("Bandwidth Limit") {
+                HStack {
+                    TextField("Default", text: $draft.bandwidthLimit)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityIdentifier("backupjob.bwlimit")
+                    Text(verbatim: "KiB/s").foregroundStyle(.secondary)
+                }
+            }
+            FieldError(message: errors["bwlimit"])
+            LabeledTextField(title: "Zstd Threads", prompt: "1", text: $draft.zstdThreads, keyboard: .numberPad, identifier: "backupjob.zstd")
+            FieldError(message: errors["zstd"])
+            LabeledTextField(title: "IO Workers", prompt: "16", text: $draft.ioWorkers, keyboard: .numberPad, identifier: "backupjob.workers")
+            FieldError(message: errors["performance"])
+            Toggle("Fleecing", isOn: $draft.fleecing)
+                .accessibilityIdentifier("backupjob.fleecing")
+            if draft.fleecing {
+                Picker("Fleecing Storage", selection: $draft.fleecingStorage) {
+                    Text("Default").tag("")
+                    ForEach(Self.imageStorages(snapshot), id: \.self) { Text($0).tag($0) }
+                    if !draft.fleecingStorage.isEmpty, !Self.imageStorages(snapshot).contains(draft.fleecingStorage) {
+                        Text(draft.fleecingStorage).tag(draft.fleecingStorage)
+                    }
+                }
+                .accessibilityIdentifier("backupjob.fleecingStorage")
+            }
+            Picker("PBS Change Detection", selection: $draft.pbsChangeDetection) {
+                Text("Default").tag("")
+                Text("Legacy").tag("legacy")
+                Text("Data").tag("data")
+                Text("Metadata").tag("metadata")
+            }
+        } header: {
+            Text("Advanced")
+        } footer: {
+            Text("Empty fields use the datacenter's defaults. Zstd threads apply to backups not on a Backup Server; 0 uses half of the cores. IO workers and fleecing apply to VMs: fleecing keeps the VM's writes during the backup in a temporary image, so a slow backup target does not slow the VM. PBS change detection applies to container backups on a Proxmox Backup Server.")
+        }
+    }
+
+    /// Storages for fleecing images.
+    private static func imageStorages(_ snapshot: ClusterSnapshot?) -> [String] {
+        Array(Set((snapshot?.storages ?? []).filter { $0.content.contains("images") }.map(\.name))).sorted()
+    }
+
     private func save() async {
         showsProblems = true
         fieldErrors = [:]
@@ -484,6 +576,76 @@ struct RetentionFields: View {
         case "keep-weekly": "Keep Weekly"
         case "keep-monthly": "Keep Monthly"
         default: "Keep Yearly"
+        }
+    }
+}
+
+/// The guests a job covers and which of their disks it backs up, like the web interface's Job Detail.
+private struct BackupJobVolumesView: View {
+    let list: BackupJobList
+    let job: BackupJob
+    @State private var volumes: BackupJobVolumes?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            ForEach(volumes?.guests ?? []) { guest in
+                Section {
+                    if guest.volumes.isEmpty {
+                        Text("No disks").foregroundStyle(.secondary)
+                    }
+                    ForEach(guest.volumes) { volume in
+                        HStack(spacing: 12) {
+                            Image(systemName: volume.isIncluded ? "checkmark.circle.fill" : "minus.circle")
+                                .foregroundStyle(volume.isIncluded ? .green : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(volume.key).font(.body.monospaced())
+                                Text([volume.name, volume.reason.map(Self.reasonTitle)].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                } header: {
+                    Label("\(String(guest.id)) · \(guest.name ?? String(localized: "Removed"))",
+                          systemImage: guest.type == "lxc" ? "shippingbox" : guest.type == "qemu" ? "desktopcomputer" : "questionmark.square.dashed")
+                }
+            }
+        }
+        .overlay {
+            if let errorMessage {
+                ContentUnavailableView("Cannot Load the Disks", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
+            } else if volumes == nil {
+                ProgressView()
+            } else if volumes?.guests.isEmpty == true {
+                ContentUnavailableView("No Guests", systemImage: "internaldrive", description: Text("The job covers no guests right now."))
+            }
+        }
+        .navigationTitle("Included Disks")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            volumes = try await list.connection.send(PVE.backupJobVolumes(job.id))
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private static func reasonTitle(_ reason: String) -> String {
+        switch reason {
+        case "backup=yes": String(localized: "backup on")
+        case "backup=no": String(localized: "backup off")
+        case "rootfs": String(localized: "root disk")
+        case "mountpoint": String(localized: "mount point")
+        case "efidisk": String(localized: "EFI disk")
+        case "tpmstate": String(localized: "TPM state")
+        default: reason
         }
     }
 }

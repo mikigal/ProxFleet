@@ -78,24 +78,34 @@ public struct BackupDraft: Sendable, Equatable {
     /// Notes for the backup; `{{guestname}}`, `{{vmid}}`, `{{node}}` and `{{cluster}}` are filled in by the server.
     public var notes = "{{guestname}}"
     public var isProtected = false
+    /// Removes older backups of the guest by the storage's retention settings afterwards.
+    public var prunes = false
+    /// Mail with sendmail instead of the datacenter's notification targets and matchers.
+    public var usesLegacySendmail = false
+    public var mailto = ""
 
     public init(guest: GuestReference) {
         self.guest = guest
     }
 
     public var problems: [String: String] {
-        storage.isEmpty ? ["storage": String(localized: "Choose a storage.")] : [:]
+        var problems: [String: String] = [:]
+        if storage.isEmpty { problems["storage"] = String(localized: "Choose a storage.") }
+        if usesLegacySendmail, mailto.trimmingCharacters(in: .whitespaces).isEmpty { problems["mailto"] = String(localized: "Enter at least one recipient.") }
+        return problems
     }
 
     public var parameters: APIParameters {
         var parameters: APIParameters = [
             "vmid": .int(guest.vmid), "storage": .string(storage), "mode": .string(mode.rawValue), "compress": .string(compression.rawValue),
-            // A manual backup must not prune older ones by the storage's retention settings.
-            "remove": false,
+            // Without Prune, a manual backup must not remove older ones by the storage's retention settings.
+            "remove": .bool(prunes),
+            "notification-mode": .string(usesLegacySendmail ? "legacy-sendmail" : "notification-system"),
         ]
         let notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if !notes.isEmpty { parameters["notes-template"] = .string(notes) }
         if isProtected { parameters["protected"] = true }
+        if usesLegacySendmail { parameters["mailto"] = .string(mailto.trimmingCharacters(in: .whitespaces)) }
         return parameters
     }
 }

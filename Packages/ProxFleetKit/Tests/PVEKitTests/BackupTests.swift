@@ -26,11 +26,17 @@ struct BackupTests {
         draft.isProtected = true
         let request = PVE.backupNow(draft)
         #expect(request.path == "/nodes/pve/vzdump")
-        #expect(request.parameters.formEncoded == "vmid=202&storage=local&mode=snapshot&compress=zstd&remove=0&notes-template=%7B%7Bguestname%7D%7D&protected=1")
+        #expect(request.parameters.formEncoded
+            == "vmid=202&storage=local&mode=snapshot&compress=zstd&remove=0&notification-mode=notification-system&notes-template=%7B%7Bguestname%7D%7D&protected=1")
         draft.notes = "  "
         draft.compression = .none
         draft.mode = .stop
-        #expect(PVE.backupNow(draft).parameters.formEncoded == "vmid=202&storage=local&mode=stop&compress=0&remove=0&protected=1")
+        draft.prunes = true
+        draft.usesLegacySendmail = true
+        #expect(draft.problems.keys.sorted() == ["mailto"])
+        draft.mailto = " ops@example.com "
+        #expect(PVE.backupNow(draft).parameters.formEncoded
+            == "vmid=202&storage=local&mode=stop&compress=0&remove=1&notification-mode=legacy-sendmail&protected=1&mailto=ops%40example.com")
     }
 
     @Test func volumeRequestsEscapeTheVolumeID() {

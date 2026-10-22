@@ -11,7 +11,8 @@ struct DemoBackupJob: Sendable {
 extension DemoState {
     private static let jobKeys: Set<String> = [
         "enabled", "schedule", "storage", "node", "mode", "compress", "all", "exclude", "vmid", "pool", "comment",
-        "notes-template", "prune-backups", "protected", "repeat-missed",
+        "notes-template", "prune-backups", "protected", "repeat-missed", "bwlimit", "zstd", "performance", "fleecing",
+        "pbs-change-detection-mode", "notification-mode", "mailto", "mailnotification",
     ]
 
     static func sampleBackupJobs(for cluster: DemoCluster) -> [DemoBackupJob] {
@@ -46,6 +47,9 @@ extension DemoState {
             }))
         case (.get, ["backup"]):
             return success(.array(backupJobs.map(jobJSON)))
+        case (.get, let path) where path.count == 3 && path[0] == "backup" && path[2] == "included_volumes":
+            guard let job = backupJobs.first(where: { $0.id == path[1] }) else { return failure(500, "job '\(path[1])' does not exist") }
+            return success(["children": .array(cluster.guests.filter { covers(job, $0, ignoringEnabled: true) }.map(includedVolumesJSON))])
         case (.get, let path) where path.count == 2 && path[0] == "backup":
             guard let job = backupJobs.first(where: { $0.id == path[1] }) else { return failure(500, "job '\(path[1])' does not exist") }
             return success(jobJSON(job))
@@ -89,13 +93,15 @@ extension DemoState {
         if let index {
             backupJobs[index].values = values
         } else {
-            backupJobs.append(DemoBackupJob(id: "backup-\(UUID().uuidString.prefix(13).lowercased())", values: values))
+            let id = parameters["id"] ?? "backup-\(UUID().uuidString.prefix(13).lowercased())"
+            guard !backupJobs.contains(where: { $0.id == id }) else { return failure(500, "Job '\(id)' already exists") }
+            backupJobs.append(DemoBackupJob(id: id, values: values))
         }
         return success(nil)
     }
 
-    private func covers(_ job: DemoBackupJob, _ guest: DemoCluster.Guest) -> Bool {
-        guard job.values["enabled"] != "0" else { return false }
+    private func covers(_ job: DemoBackupJob, _ guest: DemoCluster.Guest, ignoringEnabled: Bool = false) -> Bool {
+        guard ignoringEnabled || job.values["enabled"] != "0" else { return false }
         let ids = { (key: String) in Set((job.values[key] ?? "").split(separator: ",").compactMap { Int($0) }) }
         if job.values["all"] == "1" { return !ids("exclude").contains(guest.vmid) }
         if let pool = job.values["pool"] { return poolGuests(pool).contains(guest.vmid) }
@@ -105,10 +111,10 @@ extension DemoState {
     private func jobJSON(_ job: DemoBackupJob) -> JSONValue {
         var object: [String: JSONValue] = ["id": .string(job.id), "type": "vzdump"]
         for (key, value) in job.values {
-            if key == "prune-backups" {
+            if ["prune-backups", "performance", "fleecing"].contains(key) {
                 let property = PropertyString(parsing: value)
                 object[key] = .object(Dictionary(uniqueKeysWithValues: property.items.compactMap { item in item.key.map { ($0, JSONValue.string(item.value)) } }))
-            } else if ["enabled", "all", "protected", "repeat-missed"].contains(key) {
+            } else if ["enabled", "all", "protected", "repeat-missed", "bwlimit", "zstd"].contains(key) {
                 object[key] = .int(value == "1" ? 1 : 0)
             } else {
                 object[key] = .string(value)
@@ -118,6 +124,15 @@ extension DemoState {
             object["next-run"] = .int(Int(next.timeIntervalSince1970))
         }
         return .object(object)
+    }
+
+    /// The disks a backup of the guest includes: VMs all but `backup=0` disks, containers the root disk and backed-up mount points.
+    private func includedVolumesJSON(_ guest: DemoCluster.Guest) -> JSONValue {
+        let isVM = guest.kind == .qemu
+        let volumes: [JSONValue] = isVM
+            ? [["id": .string("\(guest.vmid):scsi0"), "name": .string("local-lvm:vm-\(guest.vmid)-disk-0"), "included": 1, "reason": "backup=yes"]]
+            : [["id": .string("\(guest.vmid):rootfs"), "name": .string("local-lvm:subvol-\(guest.vmid)-disk-0"), "included": 1, "reason": "rootfs"]]
+        return ["id": .int(guest.vmid), "name": .string(guest.name), "type": .string(guest.kind.rawValue), "leaf": 0, "children": .array(volumes)]
     }
 
     /// A small subset of systemd calendar events: `[weekdays] hours:minutes`, where weekdays are `sat`, `mon..fri` or
