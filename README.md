@@ -16,14 +16,14 @@ Early development. What works now:
 - Cluster overview: nodes, resource usage, virtual machines and containers
 - VM and container details: usage, performance charts, IP addresses, hardware and options
 - Power actions (start, shut down, reboot, stop, reset, pause, resume, hibernate) with confirmation, hidden without the `VM.PowerMgmt` privilege
-- Task tracking: progress of started actions, recent tasks of the server, task logs
+- Task tracking: progress of started actions, recent tasks of the server, task logs, stopping running tasks
 - Consoles: a native VNC client for VMs (Tight compression with a data saver, trackpad or touch mouse, Ctrl/Alt/Shift/Win and shortcuts such as Ctrl+Alt+Del, typing the clipboard, hardware keyboards as physical keys, mouse and trackpad on iPad, full screen in landscape) and a terminal for containers
-- Configuration editing: processor, memory, firmware, disks (add, grow, detach, delete), CD/DVD drives, network devices, options, boot order and notes, with pending changes shown until the next restart
+- Configuration editing: processor, memory, firmware, disks (add with every option of the web interface, grow, detach, delete), CD/DVD drives, network devices, options, boot order and notes, with pending changes shown until the next restart
 - Creating VMs (installation ISO, OS-specific defaults such as UEFI and TPM for Windows 11, disks, CPU, memory, network devices) and containers (templates, which can be downloaded from the app, root password or SSH keys, mount points, network devices and DNS), with the web interface's advanced options behind an Advanced switch
 - Snapshots (take with or without RAM, roll back, describe, delete), cloning (full or linked from templates, from a snapshot), converting to a template and deleting guests
 - Backups: back up now (mode, compression, notes, protection), list from all backup storages, notes and protection, configuration in the backup, restore over the guest or as a new one, delete
-- Nodes: status, usage and history, shell, package updates (refresh, list, upgrade in the shell), services, system log, tasks, reboot and shutdown
-- Node settings: network interfaces (bridges, bonds, VLANs; pending changes with apply and revert), DNS, hosts and time zone
+- Nodes: status, usage and history, notes, shell, package updates (refresh, list, upgrade in the shell), services, system log, tasks, bulk start, shutdown and hibernate of guests, reboot and shutdown, wake on LAN for offline nodes
+- Node settings: network interfaces (bridges, bonds, VLANs; pending changes with apply and revert), DNS, hosts, time zone and options (wake on LAN, start-at-boot delay, ballooning target)
 - Disks: list with partitions, SMART values, wipe and GPT initialization; LVM, LVM-thin, ZFS (with pool status) and directories, created on unused disks or removed
 - APT repositories (status, enable and disable, add standard ones) and certificates (view, upload a custom one, remove it)
 - Storage: usage and content by type (ISO images, templates, backups, VM disks, CT volumes, snippets), download from a URL with an optional checksum (also from the VM wizard), delete
