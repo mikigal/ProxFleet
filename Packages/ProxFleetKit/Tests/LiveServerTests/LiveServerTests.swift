@@ -592,6 +592,48 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.backups(node: node, storage: "local", vmid: 101)).contains { $0.notes == "ProxFleet stop test" })
     }
 
+    /// Bulk start and shutdown of container 202, and a bulk hibernation of VM 102, which a start then resumes.
+    @Test(.timeLimit(.minutes(3))) func bulkActions() async throws {
+        let (session, node) = try await rootSession()
+        let container = GuestReference(node: node, vmid: 202, kind: .container)
+        let vm = GuestReference(node: node, vmid: 102, kind: .virtualMachine)
+        // `/cluster/resources` lags behind by up to ten seconds, so states come from each guest.
+        func state(_ guest: GuestReference) async throws -> PowerState {
+            try await session.send(PVE.guestStatus(guest)).powerState
+        }
+        func run(_ request: APIRequest<String>) async throws -> TaskStatus? {
+            let upid = try await session.send(request)
+            for _ in 0..<240 {
+                let status = try await session.send(PVE.taskStatus(node: node, upid: upid))
+                if !status.isRunning { return status }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            return nil
+        }
+        let initial = (try await state(container), try await state(vm))
+        try #require(initial.0 == .stopped && initial.1 == .running, "guests 202 and 102 are not in their seed state")
+        let snapshot = try await session.fetchClusterSnapshot()
+        #expect(NodeBulkAction.start.eligibleGuests(on: node, in: snapshot).map(\.vmid) == [101, 202])
+        #expect(!NodeBulkAction.hibernate.eligibleGuests(on: node, in: snapshot).contains { $0.kind == .container })
+
+        let start = try #require(try await run(PVE.bulkAction(node: node, NodeBulkActionDraft(action: .start, vmids: [202]))))
+        #expect(start.succeeded && start.type == "startall")
+        #expect(try await state(container) == .running)
+
+        var shutdown = NodeBulkActionDraft(action: .shutdown, vmids: [202])
+        shutdown.timeout = 60
+        shutdown.maxWorkers = 2
+        #expect(try await run(PVE.bulkAction(node: node, shutdown))?.succeeded == true)
+        #expect(try await state(container) == .stopped)
+
+        let hibernate = try #require(try await run(PVE.bulkAction(node: node, NodeBulkActionDraft(action: .hibernate, vmids: [102]))))
+        #expect(hibernate.succeeded && hibernate.type == "suspendall")
+        let status = try await session.send(PVE.guestStatus(vm))
+        #expect(status.powerState == .stopped && status.lock == "suspended")
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.powerAction(.start, on: vm)))?.succeeded == true)
+        #expect(try await state(vm) == .running)
+    }
+
     /// Notes and wake-on-LAN options are written, read back and removed; a stale digest is refused. A standalone node
     /// cannot wake itself.
     @Test func nodeNotesAndOptions() async throws {

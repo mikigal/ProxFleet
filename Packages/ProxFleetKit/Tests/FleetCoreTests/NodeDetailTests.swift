@@ -100,6 +100,33 @@ struct NodeDetailTests {
         await #expect(throws: ConfigUpdateError.self) { try await NodeDetail(node: "pve1", connection: connection).wakeOnLAN() }
     }
 
+    @Test func bulkStartAndShutdown() async throws {
+        let connection = try await connection()
+        let detail = NodeDetail(node: "pve2", connection: connection)
+        let snapshot = try #require(connection.snapshot)
+        let stopped = NodeBulkAction.start.eligibleGuests(on: "pve2", in: snapshot)
+        try #require(stopped.count >= 2)
+        #expect(stopped.allSatisfy { $0.state == .stopped && !$0.isTemplate && $0.node == "pve2" })
+
+        let chosen = Set(stopped.prefix(2).map(\.vmid))
+        let task = try await detail.run(NodeBulkActionDraft(action: .start, vmids: chosen))
+        #expect(task.title == "Bulk Start")
+        #expect(await connection.tasks.result(of: task.id) == .succeeded)
+        await connection.refresh()
+        let guests = try #require(connection.snapshot?.guests)
+        #expect(guests.filter { chosen.contains($0.vmid) }.allSatisfy { $0.state == .running })
+        #expect(guests.filter { Set(stopped.dropFirst(2).map(\.vmid)).contains($0.vmid) }.allSatisfy { $0.state == .stopped })
+
+        var shutdown = NodeBulkActionDraft(action: .shutdown, vmids: chosen)
+        shutdown.timeout = 30
+        #expect(shutdown.parameters["timeout"] == .int(30))
+        let stop = try await detail.run(shutdown)
+        #expect(await connection.tasks.result(of: stop.id) == .succeeded)
+        await connection.refresh()
+        #expect(connection.snapshot?.guests.filter { chosen.contains($0.vmid) }.allSatisfy { $0.state == .stopped } == true)
+        #expect(NodeBulkAction.hibernate.eligibleGuests(on: "pve2", in: try #require(connection.snapshot)).allSatisfy { $0.kind == .virtualMachine })
+    }
+
     @Test func rebootTakesTheNodeOffline() async throws {
         let connection = try await connection()
         let detail = NodeDetail(node: "pve2", connection: connection)

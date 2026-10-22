@@ -92,6 +92,8 @@ extension DemoState {
             return success(Self.pciDevices)
         case (.get, ["hardware", "usb"]):
             return success(Self.usbDevices)
+        case (.post, let path) where path.count == 1 && ["startall", "stopall", "suspendall"].contains(path[0]):
+            return bulkAction(path[0], node: node, parameters: parameters, user: user)
         case (.get, ["capabilities", "qemu", "cpu"]):
             return success(.array(["host", "x86-64-v2-AES", "x86-64-v3", "kvm64", "qemu64", "EPYC-Rome", "Skylake-Server"].map { ["name": .string($0), "vendor": "default", "custom": 0] }))
         default:
@@ -161,6 +163,32 @@ extension DemoState {
     }
 
     // MARK: - Power
+
+    /// Node bulk actions: one task for the node, plus the usual task for every guest it covers.
+    private func bulkAction(_ endpoint: String, node: String, parameters: [String: String], user: String) -> HTTPResponse {
+        guard cluster.nodes.first(where: { $0.name == node })?.isOnline == true else {
+            return failure(595, "Connection refused: node '\(node)' seems to be offline")
+        }
+        guard privileges(for: user).contains("VM.PowerMgmt") else { return failure(403, "Permission check failed (/, VM.PowerMgmt)") }
+        let chosen = parameters["vms"].map { Set($0.split(separator: ",").compactMap { Int($0) }) }
+        let guests = cluster.guests.filter { guest in
+            guard guest.node == node, !guest.isTemplate, chosen?.contains(guest.vmid) ?? true else { return false }
+            switch endpoint {
+            case "startall": return !guest.isRunning
+            case "stopall": return guest.isRunning
+            default: return guest.isRunning && guest.kind == .qemu
+            }
+        }
+        let response = startTask(node: node, type: endpoint, objectID: "", user: user, duration: guests.isEmpty ? 0.5 : 4.5)
+        for guest in guests {
+            switch endpoint {
+            case "startall": _ = startPowerTask("start", guest: guest, todisk: false, user: user)
+            case "stopall": _ = startPowerTask("shutdown", guest: guest, todisk: false, user: user)
+            default: _ = startPowerTask("suspend", guest: guest, todisk: true, user: user)
+            }
+        }
+        return response
+    }
 
     private func startPowerTask(_ action: String, guest: DemoCluster.Guest, todisk: Bool, user: String) -> HTTPResponse {
         let isVM = guest.kind == .qemu

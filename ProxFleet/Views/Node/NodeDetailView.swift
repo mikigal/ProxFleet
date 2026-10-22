@@ -344,6 +344,7 @@ private struct NodeMoreList: View {
     @State private var isWorking = false
     @State private var errorMessage: String?
     @State private var sentCommand: NodePowerCommand?
+    @State private var bulkAction: NodeBulkAction?
 
     var body: some View {
         List {
@@ -434,6 +435,28 @@ private struct NodeMoreList: View {
             if detail.isOnline {
                 Section {
                     Button {
+                        bulkAction = .start
+                    } label: {
+                        Label("Bulk Start…", systemImage: "play.circle")
+                    }
+                    .accessibilityIdentifier("node.bulk.start")
+                    Button {
+                        bulkAction = .shutdown
+                    } label: {
+                        Label("Bulk Shutdown…", systemImage: "stop.circle")
+                    }
+                    .accessibilityIdentifier("node.bulk.shutdown")
+                    Button {
+                        bulkAction = .hibernate
+                    } label: {
+                        Label("Bulk Hibernate…", systemImage: "moon.circle")
+                    }
+                    .accessibilityIdentifier("node.bulk.hibernate")
+                } header: {
+                    Text("Guests")
+                }
+                Section {
+                    Button {
                         pendingPower = .reboot
                     } label: {
                         Label("Reboot", systemImage: "arrow.clockwise")
@@ -469,6 +492,11 @@ private struct NodeMoreList: View {
         .task {
             await detail.loadSystemSettings()
             await detail.loadOptions()
+        }
+        .sheet(item: $bulkAction) { action in
+            NavigationStack {
+                NodeBulkActionView(detail: detail, action: action)
+            }
         }
         .alert(pendingPower == .shutdown ? "Shut down \(detail.node)?" : "Reboot \(detail.node)?", isPresented: Binding(get: { pendingPower != nil }, set: { if !$0 { pendingPower = nil } }), presenting: pendingPower) { command in
             Button("Cancel", role: .cancel) {}

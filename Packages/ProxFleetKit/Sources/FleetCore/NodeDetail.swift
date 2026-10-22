@@ -204,6 +204,16 @@ public final class NodeDetail {
         try await runTask(PVE.nodePower(node, command))
     }
 
+    /// Starts a bulk action on the node's guests. The task center follows it and reports a failure.
+    @discardableResult
+    public func run(_ draft: NodeBulkActionDraft) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        do {
+            return try connection.tasks.track(try await connection.session.send(PVE.bulkAction(node: node, draft)))
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+    }
+
     // MARK: - System settings
 
     public func saveDNS(_ dns: NodeDNS) async throws(ConfigUpdateError) {

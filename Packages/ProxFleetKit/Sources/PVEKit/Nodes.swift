@@ -191,3 +191,75 @@ extension PVE {
         APIRequest(.get, "/nodes/\(node)/tasks", parameters: ["limit": .int(limit), "source": "all"])
     }
 }
+
+/// The web interface's node Bulk Actions: start, shut down or hibernate several guests of a node in one task.
+public enum NodeBulkAction: String, Sendable, CaseIterable, Identifiable {
+    case start
+    case shutdown
+    /// Suspends VMs to disk; containers cannot be hibernated.
+    case hibernate
+
+    public var id: String { rawValue }
+
+    var endpoint: String {
+        switch self {
+        case .start: "startall"
+        case .shutdown: "stopall"
+        case .hibernate: "suspendall"
+        }
+    }
+
+    /// Guests of a node the action applies to: stopped ones to start, running ones to shut down, running VMs to hibernate.
+    public func eligibleGuests(on node: String, in snapshot: ClusterSnapshot) -> [GuestSummary] {
+        snapshot.guests
+            .filter { $0.node == node && !$0.isTemplate }
+            .filter { guest in
+                switch self {
+                case .start: guest.state == .stopped
+                case .shutdown: guest.state == .running || guest.state == .paused
+                case .hibernate: guest.state == .running && guest.kind == .virtualMachine
+                }
+            }
+            .sorted { $0.vmid < $1.vmid }
+    }
+}
+
+/// Settings of a bulk action, like the web interface's Bulk Action dialog.
+public struct NodeBulkActionDraft: Sendable, Equatable {
+    public let action: NodeBulkAction
+    public var vmids: Set<Int>
+    /// Guests handled at the same time, nil for the datacenter's `max_workers` setting.
+    public var maxWorkers: Int?
+    /// Shutdown only: seconds to wait for each guest, nil for the default of 180.
+    public var timeout: Int?
+    /// Shutdown only: stop guests that did not shut down within the timeout.
+    public var forceStop = true
+
+    public init(action: NodeBulkAction, vmids: Set<Int>) {
+        self.action = action
+        self.vmids = vmids
+    }
+
+    public var parameters: APIParameters {
+        var parameters: APIParameters = ["vms": .string(vmids.sorted().map(String.init).joined(separator: ","))]
+        if let maxWorkers { parameters["max-workers"] = .int(maxWorkers) }
+        switch action {
+        case .start:
+            // The guests were chosen by hand, so they start even without Start at Boot, as in the web interface.
+            parameters["force"] = true
+        case .shutdown:
+            if let timeout { parameters["timeout"] = .int(timeout) }
+            if !forceStop { parameters["force-stop"] = false }
+        case .hibernate:
+            break
+        }
+        return parameters
+    }
+}
+
+extension PVE {
+    /// Starts one task on the node that runs the action for every chosen guest. Returns its task ID.
+    public static func bulkAction(node: String, _ draft: NodeBulkActionDraft) -> APIRequest<String> {
+        APIRequest(.post, "/nodes/\(node)/\(draft.action.endpoint)", parameters: draft.parameters)
+    }
+}
