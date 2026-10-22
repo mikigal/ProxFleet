@@ -14,8 +14,6 @@ extension DemoState {
             }
             let used = Set(cluster.guests.map(\.vmid))
             return success(.string(String((100...).first { !used.contains($0) }!)))
-        case (.get, ["pools"]):
-            return success([["poolid": "lab", "comment": "Experiments"]])
         case (.get, let path) where path.count == 3 && path[0] == "nodes" && path[2] == "aplinfo":
             return success(.array(Self.applianceTemplates.map { template in
                 [

@@ -9,9 +9,6 @@ struct DemoBackupJob: Sendable {
 
 /// `/cluster/backup`, `/cluster/backup-info` and `/cluster/jobs/schedule-analyze` in demo mode.
 extension DemoState {
-    /// Members of the `lab` pool, for jobs and backups by pool.
-    static let poolMembers: [String: Set<Int>] = ["lab": [103, 105]]
-
     private static let jobKeys: Set<String> = [
         "enabled", "schedule", "storage", "node", "mode", "compress", "all", "exclude", "vmid", "pool", "comment",
         "notes-template", "prune-backups", "protected", "repeat-missed",
@@ -101,7 +98,7 @@ extension DemoState {
         guard job.values["enabled"] != "0" else { return false }
         let ids = { (key: String) in Set((job.values[key] ?? "").split(separator: ",").compactMap { Int($0) }) }
         if job.values["all"] == "1" { return !ids("exclude").contains(guest.vmid) }
-        if let pool = job.values["pool"] { return Self.poolMembers[pool]?.contains(guest.vmid) == true }
+        if let pool = job.values["pool"] { return poolGuests(pool).contains(guest.vmid) }
         return ids("vmid").contains(guest.vmid)
     }
 

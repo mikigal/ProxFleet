@@ -1863,6 +1863,46 @@ struct LiveServerTests {
         #expect(DatacenterOptionsDraft(try await session.send(PVE.datacenterOptions())) == options)
     }
 
+    /// A pool with a nested pool, guests moved between pools, a storage and a permission on the pool.
+    @Test func pools() async throws {
+        let (session, _) = try await rootSession()
+        try #require(try await !session.send(PVE.pools()).contains { $0.id.hasPrefix("pflive") }, "left over from an earlier run")
+        _ = try await session.send(PVE.createPool("pflive", comment: "ProxFleet live test"))
+        _ = try await session.send(PVE.createPool("pflive/inner", comment: nil))
+        _ = try await session.send(PVE.createPool("pflive-other", comment: nil))
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.createPool("pfmissing/inner", comment: nil)) }
+
+        _ = try await session.send(PVE.addPoolMembers("pflive-other", guests: [202], storages: [], allowMove: false))
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PVE.addPoolMembers("pflive", guests: [202], storages: [], allowMove: false))
+        }
+        _ = try await session.send(PVE.addPoolMembers("pflive", guests: [102, 202], storages: ["local"], allowMove: true))
+        let detail = try #require(try await session.send(PVE.pool("pflive")).first)
+        #expect(detail.comment == "ProxFleet live test" && detail.guests.compactMap(\.vmid) == [102, 202] && detail.storages == ["local"])
+        #expect(detail.guests.map(\.kind) == [.qemu, .lxc])
+        #expect(try await session.send(PVE.pool("pflive-other")).first?.members.isEmpty == true)
+        #expect(try await session.fetchClusterSnapshot().guests.first { $0.vmid == 202 }?.pool == "pflive")
+
+        // The server ignores permissions for root@pam, so a throwaway group gets one.
+        _ = try await session.send(PVE.createGroup("pflive-pool", comment: nil))
+        let permission = ACLEntry(path: "/pool/pflive", subject: .group, subjectID: "pflive-pool", role: "PVEAuditor")
+        _ = try await session.send(PVE.addPermission(permission))
+        #expect(try await session.send(PVE.acl()).contains { $0.path == "/pool/pflive" && $0.role == "PVEAuditor" })
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.deletePool("pflive")) }
+        _ = try await session.send(PVE.removePoolMembers("pflive", guests: [102, 202], storages: ["local"]))
+        _ = try await session.send(PVE.updatePoolComment("pflive", comment: ""))
+        let emptied = try #require(try await session.send(PVE.pool("pflive")).first)
+        #expect(emptied.members.isEmpty && emptied.comment == nil)
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.deletePool("pflive")) }
+        for id in ["pflive/inner", "pflive", "pflive-other"] {
+            _ = try await session.send(PVE.deletePool(id))
+        }
+        #expect(try await !session.send(PVE.pools()).contains { $0.id.hasPrefix("pflive") })
+        // Deleting a pool removes the permissions on it.
+        #expect(try await !session.send(PVE.acl()).contains { $0.path == "/pool/pflive" })
+        _ = try await session.send(PVE.deleteGroup("pflive-pool"))
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()

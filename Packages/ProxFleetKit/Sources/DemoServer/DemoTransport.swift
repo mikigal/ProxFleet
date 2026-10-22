@@ -69,6 +69,7 @@ actor DemoState {
     /// The datacenter's storage definitions.
     var storageConfigs: [DemoStorageConfig]
     var backupJobs: [DemoBackupJob]
+    var pools = DemoPool.sample
     var access = DemoAccess.sample
     var notifications = DemoNotifications.sample
     var firewall: DemoFirewall
@@ -241,6 +242,7 @@ actor DemoState {
                 "uptime": .int(running ? uptime(of: guest) : 0),
             ]
             if !guest.tags.isEmpty { item["tags"] = .string(guest.tags.joined(separator: ";")) }
+            if let pool = pool(of: guest.vmid) { item["pool"] = .string(pool) }
             items.append(.object(item))
         }
 

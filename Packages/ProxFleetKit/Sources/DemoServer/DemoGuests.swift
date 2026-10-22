@@ -26,6 +26,7 @@ extension DemoState {
         if let response = handleCreation(method, parts: parts, parameters: parameters, user: user)
             ?? handleStorageConfig(method, parts: parts, parameters: parameters, user: user)
             ?? handleBackupJobs(method, parts: parts, parameters: parameters, user: user)
+            ?? handlePools(method, parts: parts, parameters: parameters, user: user)
             ?? handleAccess(method, parts: parts, parameters: parameters, user: user)
             ?? handleTwoFactorAndRealms(method, parts: parts, parameters: parameters, user: user)
             ?? handleNotifications(method, parts: parts, parameters: parameters, user: user)
@@ -270,7 +271,7 @@ extension DemoState {
             "VM.PowerMgmt", "VM.Console", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.CDROM",
             "VM.Config.Network", "VM.Config.HWType", "VM.Config.Options", "VM.Config.Cloudinit", "VM.Allocate", "VM.Clone",
             "VM.Snapshot", "VM.Snapshot.Rollback", "VM.Backup", "VM.Migrate", "Datastore.AllocateSpace", "Datastore.Allocate", "Datastore.AllocateTemplate",
-            "User.Modify", "Group.Allocate", "Permissions.Modify", "Realm.Allocate", "Realm.AllocateUser", "Sys.Modify", "Mapping.Audit", "Mapping.Modify", "Sys.PowerMgmt", "Sys.Console",
+            "User.Modify", "Group.Allocate", "Permissions.Modify", "Realm.Allocate", "Realm.AllocateUser", "Sys.Modify", "Pool.Allocate", "Mapping.Audit", "Mapping.Modify", "Sys.PowerMgmt", "Sys.Console",
         ]
     }
 

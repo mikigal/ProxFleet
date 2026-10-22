@@ -63,6 +63,12 @@ struct ServerOverviewView: View {
                     }
                     .accessibilityIdentifier("datacenter.backupjobs")
                     NavigationLink {
+                        PoolsView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Pools", systemImage: "square.stack.3d.down.right", color: .orange)
+                    }
+                    .accessibilityIdentifier("datacenter.pools")
+                    NavigationLink {
                         AccessHubView(connection: connection)
                     } label: {
                         MoreRow(title: "Users & Permissions", systemImage: "person.badge.key", color: .blue)

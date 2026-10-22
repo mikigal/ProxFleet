@@ -112,7 +112,7 @@ extension DemoState {
             let excluded = ids(parameters["exclude"])
             guests = cluster.guests.filter { $0.node == node && !excluded.contains($0.vmid) }
         } else if let pool = parameters["pool"] {
-            guests = cluster.guests.filter { $0.node == node && Self.poolMembers[pool]?.contains($0.vmid) == true }
+            guests = cluster.guests.filter { $0.node == node && poolGuests(pool).contains($0.vmid) }
         } else {
             let wanted = ids(parameters["vmid"])
             guard !wanted.isEmpty, cluster.guests.contains(where: { wanted.contains($0.vmid) }) else { return failure(500, "unable to find guest") }

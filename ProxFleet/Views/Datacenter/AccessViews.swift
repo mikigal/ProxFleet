@@ -971,17 +971,20 @@ private struct PermissionRow: View {
 }
 
 /// The permissions given directly to one user or group, with Add and swipe to remove.
-private struct PermissionList: View {
+struct PermissionList: View {
     let access: AccessControl
     let entries: [ACLEntry]
     @Binding var adding: Bool
+    var footer: LocalizedStringKey = "Only permissions given directly; those of groups apply as well."
+    /// Lists by path for a user or group, by user or group for a path.
+    var showsPath = true
     @State private var removing: ACLEntry?
     @State private var errorMessage: String?
 
     var body: some View {
         Section {
             ForEach(entries) { entry in
-                PermissionRow(entry: entry, showsPath: true)
+                PermissionRow(entry: entry, showsPath: showsPath)
                     .swipeActions {
                         if access.can("Permissions.Modify") {
                             Button("Remove", systemImage: "trash") { removing = entry }
@@ -995,7 +998,7 @@ private struct PermissionList: View {
         } header: {
             Text("Permissions")
         } footer: {
-            Text("Only permissions given directly; those of groups apply as well.")
+            Text(footer)
         }
         .confirmationDialog("Remove this permission?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible, presenting: removing) { entry in
             Button("Remove", role: .destructive) {
@@ -1008,7 +1011,7 @@ private struct PermissionList: View {
     }
 }
 
-private struct PermissionEditor: View {
+struct PermissionEditor: View {
     let access: AccessControl
     @State private var entry: ACLEntry
     @State private var pools: [String] = []
