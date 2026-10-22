@@ -1,7 +1,8 @@
 #!/bin/zsh
-# Builds the App Store screenshots in docs/appstore/iphone (1320 x 2868, the 6.9" size) and docs/appstore/ipad
+# Builds the App Store screenshots in docs/appstore/iphone (1206 x 2622, the 6.3" size) and docs/appstore/ipad
 # (2064 x 2752, the 13" size): a headline over an iPhone or iPad showing a capture from docs/appstore/raw, tilted in 3D
-# or seen straight on. The layout lives in scripts/appstore/frame.html.
+# or seen straight on. The layout lives in scripts/appstore/frame.html, which lays the iPhone out at 1320 x 2868; that
+# render is scaled down to 1206 x 2622 (the two differ in shape by under 0.1%).
 #
 #   scripts/make-appstore-screenshots.sh           # both devices
 #   scripts/make-appstore-screenshots.sh ipad      # one device
@@ -49,9 +50,10 @@ trap 'rm -rf "$tmp"' EXIT
 
 for device name style title accent in "${SCREENSHOTS[@]}"; do
   [[ -n "$ONLY" && "$device" != "$ONLY" ]] && continue
+  # The size of the page, then the size of the screenshot.
   case "$device" in
-    iphone) width=1320 height=2868 ;;
-    ipad) width=2064 height=2752 ;;
+    iphone) width=1320 height=2868 size=(1206 2622) ;;
+    ipad) width=2064 height=2752 size=(2064 2752) ;;
   esac
   mkdir -p "$ROOT/docs/appstore/$device"
   query="device=$device&style=$style&title=$(encode "$title")&accent=$(encode "$accent")"
@@ -60,6 +62,7 @@ for device name style title accent in "${SCREENSHOTS[@]}"; do
   # Keep the GPU and real-time waiting: software rendering or virtual time leaves tiles of the 3D device blank.
   "$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=1 --window-size=$width,$((height + 232)) \
     --timeout=3000 --screenshot="$tmp/$device-$name.png" "$url" >/dev/null 2>&1
-  swift "$ROOT/scripts/appstore/crop.swift" "$tmp/$device-$name.png" "$ROOT/docs/appstore/$device/$name.png" $width $height
+  swift "$ROOT/scripts/appstore/crop.swift" "$tmp/$device-$name.png" "$ROOT/docs/appstore/$device/$name.png" \
+    $width $height $size
   echo "docs/appstore/$device/$name.png"
 done
