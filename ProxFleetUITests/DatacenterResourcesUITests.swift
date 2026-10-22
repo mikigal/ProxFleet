@@ -63,6 +63,109 @@ final class DatacenterResourcesUITests: XCTestCase {
     }
 
     @MainActor
+    func testSDNControllerEVPNZoneAndFabric() {
+        app.launch()
+        open("datacenter.sdn")
+        XCTAssertTrue(app.buttons["sdn.zone.lab"].waitForExistence(timeout: 10))
+        reveal(app.buttons["sdn.controllers"]).tap()
+        openAddMenu(showing: app.buttons["sdn.add.controller.evpn"], menu: "sdn.add.controller")
+        type("evpn1", into: app.textFields["sdn.controller.id"])
+        type("10.0.10.11, 10.0.10.12", into: app.textFields["sdn.controller.peers"])
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["sdn.controller.evpn1"].waitForExistence(timeout: 10))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        openAddMenu(showing: app.buttons["sdn.add.zone"])
+        type("evz", into: app.textFields["sdn.zone.id"])
+        app.buttons["sdn.zone.type"].tap()
+        app.buttons["EVPN"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["sdn.zone.controller"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["sdn.zone.controller"].label.contains("evpn1"))
+        type("10000", into: app.textFields["sdn.zone.vrfvxlan"])
+        snapshot("85-sdn-evpn-zone")
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["sdn.zone.evz"].waitForExistence(timeout: 10))
+
+        reveal(app.buttons["sdn.fabrics"]).tap()
+        openAddMenu(showing: app.buttons["sdn.add.fabric.openfabric"], menu: "sdn.add.fabric")
+        type("under", into: app.textFields["sdn.fabric.id"])
+        type("10.255.0.0/24", into: app.textFields["sdn.fabric.prefix"])
+        app.buttons["save"].tap()
+        let fabric = app.buttons["sdn.fabric.under"]
+        XCTAssertTrue(fabric.waitForExistence(timeout: 10))
+        fabric.tap()
+        app.buttons["sdn.fabricnode.add"].tap()
+        type("10.255.0.1", into: app.textFields["sdn.fabricnode.ip"])
+        let interface = app.switches["sdn.fabricnode.iface.nic1"]
+        XCTAssertTrue(interface.waitForExistence(timeout: 10))
+        interface.switches.firstMatch.tap()
+        snapshot("86-sdn-fabric-node")
+        app.buttons["save"].tap()
+        let node = app.buttons["sdn.fabricnode.pve1"]
+        XCTAssertTrue(node.waitForExistence(timeout: 10))
+        XCTAssertTrue(node.label.contains("nic1"))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        let apply = app.buttons["sdn.apply"]
+        reveal(apply).tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: apply)
+        waitForExpectations(timeout: 15)
+        snapshot("87-sdn-routing")
+    }
+
+    @MainActor
+    func testSDNPrefixListsRouteMapsAndIPAM() {
+        app.launch()
+        open("datacenter.sdn")
+        XCTAssertTrue(app.buttons["sdn.zone.lab"].waitForExistence(timeout: 10))
+        reveal(app.buttons["sdn.prefixlists"]).tap()
+        app.buttons["sdn.prefixlist.private"].tap()
+        XCTAssertTrue(app.buttons["sdn.prefixentry.5"].waitForExistence(timeout: 10))
+        app.buttons["sdn.prefixentry.add"].tap()
+        type("100.64.0.0/10", into: app.textFields["sdn.prefixentry.prefix"])
+        type("24", into: app.textFields["sdn.prefixentry.le"])
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["sdn.prefixentry.20"].waitForExistence(timeout: 10))
+        snapshot("88-sdn-prefix-list")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        reveal(app.buttons["sdn.routemaps"]).tap()
+        app.buttons["sdn.routemap.uplink-in"].tap()
+        app.buttons["sdn.routemapentry.add"].tap()
+        app.buttons["match.add"].tap()
+        let list = app.buttons["match.0.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        list.tap()
+        app.buttons["private"].firstMatch.tap()
+        snapshot("89-sdn-route-map-entry")
+        app.buttons["save"].tap()
+        let entry = app.buttons["sdn.routemapentry.20"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 10))
+        XCTAssertTrue(entry.label.contains("private"))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        reveal(app.buttons["sdn.ipam.pve"]).tap()
+        let add = app.buttons["ipam.add.labnet"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        add.tap()
+        type("BC:24:11:00:00:30", into: app.textFields["ipam.mac"])
+        type("10.50.0.30", into: app.textFields["ipam.ip"])
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["ipam.10.50.0.30"].waitForExistence(timeout: 10))
+        snapshot("90-sdn-ipam")
+    }
+
+    /// Scrolls the list until the element can be tapped, first down, then back up.
+    private func reveal(_ element: XCUIElement) -> XCUIElement {
+        for _ in 0..<6 where !(element.exists && element.isHittable) { app.swipeUp() }
+        for _ in 0..<8 where !(element.exists && element.isHittable) { app.swipeDown() }
+        return element
+    }
+
+    @MainActor
     func testResourceMappings() {
         app.launch()
         open("datacenter.mappings")

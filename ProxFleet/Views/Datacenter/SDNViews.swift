@@ -3,7 +3,8 @@ import ProxmoxCore
 import PVEKit
 import SwiftUI
 
-/// The datacenter's SDN: zones and VNets with their subnets. Changes stay pending until Apply, as in the web interface.
+/// The datacenter's SDN: zones and VNets with their subnets, and the routing behind them. Changes stay pending
+/// until Apply, as in the web interface.
 struct SDNView: View {
     @State private var sdn: SDNSettings
     @State private var creating: Creation?
@@ -108,6 +109,30 @@ struct SDNView: View {
                     Text("Guests use a VNet like a bridge: pick it as the bridge of a network device.")
                 }
             }
+            if sdn.zones != nil {
+                Section {
+                    routingLink("Controllers", systemImage: "point.3.filled.connected.trianglepath.dotted", color: .indigo, count: sdn.controllers.count,
+                                pending: sdn.controllers.contains { $0.state != nil }, identifier: "sdn.controllers") {
+                        SDNControllersView(sdn: sdn)
+                    }
+                    routingLink("Fabrics", systemImage: "circle.grid.cross", color: .purple, count: sdn.fabrics.count,
+                                pending: (sdn.fabrics + sdn.fabricNodes).contains { $0.state != nil }, identifier: "sdn.fabrics") {
+                        SDNFabricsView(sdn: sdn)
+                    }
+                    routingLink("Route Maps", systemImage: "arrow.triangle.branch", color: .orange, count: sdn.routeMaps.count,
+                                pending: sdn.routeMapEntries.contains { $0.state != nil }, identifier: "sdn.routemaps") {
+                        SDNRouteMapsView(sdn: sdn)
+                    }
+                    routingLink("Prefix Lists", systemImage: "line.3.horizontal.decrease", color: .green, count: sdn.prefixLists.count,
+                                pending: sdn.prefixLists.contains { $0.state != nil }, identifier: "sdn.prefixlists") {
+                        SDNPrefixListsView(sdn: sdn)
+                    }
+                } header: {
+                    Text("Routing")
+                } footer: {
+                    Text("EVPN zones need a controller. Fabrics route between the nodes and can carry VXLAN and EVPN zones; route maps and prefix lists filter what they announce. The node needs the frr-pythontools package.")
+                }
+            }
             if !sdn.ipams.isEmpty {
                 Section {
                     ForEach(sdn.ipams.filter { $0.type == "pve" }) { ipam in
@@ -167,6 +192,16 @@ struct SDNView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private func routingLink<Destination: View>(_ title: LocalizedStringKey, systemImage: String, color: Color, count: Int, pending: Bool, identifier: String,
+                                                @ViewBuilder destination: @escaping () -> Destination) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            MoreRow(title: title, systemImage: systemImage, color: color, hint: pending ? String(localized: "Pending") : count.formatted())
+        }
+        .accessibilityIdentifier(identifier)
     }
 
     private var deletionTitle: String {
@@ -288,7 +323,7 @@ private struct ZoneRow: View {
 
     private var summary: String {
         let type = SDNZoneType(rawValue: zone.type)?.title ?? zone.type.uppercased()
-        return [type, zone["bridge"], zone["dhcp"] == "dnsmasq" ? String(localized: "DHCP") : nil, zone["mtu"].map { "MTU \($0)" }]
+        return [type, zone["bridge"], zone["controller"], zone["fabric"], zone["dhcp"] == "dnsmasq" ? String(localized: "DHCP") : nil, zone["mtu"].map { "MTU \($0)" }]
             .compactMap { $0 }.joined(separator: " · ")
     }
 }
@@ -383,22 +418,7 @@ struct SDNZoneEditor: View {
                     LabeledTextField(title: "MTU", prompt: "Auto", text: $draft.mtu, keyboard: .numberPad, identifier: "sdn.zone.mtu")
                     FieldError(message: errors["mtu"])
                     if nodes.count > 1 {
-                        NavigationLink {
-                            Form {
-                                Section {
-                                    ForEach(nodes, id: \.self) { node in
-                                        Toggle(node, isOn: Binding(get: { draft.nodes.contains(node) }, set: { on in
-                                            if on { draft.nodes.insert(node) } else { draft.nodes.remove(node) }
-                                        }))
-                                    }
-                                } footer: {
-                                    Text("None selected means all nodes.")
-                                }
-                            }
-                            .navigationTitle("Nodes")
-                        } label: {
-                            LabeledContent("Nodes", value: draft.nodes.isEmpty ? String(localized: "All") : draft.nodes.sorted().joined(separator: ", "))
-                        }
+                        NodeSetPicker(title: "Nodes", nodes: nodes, selection: $draft.nodes, emptyMeaning: "All")
                     }
                     Picker("IPAM", selection: $draft.ipam) {
                         Text("None").tag("")
@@ -431,6 +451,11 @@ struct SDNZoneEditor: View {
                         .disabled(!isNew && draft.changes(from: original).isEmpty)
                         .accessibilityIdentifier("save")
                 }
+            }
+        }
+        .onChange(of: draft.type) {
+            if draft.type == .evpn, draft.controller.isEmpty, let controller = evpnControllers.first(where: { $0.type == "evpn" }) {
+                draft.controller = controller.id
             }
         }
         .task(id: draft.type) {
@@ -479,11 +504,76 @@ struct SDNZoneEditor: View {
             Section {
                 LabeledTextField(title: "Peers", prompt: "10.0.0.1, 10.0.0.2", text: $draft.peers, keyboard: .numbersAndPunctuation, identifier: "sdn.zone.peers")
                 FieldError(message: errors["peers"])
+                fabricPicker
                 LabeledTextField(title: "UDP Port", prompt: "4789", text: $draft.vxlanPort, keyboard: .numberPad)
                 FieldError(message: errors["vxlan-port"])
             } footer: {
-                Text("The addresses of every node in the zone, including this one. VXLAN adds 50 bytes to each packet, so lower the MTU to 1450 or less.")
+                Text("The addresses of every node in the zone, including this one, or a fabric that connects them. VXLAN adds 50 bytes to each packet, so lower the MTU to 1450 or less.")
             }
+        case .evpn:
+            evpnSections
+        }
+    }
+
+    private var fabricPicker: some View {
+        Picker("Fabric", selection: $draft.fabric) {
+            Text("None").tag("")
+            ForEach(sdn.fabrics.filter { $0.state != .deleted }) { Text($0.id).tag($0.id) }
+            if !draft.fabric.isEmpty, !sdn.fabrics.contains(where: { $0.id == draft.fabric }) { Text(draft.fabric).tag(draft.fabric) }
+        }
+        .accessibilityIdentifier("sdn.zone.fabric")
+    }
+
+    private var evpnControllers: [SDNObject] {
+        sdn.controllers.filter { $0.state != .deleted }
+    }
+
+    @ViewBuilder
+    private var evpnSections: some View {
+        Section {
+            Picker("Controller", selection: $draft.controller) {
+                if draft.controller.isEmpty { Text("Choose").tag("") }
+                ForEach(evpnControllers.filter { $0.type == "evpn" }) { Text($0.id).tag($0.id) }
+                if !draft.controller.isEmpty, !evpnControllers.contains(where: { $0.id == draft.controller }) { Text(draft.controller).tag(draft.controller) }
+            }
+            .accessibilityIdentifier("sdn.zone.controller")
+            FieldError(message: errors["controller"])
+            LabeledTextField(title: "VRF VXLAN Tag", prompt: "10000", text: $draft.vrfVXLAN, keyboard: .numberPad, identifier: "sdn.zone.vrfvxlan")
+            FieldError(message: errors["vrf-vxlan"])
+            LabeledTextField(title: "VNet MAC Address", prompt: "Automatic", text: $draft.mac, keyboard: .asciiCapable)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            FieldError(message: errors["mac"])
+            fabricPicker
+        } header: {
+            Text("EVPN")
+        } footer: {
+            Text("Guests on the zone's VNets are routed in a VRF with this VNI. All VNets share the MAC address as their gateway on every node. Without a fabric, the controller's peers carry the tunnels.")
+        }
+        Section {
+            NodeSetPicker(title: "Exit Nodes", nodes: nodes, selection: $draft.exitNodes, emptyMeaning: "None")
+                .accessibilityIdentifier("sdn.zone.exitnodes")
+            Picker("Primary Exit Node", selection: $draft.primaryExitNode) {
+                Text("None").tag("")
+                ForEach(draft.exitNodes.sorted(), id: \.self) { Text($0).tag($0) }
+                if !draft.primaryExitNode.isEmpty, !draft.exitNodes.contains(draft.primaryExitNode) { Text(draft.primaryExitNode).tag(draft.primaryExitNode) }
+            }
+            FieldError(message: errors["exitnodes-primary"])
+            Toggle("Exit Nodes Local Routing", isOn: $draft.exitNodesLocalRouting)
+        } footer: {
+            Text("Exit nodes route between the zone and the outside network. Local routing lets the exit nodes themselves reach the guests.")
+        }
+        Section {
+            Toggle("Advertise Subnets", isOn: $draft.advertisesSubnets)
+            Toggle("Disable ARP/ND Suppression", isOn: $draft.disablesARPNDSuppression)
+            LabeledTextField(title: "Route Target Import", prompt: "None", text: $draft.routeTargetImport, keyboard: .numbersAndPunctuation)
+            FieldError(message: errors["rt-import"])
+            if evpnControllers.count > 1 {
+                NodeSetPicker(title: "Additional Controllers", nodes: evpnControllers.map(\.id).filter { $0 != draft.controller },
+                              selection: Binding(get: { Set(draft.secondaryControllers) }, set: { draft.secondaryControllers = $0.sorted() }), emptyMeaning: "None")
+            }
+        } footer: {
+            Text("Advertising subnets announces whole prefixes instead of single guest addresses. Route targets such as 65000:100 import routes of other VRFs.")
         }
     }
 
@@ -517,6 +607,7 @@ struct SDNZoneEditor: View {
         case .vlan: "Separates VNets by VLAN tags on an existing bridge, which needs to reach the other nodes."
         case .qinq: "Like VLAN, with every VNet inside a shared outer service VLAN."
         case .vxlan: "Connects nodes over UDP tunnels, so VNets span nodes without VLANs on the switches."
+        case .evpn: "VXLAN with BGP EVPN: routed VNets across nodes, with exit nodes to the outside. Needs an EVPN controller."
         }
     }
 
@@ -709,7 +800,7 @@ struct SDNVNetEditor: View {
                     .accessibilityIdentifier("sdn.vnet.zone")
                     FieldError(message: errors["zone"])
                     if zoneType?.allowsVNetTag != false {
-                        LabeledTextField(title: zoneType == .vxlan ? "VXLAN ID" : "VLAN Tag", prompt: zoneType?.requiresVNetTag == true ? "Required" : "None",
+                        LabeledTextField(title: zoneType?.usesVNI == true ? "VXLAN ID" : "VLAN Tag", prompt: zoneType?.requiresVNetTag == true ? "Required" : "None",
                                          text: $draft.tag, keyboard: .numberPad, identifier: "sdn.vnet.tag")
                         FieldError(message: errors["tag"])
                     }
@@ -904,32 +995,58 @@ struct SDNSubnetEditor: View {
 
 // MARK: - IPAM
 
-/// Addresses the built-in IPAM handed out: gateways and guests' network devices.
+/// Addresses the built-in IPAM handed out: gateways and guests' network devices, plus addresses reserved by hand.
+/// Changes here take effect right away, without Apply.
 private struct IPAMView: View {
     let sdn: SDNSettings
     let ipam: String
     @State private var entries: [IPAMEntry]?
     @State private var errorMessage: String?
+    @State private var editing: Mapping?
+    @State private var deleting: IPAMEntry?
+    @State private var actionError: String?
+
+    struct Mapping: Identifiable {
+        var vnet: String
+        var zone: String
+        var entry: IPAMEntry?
+
+        var id: String { entry?.id ?? "new/\(vnet)" }
+    }
+
+    /// VNets with subnets, which can hold mappings, plus any VNet that has entries.
+    private var vnets: [String] {
+        let withSubnets = (sdn.vnets ?? []).filter { $0.state != .new && !(sdn.subnets[$0.id] ?? []).isEmpty }.map(\.id)
+        return Set(withSubnets + (entries ?? []).compactMap(\.vnet)).sorted()
+    }
+
+    private func zone(of vnet: String) -> String {
+        sdn.vnets?.first { $0.id == vnet }?.zone ?? entries?.first { $0.vnet == vnet }?.zone ?? ""
+    }
 
     var body: some View {
         List {
             let byVNet = Dictionary(grouping: entries ?? []) { $0.vnet ?? "" }
-            ForEach(byVNet.keys.sorted(), id: \.self) { vnet in
+            ForEach(entries == nil ? [] : vnets, id: \.self) { vnet in
                 Section(vnet) {
-                    ForEach(byVNet[vnet]!.sorted { $0.ip.localizedStandardCompare($1.ip) == .orderedAscending }) { entry in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(entry.ip).font(.body.monospaced())
-                                if entry.isGateway { AccessBadge(text: "Gateway") }
-                            }
-                            let details = [entry.vmid.map { "\($0)" }, entry.hostname, entry.mac].compactMap { $0 }
-                            if !details.isEmpty {
-                                Text(details.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                    ForEach((byVNet[vnet] ?? []).sorted { $0.ip.localizedStandardCompare($1.ip) == .orderedAscending }) { entry in
+                        Button {
+                            if !entry.isGateway, entry.mac != nil { editing = Mapping(vnet: vnet, zone: entry.zone ?? zone(of: vnet), entry: entry) }
+                        } label: {
+                            row(entry)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("ipam.\(entry.ip)")
+                        .swipeActions {
+                            if sdn.canModify, !entry.isGateway {
+                                Button("Delete", systemImage: "trash") { deleting = entry }
+                                    .tint(.red)
                             }
                         }
-                        .accessibilityElement(children: .combine)
+                    }
+                    if sdn.canModify {
+                        Button("Add Mapping", systemImage: "plus") { editing = Mapping(vnet: vnet, zone: zone(of: vnet)) }
+                            .accessibilityIdentifier("ipam.add.\(vnet)")
                     }
                 }
             }
@@ -939,7 +1056,7 @@ private struct IPAMView: View {
                 ContentUnavailableView("Cannot Load the IPAM", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
             } else if entries == nil {
                 ProgressView()
-            } else if entries?.isEmpty == true {
+            } else if vnets.isEmpty {
                 ContentUnavailableView("No Addresses", systemImage: "list.number", description: Text("Gateways and guests on VNets with subnets show here."))
             }
         }
@@ -947,6 +1064,43 @@ private struct IPAMView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { await load() }
+        .sheet(item: $editing, onDismiss: { Task { await load() } }) { mapping in
+            NavigationStack { IPMappingEditor(sdn: sdn, vnet: mapping.vnet, zone: mapping.zone, entry: mapping.entry) }
+        }
+        .confirmationDialog("Remove the mapping of \(deleting?.ip ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { entry in
+            Button("Remove", role: .destructive) { Task { await delete(entry) } }
+        } message: { entry in
+            Text(entry.vmid == nil ? "The address becomes free right away." : "The guest gets a new address from the DHCP range the next time it asks.")
+        }
+        .alert("IPAM Error", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(actionError ?? "")
+        }
+    }
+
+    private func row(_ entry: IPAMEntry) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(entry.ip).font(.body.monospaced())
+                    if entry.isGateway { AccessBadge(text: "Gateway") }
+                }
+                let details = [entry.vmid.map { "\($0)" }, entry.hostname, entry.mac].compactMap { $0 }
+                if !details.isEmpty {
+                    Text(details.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if !entry.isGateway, entry.mac != nil, sdn.canModify {
+                Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
     }
 
     private func load() async {
@@ -955,6 +1109,145 @@ private struct IPAMView: View {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func delete(_ entry: IPAMEntry) async {
+        do {
+            try await sdn.deleteIPMapping(vnet: entry.vnet ?? "", zone: entry.zone ?? zone(of: entry.vnet ?? ""), ip: entry.ip, mac: entry.mac)
+            await load()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+}
+
+/// Reserves an address for a MAC address, or moves an existing mapping to another address.
+private struct IPMappingEditor: View {
+    let sdn: SDNSettings
+    let vnet: String
+    let zone: String
+    let entry: IPAMEntry?
+    @State private var mac: String
+    @State private var ip: String
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @State private var fieldErrors: [String: String] = [:]
+    @Environment(\.dismiss) private var dismiss
+
+    init(sdn: SDNSettings, vnet: String, zone: String, entry: IPAMEntry?) {
+        self.sdn = sdn
+        self.vnet = vnet
+        self.zone = zone
+        self.entry = entry
+        _mac = State(initialValue: entry?.mac ?? "")
+        _ip = State(initialValue: entry?.ip ?? "")
+    }
+
+    private var subnets: [String] { (sdn.subnets[vnet] ?? []).compactMap { $0["cidr"] } }
+
+    var body: some View {
+        Form {
+            Section {
+                if let entry {
+                    if let vmid = entry.vmid { LabeledContent("Guest", value: [String(vmid), entry.hostname].compactMap { $0 }.joined(separator: " · ")) }
+                    LabeledContent("MAC Address", value: entry.mac ?? "")
+                } else {
+                    LabeledTextField(title: "MAC Address", prompt: "BC:24:11:00:00:01", text: $mac, keyboard: .asciiCapable, identifier: "ipam.mac")
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                    FieldError(message: fieldErrors["mac"])
+                }
+                LabeledTextField(title: "IP Address", prompt: LocalizedStringKey(subnets.first ?? "10.0.0.10"), text: $ip, keyboard: .numbersAndPunctuation, identifier: "ipam.ip")
+                FieldError(message: fieldErrors["ip"])
+            } footer: {
+                Text(subnets.isEmpty ? "The address must lie in a subnet of \(vnet)." : "The address must lie in \(subnets.joined(separator: ", ")). DHCP hands it to the device with this MAC address.")
+            }
+            ErrorSection(message: errorMessage)
+        }
+        .navigationTitle(entry == nil ? "New Mapping" : entry?.ip ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                ProgressButton(entry == nil ? "Add" : "Save", isWorking: isSaving) { Task { await save() } }
+                    .disabled(ip.trimmingCharacters(in: .whitespaces) == (entry?.ip ?? "") || !sdn.canModify)
+                    .accessibilityIdentifier("save")
+            }
+        }
+    }
+
+    private func save() async {
+        let ip = ip.trimmingCharacters(in: .whitespaces), mac = mac.trimmingCharacters(in: .whitespaces).uppercased()
+        fieldErrors = [:]
+        if !SDNSubnetDraft.isAddress(ip) { fieldErrors["ip"] = String(localized: "Enter an IP address.") }
+        let parts = mac.split(separator: ":", omittingEmptySubsequences: false)
+        if entry == nil, !(parts.count == 6 && parts.allSatisfy { $0.count == 2 && $0.allSatisfy(\.isHexDigit) }) {
+            fieldErrors["mac"] = String(localized: "Enter a MAC address such as BC:24:11:00:00:01.")
+        }
+        guard fieldErrors.isEmpty else { return }
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+        do {
+            if let entry {
+                try await sdn.updateIPMapping(vnet: vnet, zone: zone, ip: ip, mac: entry.mac ?? mac, vmid: entry.vmid)
+            } else {
+                try await sdn.createIPMapping(vnet: vnet, zone: zone, ip: ip, mac: mac)
+            }
+            dismiss()
+        } catch .invalid(let message, let fields) {
+            fieldErrors = fields
+            errorMessage = message ?? String(localized: "Check the highlighted fields.")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+/// Checkmarks for a set of nodes or other names; none selected has its own meaning, such as all nodes.
+struct NodeSetPicker: View {
+    let title: LocalizedStringKey
+    let nodes: [String]
+    @Binding var selection: Set<String>
+    let emptyMeaning: LocalizedStringKey
+
+    var body: some View {
+        NavigationLink {
+            Form {
+                Section {
+                    ForEach(nodes, id: \.self) { node in
+                        Button {
+                            if selection.contains(node) { selection.remove(node) } else { selection.insert(node) }
+                        } label: {
+                            HStack {
+                                Text(node).foregroundStyle(.primary)
+                                Spacer()
+                                if selection.contains(node) {
+                                    Image(systemName: "checkmark").foregroundStyle(.tint).fontWeight(.semibold)
+                                }
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("pick.\(node)")
+                        .accessibilityAddTraits(selection.contains(node) ? .isSelected : [])
+                    }
+                } footer: {
+                    Text("None selected: \(Text(emptyMeaning)).")
+                }
+            }
+            .navigationTitle(title)
+        } label: {
+            LabeledContent {
+                if selection.isEmpty { Text(emptyMeaning) } else { Text(selection.sorted().joined(separator: ", ")) }
+            } label: {
+                Text(title)
+            }
         }
     }
 }

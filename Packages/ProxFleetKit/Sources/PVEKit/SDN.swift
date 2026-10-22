@@ -21,8 +21,10 @@ public struct SDNDHCPRange: Sendable, Hashable {
     var propertyString: String { "start-address=\(start),end-address=\(end)" }
 }
 
-/// An SDN zone, VNet or subnet as `GET` lists it with `pending=1`: the applied values, plus changes that wait
-/// for Apply. Values are text by API name; lists are comma-separated.
+/// An SDN object as `GET` lists it with `pending=1` (zones, VNets, subnets, controllers, fabrics and their nodes,
+/// route map entries, prefix lists): the applied values, plus changes that wait for Apply. Values are text by API
+/// name, with lists comma-separated; `lists` keeps list settings item by item, since their items may contain
+/// commas themselves. New objects only have pending values, including their own ID.
 public struct SDNObject: Decodable, Sendable, Equatable, Identifiable {
     public enum State: String, Sendable {
         case new, changed, deleted
@@ -34,35 +36,53 @@ public struct SDNObject: Decodable, Sendable, Equatable, Identifiable {
     public var running: [String: String]
     /// Values once the pending changes are applied.
     public var values: [String: String]
+    public var runningLists: [String: [String]]
+    public var lists: [String: [String]]
     public var runningRanges: [SDNDHCPRange]
     public var ranges: [SDNDHCPRange]
     /// nil when nothing waits for Apply.
     public var state: State?
 
-    private static let idKeys = ["subnet", "vnet", "zone"]
+    /// The first of these keys an object has is its ID. VNets also name their zone, subnets their VNet and EVPN
+    /// zones their controller, so the order matters.
+    private static let idKeys = ["subnet", "vnet", "zone", "controller", "node_id", "id"]
     private static let skippedKeys: Set<String> = ["pending", "state", "digest", "dhcp-range", "type"]
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
         type = container.lossyString(AnyCodingKey("type")) ?? ""
-        let idKey = Self.idKeys.first { container.contains(AnyCodingKey($0)) } ?? "zone"
-        id = container.lossyString(AnyCodingKey(idKey)) ?? ""
         running = Self.values(in: container)
-        running[idKey] = nil
+        runningLists = Self.lists(in: container)
         runningRanges = Self.ranges(in: container)
         state = container.lossyString(AnyCodingKey("state")).flatMap(State.init)
         values = running
+        lists = runningLists
         ranges = runningRanges
         if let pending = try? container.nestedContainer(keyedBy: AnyCodingKey.self, forKey: AnyCodingKey("pending")) {
             for (key, value) in Self.values(in: pending) {
                 // Settings removed by a pending change are listed as "deleted".
                 values[key] = value == "deleted" ? nil : value
+                if value == "deleted" { lists[key] = nil }
             }
+            for (key, list) in Self.lists(in: pending) { lists[key] = list }
             // Removed ranges are listed as "deleted", which reads as no ranges.
             if pending.contains(AnyCodingKey("dhcp-range")) {
                 ranges = Self.ranges(in: pending)
             }
         }
+        let (pendingValues, runningValues) = (values, running)
+        let idKey = Self.idKeys.first { pendingValues[$0] != nil || runningValues[$0] != nil } ?? "zone"
+        id = pendingValues[idKey] ?? runningValues[idKey] ?? ""
+        running[idKey] = nil
+        values[idKey] = nil
+    }
+
+    private static func lists(in container: KeyedDecodingContainer<AnyCodingKey>) -> [String: [String]] {
+        var lists: [String: [String]] = [:]
+        for key in container.allKeys where !skippedKeys.contains(key.stringValue) {
+            if let list = try? container.decode([String].self, forKey: key) { lists[key.stringValue] = list }
+        }
+        return lists
     }
 
     private static func values(in container: KeyedDecodingContainer<AnyCodingKey>) -> [String: String] {
@@ -100,9 +120,9 @@ public struct SDNObject: Decodable, Sendable, Equatable, Identifiable {
     public var zone: String? { values["zone"] }
 }
 
-/// Zone types the app creates. EVPN and Faucet zones need controllers and are left to the web interface.
+/// Zone types the web interface creates. Faucet zones exist in the API only.
 public enum SDNZoneType: String, CaseIterable, Sendable, Identifiable {
-    case simple, vlan, qinq, vxlan
+    case simple, vlan, qinq, vxlan, evpn
 
     public var id: String { rawValue }
 
@@ -112,25 +132,32 @@ public enum SDNZoneType: String, CaseIterable, Sendable, Identifiable {
         case .vlan: String(localized: "VLAN")
         case .qinq: String(localized: "QinQ")
         case .vxlan: String(localized: "VXLAN")
+        case .evpn: String(localized: "EVPN")
         }
     }
 
     /// VNets of these zones need a tag (VLAN ID or VNI); QinQ allows VNets without one, simple zones none.
-    public var requiresVNetTag: Bool { self == .vlan || self == .vxlan }
+    public var requiresVNetTag: Bool { self == .vlan || self == .vxlan || self == .evpn }
     public var allowsVNetTag: Bool { self != .simple }
+    /// VXLAN and EVPN tags are VNIs, which go beyond VLAN IDs.
+    public var usesVNI: Bool { self == .vxlan || self == .evpn }
 }
 
-/// Changes to send for an SDN object: values to set, settings to remove, and DHCP ranges, which the API takes as
-/// a repeated parameter.
+/// Changes to send for an SDN object: values to set, settings to remove, and list settings such as DHCP ranges,
+/// which the API takes as a repeated parameter.
 public struct SDNUpdate: Sendable, Equatable {
     public var values: [String: String] = [:]
     public var deletions: Set<String> = []
     /// nil leaves the ranges as they are; empty removes them.
     public var ranges: [SDNDHCPRange]?
+    /// Other list settings that changed; an empty list removes the setting.
+    public var lists: [String: [String]] = [:]
+    /// Fabrics, prefix lists and route maps take `delete` as a list too, not as comma-separated text.
+    var repeatsDeletions = false
 
     public init() {}
 
-    public var isEmpty: Bool { values.isEmpty && deletions.isEmpty && ranges == nil }
+    public var isEmpty: Bool { values.isEmpty && deletions.isEmpty && ranges == nil && lists.isEmpty }
 
     mutating func set(_ key: String, _ value: String?) {
         if let value {
@@ -155,27 +182,47 @@ public struct SDNUpdate: Sendable, Equatable {
                 for range in ranges { parameters.append("dhcp-range", .string(range.propertyString)) }
             }
         }
-        if !deletions.isEmpty { parameters["delete"] = .string(deletions.sorted().joined(separator: ",")) }
+        for key in lists.keys.sorted() {
+            if lists[key]!.isEmpty {
+                deletions.insert(key)
+            } else {
+                for item in lists[key]! { parameters.append(key, .string(item)) }
+            }
+        }
+        if repeatsDeletions {
+            for key in deletions.sorted() { parameters.append("delete", .string(key)) }
+        } else if !deletions.isEmpty {
+            parameters["delete"] = .string(deletions.sorted().joined(separator: ","))
+        }
         return parameters
     }
 
     /// The differences between two serialized forms; nil values are settings to remove.
-    static func between(_ old: [String: String?], _ new: [String: String?]) -> SDNUpdate {
+    static func between(_ old: [String: String?], _ new: [String: String?], oldLists: [String: [String]] = [:], newLists: [String: [String]] = [:]) -> SDNUpdate {
         var update = SDNUpdate()
         for (key, value) in new where value != (old[key] ?? nil) {
             update.set(key, value)
+        }
+        for (key, list) in newLists where list != (oldLists[key] ?? []) {
+            update.lists[key] = list
         }
         return update
     }
 }
 
-private func trimmed(_ text: String) -> String? {
+func trimmed(_ text: String) -> String? {
     let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
     return value.isEmpty ? nil : value
 }
 
+/// Comma-separated text as the API takes it, from text the user may have separated with spaces or semicolons.
+func commaList(_ text: String) -> String? {
+    let items = text.split(whereSeparator: { $0 == "," || $0 == " " || $0 == ";" }).map(String.init)
+    return items.isEmpty ? nil : items.joined(separator: ",")
+}
+
 /// SDN identifiers: up to 8 letters and digits, starting with a letter.
-private func identifierProblem(_ id: String) -> String? {
+func identifierProblem(_ id: String) -> String? {
     if id.isEmpty { return String(localized: "Enter a name.") }
     let valid = id.count <= 8 && id.first?.isLetter == true && id.unicodeScalars.allSatisfy { $0.isASCII && CharacterSet.alphanumerics.contains($0) }
     return valid ? nil : String(localized: "Up to 8 letters and digits, starting with a letter.")
@@ -199,9 +246,21 @@ public struct SDNZoneDraft: Equatable, Sendable {
     /// QinQ: the service VLAN and its protocol.
     public var serviceVLAN = ""
     public var vlanProtocol = ""
-    /// VXLAN: comma-separated peer addresses and the UDP port.
+    /// VXLAN: comma-separated peer addresses and the UDP port. VXLAN and EVPN: a fabric as underlay instead of peers.
     public var peers = ""
     public var vxlanPort = ""
+    public var fabric = ""
+    /// EVPN: the controller, the VNI of the zone's VRF, the VNets' anycast MAC and the exit nodes to other networks.
+    public var controller = ""
+    public var secondaryControllers: [String] = []
+    public var vrfVXLAN = ""
+    public var mac = ""
+    public var exitNodes: Set<String> = []
+    public var primaryExitNode = ""
+    public var exitNodesLocalRouting = false
+    public var advertisesSubnets = false
+    public var disablesARPNDSuppression = false
+    public var routeTargetImport = ""
 
     public init() {}
 
@@ -221,6 +280,17 @@ public struct SDNZoneDraft: Equatable, Sendable {
         vlanProtocol = values["vlan-protocol"] ?? ""
         peers = values["peers"] ?? ""
         vxlanPort = values["vxlan-port"] ?? ""
+        fabric = values["fabric"] ?? ""
+        controller = values["controller"] ?? ""
+        secondaryControllers = zone.lists["secondary-controllers"] ?? (values["secondary-controllers"] ?? "").split(separator: ",").map(String.init)
+        vrfVXLAN = values["vrf-vxlan"] ?? ""
+        mac = values["mac"] ?? ""
+        exitNodes = Set((values["exitnodes"] ?? "").split(separator: ",").map(String.init))
+        primaryExitNode = values["exitnodes-primary"] ?? ""
+        exitNodesLocalRouting = values["exitnodes-local-routing"] == "1"
+        advertisesSubnets = values["advertise-subnets"] == "1"
+        disablesARPNDSuppression = values["disable-arp-nd-suppression"] == "1"
+        routeTargetImport = values["rt-import"] ?? ""
     }
 
     func serialized() -> [String: String?] {
@@ -239,11 +309,26 @@ public struct SDNZoneDraft: Equatable, Sendable {
             set("vlan-protocol", trimmed(vlanProtocol))
         }
         if type == .vxlan {
-            let list = peers.split(whereSeparator: { $0 == "," || $0 == " " || $0 == ";" }).map(String.init)
-            set("peers", list.isEmpty ? nil : list.joined(separator: ","))
+            set("peers", commaList(peers))
             set("vxlan-port", trimmed(vxlanPort))
         }
+        if type == .vxlan || type == .evpn { set("fabric", trimmed(fabric)) }
+        if type == .evpn {
+            set("controller", trimmed(controller))
+            set("vrf-vxlan", trimmed(vrfVXLAN))
+            set("mac", trimmed(mac))
+            set("exitnodes", exitNodes.isEmpty ? nil : exitNodes.sorted().joined(separator: ","))
+            set("exitnodes-primary", trimmed(primaryExitNode))
+            set("exitnodes-local-routing", exitNodesLocalRouting ? "1" : nil)
+            set("advertise-subnets", advertisesSubnets ? "1" : nil)
+            set("disable-arp-nd-suppression", disablesARPNDSuppression ? "1" : nil)
+            set("rt-import", commaList(routeTargetImport))
+        }
         return values
+    }
+
+    func serializedLists() -> [String: [String]] {
+        type == .evpn ? ["secondary-controllers": secondaryControllers.filter { $0 != controller }] : [:]
     }
 
     var creationParameters: APIParameters {
@@ -251,11 +336,14 @@ public struct SDNZoneDraft: Equatable, Sendable {
         for (key, value) in serialized().sorted(by: { $0.key < $1.key }) {
             if let value { parameters[key] = .string(value) }
         }
+        for (key, list) in serializedLists().sorted(by: { $0.key < $1.key }) {
+            for item in list { parameters.append(key, .string(item)) }
+        }
         return parameters
     }
 
     public func changes(from original: SDNZoneDraft) -> SDNUpdate {
-        SDNUpdate.between(original.serialized(), serialized())
+        SDNUpdate.between(original.serialized(), serialized(), oldLists: original.serializedLists(), newLists: serializedLists())
     }
 
     public func problems(isNew: Bool) -> [String: String] {
@@ -269,9 +357,19 @@ public struct SDNZoneDraft: Equatable, Sendable {
             problems["tag"] = String(localized: "Use a VLAN ID from 0 to 4096.")
         }
         if type == .vxlan {
-            if trimmed(peers) == nil { problems["peers"] = String(localized: "Enter the addresses of the nodes.") }
+            if trimmed(peers) == nil, trimmed(fabric) == nil { problems["peers"] = String(localized: "Enter the addresses of the nodes, or choose a fabric.") }
             if let port = trimmed(vxlanPort), !(Int(port).map { (1...65535).contains($0) } ?? false) {
                 problems["vxlan-port"] = String(localized: "Use a port from 1 to 65535.")
+            }
+        }
+        if type == .evpn {
+            if trimmed(controller) == nil { problems["controller"] = String(localized: "Choose an EVPN controller.") }
+            if !(trimmed(vrfVXLAN).flatMap { Int($0) }.map { (1...16_000_000).contains($0) } ?? false) {
+                problems["vrf-vxlan"] = String(localized: "Use a number from 1 to 16000000.")
+            }
+            if let mac = trimmed(mac), !isMACAddress(mac) { problems["mac"] = String(localized: "Enter a MAC address such as BC:24:11:00:00:01.") }
+            if let primary = trimmed(primaryExitNode), !exitNodes.isEmpty, !exitNodes.contains(primary) {
+                problems["exitnodes-primary"] = String(localized: "Choose one of the exit nodes.")
             }
         }
         if automaticDHCP, type == .simple, trimmed(ipam) == nil {
@@ -332,13 +430,13 @@ public struct SDNVNetDraft: Equatable, Sendable {
         if let alias = trimmed(alias), alias.count > 256 || alias.contains(where: \.isNewline) {
             problems["alias"] = String(localized: "Use one line of at most 256 characters.")
         }
-        let maximum = zoneType == .vxlan ? 16_777_215 : 4094
+        let maximum = zoneType?.usesVNI == true ? 16_777_215 : 4094
         if let tag = trimmed(tag), zoneType?.allowsVNetTag != false {
             if !(Int(tag).map { (1...maximum).contains($0) } ?? false) {
                 problems["tag"] = String(localized: "Use a number from 1 to \(maximum).")
             }
         } else if zoneType?.requiresVNetTag == true {
-            problems["tag"] = zoneType == .vxlan ? String(localized: "Enter the VXLAN ID (VNI).") : String(localized: "Enter the VLAN ID.")
+            problems["tag"] = zoneType?.usesVNI == true ? String(localized: "Enter the VXLAN ID (VNI).") : String(localized: "Enter the VLAN ID.")
         }
         return problems
     }
@@ -419,14 +517,19 @@ public struct SDNSubnetDraft: Equatable, Sendable {
         return problems
     }
 
-    static func isIPv4(_ text: String) -> Bool {
+    public static func isIPv4(_ text: String) -> Bool {
         let parts = text.split(separator: ".", omittingEmptySubsequences: false)
         return parts.count == 4 && parts.allSatisfy { part in !part.isEmpty && part.count <= 3 && (Int(part).map { $0 <= 255 } ?? false) }
     }
 
-    static func isAddress(_ text: String) -> Bool {
+    public static func isAddress(_ text: String) -> Bool {
         isIPv4(text) || (text.contains(":") && text.allSatisfy { $0.isHexDigit || $0 == ":" || $0 == "." })
     }
+}
+
+func isMACAddress(_ text: String) -> Bool {
+    let parts = text.split(separator: ":", omittingEmptySubsequences: false)
+    return parts.count == 6 && parts.allSatisfy { $0.count == 2 && $0.allSatisfy(\.isHexDigit) }
 }
 
 /// `GET /nodes/{node}/sdn/zones`: whether a zone works on a node after Apply.
@@ -554,5 +657,23 @@ extension PVE {
 
     public static func ipamEntries(_ ipam: String) -> APIRequest<[IPAMEntry]> {
         APIRequest(.get, "/cluster/sdn/ipams/\(escapePath(ipam))/status")
+    }
+
+    /// Reserves an address of a VNet's subnet for a MAC address in the IPAM, right away (no Apply).
+    public static func createIPMapping(vnet: String, zone: String, ip: String, mac: String) -> APIRequest<Nothing> {
+        APIRequest(.post, "/cluster/sdn/vnets/\(escapePath(vnet))/ips", parameters: ["zone": .string(zone), "ip": .string(ip), "mac": .string(mac)])
+    }
+
+    /// Moves a MAC address to another address. Guests' mappings carry their VM ID.
+    public static func updateIPMapping(vnet: String, zone: String, ip: String, mac: String, vmid: Int?) -> APIRequest<Nothing> {
+        var parameters: APIParameters = ["zone": .string(zone), "ip": .string(ip), "mac": .string(mac)]
+        if let vmid { parameters["vmid"] = .int(vmid) }
+        return APIRequest(.put, "/cluster/sdn/vnets/\(escapePath(vnet))/ips", parameters: parameters)
+    }
+
+    public static func deleteIPMapping(vnet: String, zone: String, ip: String, mac: String?) -> APIRequest<Nothing> {
+        var parameters: APIParameters = ["zone": .string(zone), "ip": .string(ip)]
+        if let mac { parameters["mac"] = .string(mac) }
+        return APIRequest(.delete, "/cluster/sdn/vnets/\(escapePath(vnet))/ips", parameters: parameters)
     }
 }

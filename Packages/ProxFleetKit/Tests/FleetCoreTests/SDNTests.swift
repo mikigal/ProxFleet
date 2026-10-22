@@ -109,6 +109,92 @@ struct SDNTests {
         #expect(entries.contains { $0.isGateway && $0.ip == "10.50.0.1" })
     }
 
+    @Test func routingObjectsAreAppliedWithTheRest() async throws {
+        let settings = try await settings()
+        await settings.load()
+        #expect(settings.controllers.isEmpty && settings.prefixListNames == ["private"] && settings.routeMapNames == ["uplink-in"])
+        #expect(settings.routeMaps.first?.entries.first?.match.first?.value == "private")
+
+        var controller = SDNControllerDraft()
+        controller.id = "evpn1"
+        controller.peers = "10.0.10.11,10.0.10.12"
+        try await settings.createController(controller)
+        var second = controller
+        second.id = "evpn2"
+        // Proxmox allows one EVPN controller.
+        await #expect(throws: ConfigUpdateError.self) { try await settings.createController(second) }
+
+        var zone = SDNZoneDraft()
+        zone.id = "evz"
+        zone.type = .evpn
+        zone.controller = "evpn1"
+        zone.vrfVXLAN = "10000"
+        try await settings.createZone(zone)
+        let evpnZone = try #require(settings.zones?.first { $0.id == "evz" })
+        #expect(evpnZone.state == .new && SDNZoneDraft(evpnZone).mac.isEmpty == false)
+        await #expect(throws: ConfigUpdateError.self) { try await settings.deleteController("evpn1") }
+
+        var fabric = SDNFabricDraft(protocol: .ospf)
+        fabric.id = "under"
+        fabric.ipPrefix = "10.255.0.0/24"
+        fabric.redistribution = [SDNRedistribution(source: "connected")]
+        try await settings.createFabric(fabric)
+        var node = SDNFabricNodeDraft(protocol: .ospf)
+        node.node = "pve1"
+        node.ip = "10.255.0.1"
+        node.interfaces = [SDNFabricInterface(name: "nic1")]
+        try await settings.addFabricNode(fabric: "under", node)
+        #expect(settings.nodes(ofFabric: "under").map(\.id) == ["pve1"])
+        await #expect(throws: ConfigUpdateError.self) { try await settings.deleteFabric("under") }
+        let saved = SDNFabricDraft(try #require(settings.fabrics.first))
+        var edited = saved
+        edited.area = "0.0.0.1"
+        edited.redistribution = []
+        try await settings.updateFabric("under", protocol: .ospf, edited.changes(from: saved))
+        #expect(settings.fabrics.first?.lists["redistribute"] == nil && settings.fabrics.first?["area"] == "0.0.0.1")
+
+        try await settings.createPrefixList("bogons")
+        var entry = SDNPrefixListEntryDraft()
+        entry.action = "deny"
+        entry.prefix = "0.0.0.0/8"
+        try await settings.createPrefixListEntry(list: "bogons", entry)
+        try await settings.createPrefixListEntry(list: "bogons", entry)
+        let entries = try await settings.prefixListEntries("bogons")
+        #expect(entries.map(\.sequence) == [5, 10])
+        var changedEntry = SDNPrefixListEntryDraft(entries[1])
+        changedEntry.prefix = "127.0.0.0/8"
+        try await settings.updatePrefixListEntry(list: "bogons", sequence: 10, changedEntry.changes(from: SDNPrefixListEntryDraft(entries[1])))
+        try await settings.deletePrefixListEntry(list: "bogons", sequence: 5)
+        #expect(try await settings.prefixListEntries("bogons").map(\.prefix) == ["127.0.0.0/8"])
+
+        var routeEntry = SDNRouteMapEntryDraft(routeMap: "uplink-in", order: "20")
+        routeEntry.action = "deny"
+        routeEntry.match = [SDNRouteMapClause(key: "ip-address-prefix-list", value: "bogons")]
+        try await settings.createRouteMapEntry(routeEntry)
+        #expect(settings.routeMaps.first?.entries.map(\.order) == [10, 20])
+        #expect(settings.hasPendingChanges)
+
+        let task = try await settings.apply()
+        #expect(task.upid.type == "reloadnetworkall")
+        try await Task.sleep(for: .seconds(2.5))
+        await settings.load()
+        #expect(!settings.hasPendingChanges && settings.controllers.first?.running["peers"] == "10.0.10.11,10.0.10.12")
+
+        try await settings.deleteRouteMapEntry(routeMap: "uplink-in", order: 20)
+        #expect(settings.routeMaps.first?.entries.last?.state == .deleted)
+        try await settings.rollback()
+        #expect(settings.routeMaps.first?.entries.last?.state == nil)
+    }
+
+    @Test func ipMappings() async throws {
+        let settings = try await settings()
+        try await settings.createIPMapping(vnet: "labnet", zone: "lab", ip: "10.50.0.20", mac: "BC:24:11:00:00:20")
+        #expect(try await settings.ipamEntries("pve").contains { $0.ip == "10.50.0.20" && $0.mac == "BC:24:11:00:00:20" })
+        try await settings.updateIPMapping(vnet: "labnet", zone: "lab", ip: "10.50.0.21", mac: "BC:24:11:00:00:20", vmid: nil)
+        try await settings.deleteIPMapping(vnet: "labnet", zone: "lab", ip: "10.50.0.21", mac: "BC:24:11:00:00:20")
+        #expect(try await !settings.ipamEntries("pve").contains { $0.mac == "BC:24:11:00:00:20" })
+    }
+
     @Test func vnetFirewall() async throws {
         let settings = try await settings()
         let firewall = Firewall(connection: settings.connection, scope: .vnet("labnet", zone: "lab"))

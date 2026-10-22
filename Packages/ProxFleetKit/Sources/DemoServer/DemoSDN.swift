@@ -1,7 +1,8 @@
 import Foundation
 import ProxmoxCore
 
-/// An SDN zone, VNet or subnet in demo mode: the applied values and the changes waiting for Apply.
+/// An SDN object in demo mode: the applied values and the changes waiting for Apply. List settings are kept
+/// joined with `DemoState.listSeparator`, as the transport hands repeated parameters over.
 struct DemoSDNObject: Sendable {
     var id: String
     var type: String
@@ -21,18 +22,42 @@ struct DemoSDN: Sendable {
     var vnets: [DemoSDNObject]
     /// Subnets by VNet.
     var subnets: [String: [DemoSDNObject]]
+    var controllers: [DemoSDNObject] = []
+    var fabrics: [DemoSDNObject] = []
+    /// Fabric nodes, with IDs like `fabric/node`.
+    var fabricNodes: [DemoSDNObject] = []
+    /// Prefix lists keep their entries as the `entries` list.
+    var prefixLists: [DemoSDNObject] = []
+    /// Route map entries, with IDs like `map/order`.
+    var routeMapEntries: [DemoSDNObject] = []
+    /// IP mappings added by hand: zone, vnet, ip, mac, vmid.
+    var ipMappings: [[String: String]] = []
 
     static let sample = DemoSDN(
         zones: [DemoSDNObject(id: "lab", type: "simple", running: ["ipam": "pve", "dhcp": "dnsmasq", "mtu": "1450"])],
         vnets: [DemoSDNObject(id: "labnet", type: "vnet", running: ["zone": "lab", "alias": "Lab network"])],
         subnets: ["labnet": [DemoSDNObject(id: "lab-10.50.0.0-24", type: "subnet", running: ["cidr": "10.50.0.0/24", "gateway": "10.50.0.1", "snat": "1"],
-                                           runningRanges: ["start-address=10.50.0.100,end-address=10.50.0.199"])]]
+                                           runningRanges: ["start-address=10.50.0.100,end-address=10.50.0.199"])]],
+        prefixLists: [DemoSDNObject(id: "private", type: "prefix-list", running: ["entries": [
+            "action=permit,prefix=10.0.0.0/8,le=32,seq=5", "action=permit,prefix=172.16.0.0/12,le=32,seq=10",
+            "action=permit,prefix=192.168.0.0/16,le=32,seq=15",
+        ].joined(separator: DemoState.listSeparator)])],
+        routeMapEntries: [DemoSDNObject(id: "uplink-in/10", type: "route-map-entry", running: [
+            "route-map-id": "uplink-in", "order": "10", "action": "permit", "match": "key=ip-address-prefix-list,value=private",
+            "set": "key=local-preference,value=200",
+        ])]
     )
 }
 
 /// `/cluster/sdn` and `/nodes/{node}/sdn` in demo mode.
 extension DemoState {
-    private static let zoneKeys: Set<String> = ["nodes", "mtu", "ipam", "dns", "reversedns", "dnszone", "dhcp", "bridge", "tag", "vlan-protocol", "peers", "vxlan-port"]
+    private static let zoneKeys: Set<String> = [
+        "nodes", "mtu", "ipam", "dns", "reversedns", "dnszone", "dhcp", "bridge", "tag", "vlan-protocol", "peers", "vxlan-port", "fabric", "controller",
+        "secondary-controllers", "vrf-vxlan", "mac", "exitnodes", "exitnodes-primary", "exitnodes-local-routing", "advertise-subnets",
+        "disable-arp-nd-suppression", "rt-import",
+    ]
+    /// Settings the API lists as arrays.
+    static let sdnListKeys: Set<String> = ["secondary-controllers", "redistribute", "interfaces", "match", "set", "entries", "allowed_ips"]
     private static let vnetKeys: Set<String> = ["zone", "alias", "tag", "vlanaware", "isolate-ports"]
     private static let subnetKeys: Set<String> = ["gateway", "snat", "dnszoneprefix", "dhcp-dns-server"]
 
@@ -64,7 +89,16 @@ extension DemoState {
             guard let id = parameters["zone"], let type = parameters["type"] else { return fieldFailure(["zone": "property is missing and it is not optional"]) }
             guard id.count <= 8 else { return fieldFailure(["zone": "value may only be 8 characters long"]) }
             guard !sdn.zones.contains(where: { $0.id == id }) else { return failure(500, "create sdn zone object failed: sdn zone object ID '\(id)' already defined") }
-            sdn.zones.append(DemoSDNObject(id: id, type: type, pending: parameters.filter { Self.zoneKeys.contains($0.key) }))
+            var values = parameters.filter { Self.zoneKeys.contains($0.key) }
+            if type == "evpn" {
+                guard let controller = values["controller"], sdn.controllers.contains(where: { $0.id == controller && !$0.isDeleted }) else {
+                    return fieldFailure(["controller": "controller '\(values["controller"] ?? "")' does not exist"])
+                }
+                guard values["vrf-vxlan"] != nil else { return fieldFailure(["vrf-vxlan": "missing vrf-vxlan"]) }
+                // Proxmox picks the anycast MAC itself.
+                values["mac"] = values["mac"] ?? "BC:24:11:3A:7F:C0"
+            }
+            sdn.zones.append(DemoSDNObject(id: id, type: type, pending: values))
             return success(nil)
         case (.put, let path) where path.count == 2 && path[0] == "zones":
             return update(&sdn.zones, id: path[1], keys: Self.zoneKeys, parameters: parameters)
@@ -80,7 +114,7 @@ extension DemoState {
             guard id.count <= 8 else { return fieldFailure(["vnet": "value may only be 8 characters long"]) }
             let zoneType = sdn.zones.first { $0.id == zone }?.type
             if zoneType == "simple", parameters["tag"] != nil { return failure(500, "create sdn vnet object failed: 400 Parameter verification failed.\ntag: vlan tag is not allowed on simple zone") }
-            if ["vlan", "vxlan"].contains(zoneType), parameters["tag"] == nil { return failure(500, "create sdn vnet object failed: 400 Parameter verification failed.\ntag: missing vlan tag") }
+            if ["vlan", "vxlan", "evpn"].contains(zoneType), parameters["tag"] == nil { return failure(500, "create sdn vnet object failed: 400 Parameter verification failed.\ntag: missing vlan tag") }
             sdn.vnets.append(DemoSDNObject(id: id, type: "vnet", pending: parameters.filter { Self.vnetKeys.contains($0.key) }))
             return success(nil)
         case (.put, let path) where path.count == 2 && path[0] == "vnets":
@@ -114,14 +148,14 @@ extension DemoState {
             sdn.subnets[path[1]] = subnets
             return response
         default:
-            return nil
+            return handleSDNRouting(method, rest: rest, parameters: parameters)
         }
     }
 
-    private func update(_ objects: inout [DemoSDNObject], id: String, keys: Set<String>, parameters: [String: String]) -> HTTPResponse {
+    func update(_ objects: inout [DemoSDNObject], id: String, keys: Set<String>, parameters: [String: String]) -> HTTPResponse {
         guard let index = objects.firstIndex(where: { $0.id == id }) else { return failure(500, "sdn object '\(id)' does not exist") }
         var values = objects[index].current
-        let deletions = (parameters["delete"] ?? "").split(separator: ",").map(String.init)
+        let deletions = (parameters["delete"] ?? "").split(whereSeparator: { $0 == "," || String($0) == Self.listSeparator }).map(String.init)
         for key in deletions { values[key] = nil }
         for (key, value) in parameters where keys.contains(key) { values[key] = value }
         objects[index].pending = values
@@ -132,7 +166,7 @@ extension DemoState {
         return success(nil)
     }
 
-    private func delete(_ objects: inout [DemoSDNObject], id: String) -> HTTPResponse {
+    func delete(_ objects: inout [DemoSDNObject], id: String) -> HTTPResponse {
         guard let index = objects.firstIndex(where: { $0.id == id }) else { return failure(500, "sdn object '\(id)' does not exist") }
         if objects[index].running == nil {
             objects.remove(at: index)
@@ -156,6 +190,11 @@ extension DemoState {
         sdn.zones = commit(sdn.zones)
         sdn.vnets = commit(sdn.vnets)
         sdn.subnets = sdn.subnets.mapValues(commit)
+        sdn.controllers = commit(sdn.controllers)
+        sdn.fabrics = commit(sdn.fabrics)
+        sdn.fabricNodes = commit(sdn.fabricNodes)
+        sdn.prefixLists = commit(sdn.prefixLists)
+        sdn.routeMapEntries = commit(sdn.routeMapEntries)
     }
 
     private func rollbackSDN() {
@@ -171,17 +210,23 @@ extension DemoState {
         sdn.zones = revert(sdn.zones)
         sdn.vnets = revert(sdn.vnets)
         sdn.subnets = sdn.subnets.mapValues(revert)
+        sdn.controllers = revert(sdn.controllers)
+        sdn.fabrics = revert(sdn.fabrics)
+        sdn.fabricNodes = revert(sdn.fabricNodes)
+        sdn.prefixLists = revert(sdn.prefixLists)
+        sdn.routeMapEntries = revert(sdn.routeMapEntries)
     }
 
     /// As `GET` with `pending=1` lists objects: applied values at the top, changed ones under `pending`.
-    private func objectJSON(_ object: DemoSDNObject, idKey: String) -> JSONValue {
-        var json: [String: JSONValue] = [idKey: .string(object.id), "type": .string(object.type)]
+    func objectJSON(_ object: DemoSDNObject, idKey: String?) -> JSONValue {
+        var json: [String: JSONValue] = ["type": .string(object.type)]
+        if let idKey { json[idKey] = .string(object.id) }
         for (key, value) in object.running ?? [:] { json[key] = Self.value(key, value) }
         if object.isDeleted {
             json["state"] = "deleted"
         } else if object.running == nil {
             json["state"] = "new"
-            json["pending"] = .object(object.current.mapValues { .string($0) })
+            json["pending"] = .object(object.current.reduce(into: [:]) { $0[$1.key] = Self.value($1.key, $1.value) })
         } else if let pending = object.pending, pending != object.running || object.pendingRanges != nil {
             json["state"] = "changed"
             var changes: [String: JSONValue] = [:]
@@ -213,8 +258,10 @@ extension DemoState {
         return .object(json)
     }
 
-    private static func value(_ key: String, _ value: String) -> JSONValue {
-        ["mtu", "tag", "snat", "vlanaware", "isolate-ports", "vxlan-port"].contains(key) ? (Int(value).map(JSONValue.int) ?? .string(value)) : .string(value)
+    static func value(_ key: String, _ value: String) -> JSONValue {
+        if sdnListKeys.contains(key) { return .array(value.components(separatedBy: listSeparator).filter { !$0.isEmpty }.map { .string($0) }) }
+        let numbers: Set<String> = ["mtu", "tag", "snat", "vlanaware", "isolate-ports", "vxlan-port", "asn", "vrf-vxlan", "order", "hello_interval", "csnp_interval", "bfd", "ebgp"]
+        return numbers.contains(key) ? (Int(value).map(JSONValue.int) ?? .string(value)) : .string(value)
     }
 
     /// Gateways of applied subnets, and the first address of each DHCP range for a running guest.
@@ -229,10 +276,14 @@ extension DemoState {
                 }
                 if let range = subnet.runningRanges.first, let start = PropertyString(parsing: range)["start-address"],
                    let guest = cluster.guests.first(where: { $0.isRunning && $0.kind == .qemu }) {
+                    let moved = sdn.ipMappings.first { $0["vmid"] == String(guest.vmid) && $0["vnet"] == vnet }
                     entries.append([
-                        "zone": .string(zone), "vnet": .string(vnet), "subnet": .string(cidr), "ip": .string(start),
+                        "zone": .string(zone), "vnet": .string(vnet), "subnet": .string(cidr), "ip": .string(moved?["ip"] ?? start),
                         "mac": "BC:24:11:5E:00:01", "hostname": .string(guest.name), "vmid": .int(guest.vmid),
                     ])
+                }
+                for mapping in sdn.ipMappings where mapping["vnet"] == vnet && mapping["vmid"] == nil {
+                    entries.append(["zone": .string(zone), "vnet": .string(vnet), "subnet": .string(cidr), "ip": .string(mapping["ip"] ?? ""), "mac": .string(mapping["mac"] ?? "")])
                 }
             }
         }
