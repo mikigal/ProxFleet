@@ -51,10 +51,7 @@ struct ServerListView: View {
         }
         .overlay {
             if fleet.profiles.isEmpty {
-                WelcomeView(
-                    onAddServer: { onboarding = fleet.makeOnboarding() },
-                    onTryDemo: { selection = fleet.addDemoServer().id }
-                )
+                WelcomeView(onAddServer: { onboarding = fleet.makeOnboarding() })
             }
         }
         .sheet(isPresented: $showsSettings) {
@@ -153,7 +150,6 @@ private struct ConnectionIndicator: View {
 
 private struct WelcomeView: View {
     let onAddServer: () -> Void
-    let onTryDemo: () -> Void
 
     var body: some View {
         ContentUnavailableView {
@@ -164,8 +160,6 @@ private struct WelcomeView: View {
             Button("Add Server", action: onAddServer)
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("welcome.addServer")
-            Button("Try the Demo", action: onTryDemo)
-                .accessibilityIdentifier("welcome.demo")
         }
     }
 }

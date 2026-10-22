@@ -14,7 +14,10 @@ final class OnboardingUITests: XCTestCase {
         app.launch()
         snapshot("01-welcome")
 
-        app.buttons["welcome.demo"].tap()
+        app.buttons["welcome.addServer"].tap()
+        let address = app.textFields["address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        address.typeText("demo.proxfleet.invalid\n")
 
         XCTAssertTrue(app.staticTexts["Cluster homelab"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["pve1"].exists)

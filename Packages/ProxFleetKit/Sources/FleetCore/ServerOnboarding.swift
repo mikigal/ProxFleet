@@ -58,6 +58,10 @@ public final class ServerOnboarding {
             errorMessage = "Enter a host name or IP address, optionally with a port."
             return
         }
+        if parsed.host.lowercased() == Fleet.demoHost {
+            step = .finished(fleet.addDemoServer())
+            return
+        }
         if parsed != address {
             address = parsed
             trustedFingerprints = []

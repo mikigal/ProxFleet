@@ -69,7 +69,7 @@ final class AppLockUITests: XCTestCase {
         forgot.tap()
         app.buttons["Remove All Servers and Unlock"].tap()
 
-        XCTAssertTrue(app.buttons["welcome.demo"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["welcome.addServer"].waitForExistence(timeout: 5))
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertFalse(app.buttons["lock.forgot"].waitForExistence(timeout: 2))

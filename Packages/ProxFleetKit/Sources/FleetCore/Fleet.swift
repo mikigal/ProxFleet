@@ -112,13 +112,17 @@ public final class Fleet {
         persist()
     }
 
+    /// Address that opens the demo cluster when typed in Add Server. It is not offered anywhere in the app; App Review
+    /// gets it in the review notes. The `.invalid` top-level domain is reserved, so no real server can have this name.
+    public static let demoHost = "demo.proxfleet.invalid"
+
     /// Adds the built-in demo cluster, or returns it when it already exists.
     @discardableResult
     public func addDemoServer() -> ServerProfile {
         if let existing = profiles.first(where: \.isDemo) { return existing }
         let profile = ServerProfile(
             name: "Demo Cluster",
-            addresses: [ServerAddress(host: "demo.proxfleet.invalid", port: 8006)],
+            addresses: [ServerAddress(host: Self.demoHost, port: 8006)],
             username: "demo",
             realm: "pve",
             clusterName: "homelab",

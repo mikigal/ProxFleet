@@ -208,6 +208,19 @@ struct ConnectionTests {
         #expect(connection.snapshot?.guests.isEmpty == false)
     }
 
+    @Test func demoAddressOpensDemoCluster() async throws {
+        let fleet = Fleet(environment: .inMemory())
+        let onboarding = fleet.makeOnboarding()
+        onboarding.addressText = " Demo.ProxFleet.invalid "
+        await onboarding.submitAddress()
+        guard case .finished(let profile) = onboarding.step else {
+            Issue.record("expected finished")
+            return
+        }
+        #expect(profile.isDemo)
+        #expect(fleet.profiles == [profile])
+    }
+
     @Test func removingServerDeletesSecrets() async throws {
         let environment = demoEnvironment()
         let profile = profile()
