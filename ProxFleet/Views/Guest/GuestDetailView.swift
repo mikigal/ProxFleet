@@ -11,6 +11,9 @@ struct GuestDetailView: View {
     @State private var tab: GuestTab = .summary
     @State private var terminal: TerminalConsoleModel?
     @State private var vnc: VNCConsoleModel?
+    /// A VM's serial port shown instead of its display; nil for the display.
+    @State private var serialPort: String?
+    @State private var choseConsole = false
     @State private var isKeyboardVisible = false
     @State private var showsClone = false
     @State private var showsDelete = false
@@ -189,13 +192,62 @@ struct GuestDetailView: View {
                         terminal = TerminalConsoleModel(target: .container(detail.reference), session: detail.connection.apiSession)
                     }
             }
-        } else if let vnc {
-            VNCConsoleView(model: vnc)
         } else {
-            Color.black
-                .onAppear {
-                    vnc = VNCConsoleModel(guest: detail.reference, session: detail.connection.apiSession)
+            VStack(spacing: 0) {
+                if !serialPorts.isEmpty {
+                    Picker("Console", selection: Binding(get: { serialPort }, set: { port in
+                        choseConsole = true
+                        switchConsole(to: port)
+                    })) {
+                        Text("Display").tag(String?.none)
+                        ForEach(serialPorts, id: \.self) { port in
+                            Text("Serial \(String(port.dropFirst("serial".count)))").tag(String?.some(port))
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .accessibilityIdentifier("console.mode")
                 }
+                if serialPort != nil {
+                    if let terminal {
+                        TerminalConsoleView(model: terminal)
+                    } else {
+                        Color.black
+                    }
+                } else if let vnc {
+                    VNCConsoleView(model: vnc)
+                } else {
+                    Color.black
+                        .onAppear {
+                            vnc = VNCConsoleModel(guest: detail.reference, session: detail.connection.apiSession)
+                        }
+                }
+            }
+            .onAppear {
+                // VMs that show their display on a serial port (`vga: serial0`) open there, as in the web interface.
+                if !choseConsole, serialPort == nil, let port = detail.config?.values["vga"].flatMap({ $0.hasPrefix("serial") ? String($0.prefix(7)) : nil }),
+                   serialPorts.contains(port) {
+                    switchConsole(to: port)
+                }
+            }
+        }
+    }
+
+    /// Serial ports of a VM, which the console can show like the web interface's xterm.js.
+    private var serialPorts: [String] {
+        (detail.config?.values.keys.filter { $0.hasPrefix("serial") && $0.count == 7 } ?? []).sorted()
+    }
+
+    private func switchConsole(to port: String?) {
+        guard port != serialPort else { return }
+        terminal?.disconnect()
+        terminal = nil
+        vnc?.disconnect()
+        vnc = nil
+        serialPort = port
+        if let port {
+            terminal = TerminalConsoleModel(target: .serial(detail.reference, port: port), session: detail.connection.apiSession)
         }
     }
 

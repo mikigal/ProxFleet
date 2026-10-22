@@ -332,6 +332,8 @@ extension DemoState {
             data["agent"] = "1"
             data["cpu"] = "x86-64-v2-AES"
             data["onboot"] = guest.tags.contains("prod") ? 1 : 0
+            // Linux VMs have a serial port for the serial console.
+            if !guest.name.contains("win") { data["serial0"] = "socket" }
             if guest.name.contains("win") {
                 data["bios"] = "ovmf"
                 data["machine"] = "pc-q35-10.0"

@@ -10,11 +10,13 @@ public enum ConsoleTarget: Sendable, Hashable {
     case virtualMachine(GuestReference)
     /// Shell on a node.
     case node(String)
+    /// A serial port of a VM (`serial0`…`serial3`), as the web interface's xterm.js console shows it.
+    case serial(GuestReference, port: String)
 
     /// Base path of the proxy endpoints, e.g. `/nodes/pve/lxc/200`.
     var path: String {
         switch self {
-        case .container(let guest), .virtualMachine(let guest): guest.path
+        case .container(let guest), .virtualMachine(let guest), .serial(let guest, _): guest.path
         case .node(let node): "/nodes/\(node)"
         }
     }

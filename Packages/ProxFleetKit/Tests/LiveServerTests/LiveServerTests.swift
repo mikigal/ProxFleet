@@ -180,6 +180,48 @@ struct LiveServerTests {
         #expect(text.contains("shell-42"), "shell output: \(text.suffix(300))")
     }
 
+    /// VM 101 has no OS, so its UEFI firmware reports on the serial port that nothing boots; a key opens its Boot Manager.
+    @Test func vmSerialConsole() async throws {
+        let (session, node) = try await rootSession()
+        let vm = GuestReference(node: node, vmid: 101, kind: .virtualMachine)
+        try #require(try await session.send(PVE.guestConfig(vm)).values["serial0"] == nil, "VM 101 already has a serial port")
+        var add = GuestConfigUpdate()
+        add.set("serial0", "socket")
+        _ = try await session.send(PVE.updateConfig(vm, add))
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.powerAction(.start, on: vm)))?.succeeded == true)
+
+        var failure: (any Error)?
+        do {
+            let terminal = try await TerminalConnection.open(.serial(vm, port: "serial0"), session: session)
+            defer { terminal.close() }
+            // The firmware goes quiet while it waits for a key, so the output is read on the side.
+            let text = Mutex("")
+            let reader = Task {
+                for try await chunk in terminal.output { text.withLock { $0 += String(decoding: chunk, as: UTF8.self) } }
+            }
+            defer { reader.cancel() }
+            func wait(for marker: String, seconds: Double) async throws -> Bool {
+                let deadline = Date().addingTimeInterval(seconds)
+                while Date() < deadline {
+                    if text.withLock({ $0.contains(marker) }) { return true }
+                    try await Task.sleep(for: .milliseconds(200))
+                }
+                return false
+            }
+            #expect(try await wait(for: "Press any key", seconds: 40), "serial output: \(text.withLock { $0.suffix(600) })")
+            try await terminal.send("\r")
+            #expect(try await wait(for: "Please select boot device", seconds: 10), "serial output: \(text.withLock { $0.suffix(600) })")
+            #expect(text.withLock { $0.contains("starting serial terminal on interface serial0") })
+        } catch {
+            failure = error
+        }
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.powerAction(.stop, on: vm)))?.succeeded == true)
+        var remove = GuestConfigUpdate()
+        remove.set("serial0", nil)
+        _ = try await session.send(PVE.updateConfig(vm, remove))
+        if let failure { throw failure }
+    }
+
     /// VM 100 boots the Alpine ISO (see README). Connects, waits for a screen and types into it.
     @Test func vmConsole() async throws {
         let (session, node) = try await rootSession()
