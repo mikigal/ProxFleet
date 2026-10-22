@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
-  One App Store screenshot: a headline over a 3D iPhone showing a simulator capture.
+  One App Store screenshot: a headline over an iPhone showing a simulator capture.
   Rendered at 1320 x 2868 (the 6.9" iPhone size) by scripts/make-appstore-screenshots.sh, which passes:
     screen  the capture, relative to this file (1206 x 2622, iPhone 17)
+    style   "3d" for a tilted phone with a visible edge, "flat" for a larger phone seen straight on
     title   the white lines of the headline, separated by "|"
     accent  the last line, drawn in the orange gradient
 -->
@@ -20,9 +21,10 @@
     --pad: calc(var(--rim) + var(--bezel));
     --phone-w: calc(var(--screen-w) + 2 * var(--pad));
     --phone-h: calc(var(--screen-h) + 2 * var(--pad));
-    --screen-r: 112px;
+    --screen-r: calc(var(--screen-w) * 0.13);
     --phone-r: calc(var(--screen-r) + var(--pad));
   }
+  :root.flat { --screen-w: 900px; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: var(--w); height: var(--h); overflow: hidden; }
   /* The background and its glows: violet and blue at the top, orange behind the phone, amber at the bottom right. */
@@ -49,6 +51,9 @@
   .phone { position: absolute; left: 50%; top: 1660px; width: var(--phone-w); height: var(--phone-h);
     margin-left: calc(var(--phone-w) / -2); margin-top: calc(var(--phone-h) / -2);
     transform-style: preserve-3d; transform: rotateX(9deg) rotateY(24deg) rotateZ(-5deg); }
+  :root.flat .phone { top: calc(730px + var(--phone-h) / 2); transform: none; }
+  :root.flat .floor { display: none; }
+  :root.flat .front { box-shadow: 0 60px 120px rgba(0,0,0,.6), 0 20px 40px rgba(0,0,0,.35); }
 
   .slab { position: absolute; inset: 0; border-radius: var(--phone-r); }
   .button { position: absolute; width: 14px; border-radius: 7px; }
@@ -63,8 +68,8 @@
   .screen img { width: 100%; height: 100%; display: block; }
   .glare { position: absolute; inset: 0;
     background: linear-gradient(118deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.05) 26%, rgba(255,255,255,0) 42%, rgba(255,255,255,0) 70%, rgba(255,255,255,.04) 100%); }
-  .island { position: absolute; left: 50%; top: calc(var(--pad) + 23px); width: 252px; height: 74px; margin-left: -126px;
-    border-radius: 37px; background: #000; }
+  .island { position: absolute; left: 50%; top: calc(var(--pad) + var(--screen-w) * 0.027); width: calc(var(--screen-w) * 0.293);
+    height: calc(var(--screen-w) * 0.086); transform: translateX(-50%); border-radius: 999px; background: #000; }
 </style>
 </head>
 <body>
@@ -86,6 +91,8 @@
 </div>
 <script>
   const params = new URLSearchParams(location.search);
+  const flat = params.get("style") === "flat";
+  document.documentElement.classList.toggle("flat", flat);
   document.getElementById("screen").src = params.get("screen");
   const headline = document.getElementById("headline");
   for (const line of (params.get("title") || "").split("|").filter(Boolean)) {
@@ -96,12 +103,30 @@
   accent.textContent = params.get("accent") || "";
   headline.append(accent);
 
-  // The phone's body: thin slabs stacked behind the front, so its rounded edge has real depth.
   const phone = document.getElementById("phone");
+  const phoneHeight = phone.offsetHeight;
+  // Side buttons along the left edge (top offset and height as fractions of the phone's height).
+  const buttons = [[0.155, 0.036], [0.222, 0.072], [0.31, 0.072]];
+  const addButton = (slab, side, top, height, color) => {
+    const button = document.createElement("div");
+    button.className = "button";
+    button.style.cssText = `${side}:-6px;top:${top * phoneHeight}px;height:${height * phoneHeight}px;background:${color}`;
+    slab.appendChild(button);
+  };
+
+  // Seen straight on, only the buttons stick out of the phone's outline: the side button on the right among them.
+  if (flat) {
+    const slab = document.createElement("div");
+    slab.className = "slab";
+    const color = "linear-gradient(90deg, #8e8e95, #3a3a40)";
+    for (const [top, height] of buttons) addButton(slab, "left", top, height, color);
+    addButton(slab, "right", 0.25, 0.105, "linear-gradient(270deg, #8e8e95, #3a3a40)");
+    phone.insertBefore(slab, phone.firstChild);
+  }
+
+  // The tilted phone's body: thin slabs stacked behind the front, so its rounded edge has real depth.
   const depth = 96, step = 1.5;
-  const count = Math.round(depth / step);
-  // Side buttons along the left edge (top offset and height in px), only on the middle slabs.
-  const buttons = [[300, 70], [430, 140], [600, 140]];
+  const count = flat ? 0 : Math.round(depth / step);
   for (let i = 1; i <= count; i++) {
     const t = i / count;
     // Bright chamfer just behind the front, darker metal in the middle, a softer highlight at the back.
@@ -111,12 +136,7 @@
     slab.style.transform = `translateZ(${-i * step}px)`;
     slab.style.background = `linear-gradient(180deg, hsl(240 4% ${light + 10}%) 0%, hsl(240 4% ${light}%) 22%, hsl(240 4% ${light - 8}%) 55%, hsl(240 4% ${light + 4}%) 100%)`;
     if (t > 0.3 && t < 0.7) {
-      for (const [top, height] of buttons) {
-        const button = document.createElement("div");
-        button.className = "button";
-        button.style.cssText = `left:-6px;top:${top}px;height:${height}px;background:hsl(240 4% ${light + 6}%)`;
-        slab.appendChild(button);
-      }
+      for (const [top, height] of buttons) addButton(slab, "left", top, height, `hsl(240 4% ${light + 6}%)`);
     }
     phone.insertBefore(slab, phone.firstChild);
   }
