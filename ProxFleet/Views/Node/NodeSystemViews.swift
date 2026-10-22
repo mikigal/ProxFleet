@@ -76,10 +76,11 @@ struct NodeSettingsForm<Content: View>: View {
     }
 }
 
-/// Shows `content` once `value` has loaded, and loads the node's system settings meanwhile.
+/// Shows `content` once `value` has loaded, and loads the node's system settings (or what `load` loads) meanwhile.
 struct NodeSettingLoader<Value, Content: View>: View {
     let detail: NodeDetail
     let value: Value?
+    var load: (() async -> String?)?
     @ViewBuilder let content: (Value) -> Content
     @State private var errorMessage: String?
 
@@ -90,7 +91,13 @@ struct NodeSettingLoader<Value, Content: View>: View {
             ContentUnavailableView("Cannot Load the Settings", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
         } else {
             ProgressView()
-                .task { errorMessage = await detail.loadSystemSettings() }
+                .task {
+                    if let load {
+                        errorMessage = await load()
+                    } else {
+                        errorMessage = await detail.loadSystemSettings()
+                    }
+                }
         }
     }
 }
@@ -155,6 +162,92 @@ struct NodeDNSEditor: View {
 
     private var problems: [String: String] {
         dns.searchDomain.trimmingCharacters(in: .whitespaces).isEmpty ? ["search": String(localized: "Enter a search domain.")] : [:]
+    }
+}
+
+// MARK: - Notes and options
+
+/// Notes of the node, shown in the web interface's node summary.
+struct NodeNotesEditor: View {
+    let detail: NodeDetail
+    let original: String
+    @State private var notes: String
+
+    init(detail: NodeDetail, options: NodeOptions) {
+        self.detail = detail
+        original = options.notes
+        _notes = State(initialValue: options.notes)
+    }
+
+    var body: some View {
+        NodeSettingsForm(title: "Notes", detail: detail, hasChanges: notes != original) { () throws(ConfigUpdateError) in
+            var update = GuestConfigUpdate()
+            update.set("description", notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes)
+            try await detail.saveOptions(update)
+        } content: { _ in
+            Section {
+                TextEditor(text: $notes)
+                    .frame(minHeight: 260)
+                    .accessibilityIdentifier("node.notes")
+            } footer: {
+                Text("Markdown is supported in the web interface. Notes are stored in the cluster configuration, so every node shows them.")
+            }
+        }
+    }
+}
+
+/// Markdown notes as formatted text; block elements such as headings show as plain lines.
+struct NotesText: View {
+    let notes: String
+
+    var body: some View {
+        if let formatted = try? AttributedString(markdown: notes, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            Text(formatted)
+        } else {
+            Text(notes)
+        }
+    }
+}
+
+/// Wake on LAN, the start-at-boot delay and the ballooning target, as in the node's Options panel of the web interface.
+struct NodeOptionsEditor: View {
+    let detail: NodeDetail
+    let original: NodeOptionsDraft
+    @State private var draft: NodeOptionsDraft
+
+    init(detail: NodeDetail, options: NodeOptions) {
+        self.detail = detail
+        original = NodeOptionsDraft(options)
+        _draft = State(initialValue: NodeOptionsDraft(options))
+    }
+
+    var body: some View {
+        NodeSettingsForm(title: "Options", detail: detail, hasChanges: draft != original, problems: draft.problems) { () throws(ConfigUpdateError) in
+            try await detail.saveOptions(draft.changes(from: original))
+        } content: { errors in
+            Section {
+                LabeledTextField(title: "MAC Address", prompt: "Not Set", text: $draft.macAddress, keyboard: .asciiCapable, identifier: "options.mac")
+                LabeledTextField(title: "Interface", prompt: "Default Route", text: $draft.bindInterface, identifier: "options.interface")
+                LabeledTextField(title: "Broadcast Address", prompt: "255.255.255.255", text: $draft.broadcastAddress, keyboard: .numbersAndPunctuation, identifier: "options.broadcast")
+                FieldError(message: errors["wakeonlan"])
+            } header: {
+                Text("Wake on LAN")
+            } footer: {
+                Text("The MAC address of this node's network card. Another node of the cluster sends the magic packet from the interface given, or from the one carrying the default route.")
+            }
+            Section {
+                LabeledTextField(title: "Start Delay", prompt: "0 s", text: $draft.startDelay, keyboard: .numberPad, identifier: "options.startDelay")
+                FieldError(message: errors["startall-onboot-delay"])
+            } footer: {
+                Text("Seconds to wait after the node booted before starting the guests set to start at boot, up to 300.")
+            }
+            Section {
+                LabeledTextField(title: "Ballooning Target", prompt: "80 %", text: $draft.ballooningTarget, keyboard: .numberPad, identifier: "options.ballooning")
+                FieldError(message: errors["ballooning-target"])
+            } footer: {
+                Text("The node's memory use, in percent, that ballooning aims for by taking memory back from VMs.")
+            }
+        }
     }
 }
 
@@ -281,6 +374,70 @@ struct NodeTimeZoneView: View {
             try await detail.setTimeZone(zone)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Wake on LAN
+
+/// Sends a wake-on-LAN packet to an offline node and tells the user what happened.
+struct WakeOnLANButton: View {
+    let node: String
+    let connection: ServerConnection
+    @State private var isSending = false
+    @State private var result: WakeOnLANResult?
+
+    var body: some View {
+        Button {
+            Task { result = await WakeOnLANResult.send(to: node, connection: connection, isSending: $isSending) }
+        } label: {
+            HStack {
+                Label("Wake on LAN", systemImage: "power.circle")
+                Spacer()
+                if isSending { ProgressView() }
+            }
+        }
+        .disabled(isSending)
+        .accessibilityIdentifier("node.wake")
+        .wakeOnLANAlert($result)
+    }
+}
+
+/// The outcome of a wake-on-LAN request, for an alert.
+struct WakeOnLANResult: Identifiable {
+    let node: String
+    let macAddress: String?
+    let error: String?
+
+    var id: String { node }
+
+    @MainActor
+    static func send(to node: String, connection: ServerConnection, isSending: Binding<Bool>) async -> WakeOnLANResult {
+        isSending.wrappedValue = true
+        defer { isSending.wrappedValue = false }
+        do {
+            let mac = try await connection.send(PVE.wakeOnLAN(node))
+            return WakeOnLANResult(node: node, macAddress: mac, error: nil)
+        } catch {
+            return WakeOnLANResult(node: node, macAddress: nil, error: error.localizedDescription)
+        }
+    }
+}
+
+extension View {
+    func wakeOnLANAlert(_ result: Binding<WakeOnLANResult?>) -> some View {
+        alert(
+            result.wrappedValue?.error == nil ? "Wake-Up Sent" : "Wake on LAN Failed",
+            isPresented: Binding(get: { result.wrappedValue != nil }, set: { if !$0 { result.wrappedValue = nil } }),
+            presenting: result.wrappedValue
+        ) { _ in
+            Button("OK") {}
+        } message: { result in
+            if let error = result.error {
+                Text(error)
+            } else {
+                Text("A magic packet went to \(result.macAddress ?? "") for \(result.node). The node shows as online once it has booted.")
+            }
         }
     }
 }

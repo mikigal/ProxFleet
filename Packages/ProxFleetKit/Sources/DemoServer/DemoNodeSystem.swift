@@ -132,7 +132,7 @@ extension DemoState {
     }
 
     /// A stable stand-in for the SHA-1 digest Proxmox reports.
-    private static func digest(_ text: String) -> String {
+    static func digest(_ text: String) -> String {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in text.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100_0000_01b3 }
         return String(format: "%016llx", hash)

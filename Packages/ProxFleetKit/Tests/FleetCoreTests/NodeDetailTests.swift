@@ -70,6 +70,36 @@ struct NodeDetailTests {
         await #expect(throws: ProxmoxError.self) { try await auditor.stopTask(node: "pve1", upid: upid) }
     }
 
+    @Test func notesAndOptions() async throws {
+        let detail = NodeDetail(node: "pve1", connection: try await connection())
+        #expect(await detail.loadOptions() == nil)
+        let options = try #require(detail.options)
+        #expect(options.notes.contains("Rack 2") && options.wakeOnLANAddress == "BC:24:11:5A:00:01")
+
+        var update = GuestConfigUpdate()
+        update.set("description", "Moved to rack 3")
+        try await detail.saveOptions(update)
+        #expect(detail.options?.notes == "Moved to rack 3")
+
+        let original = NodeOptionsDraft(try #require(detail.options))
+        var draft = original
+        draft.startDelay = "500"
+        await #expect(throws: ConfigUpdateError.invalid(message: "Parameter verification failed.", fields: ["startall-onboot-delay": "value must have a maximum value of 300"])) {
+            try await detail.saveOptions(draft.changes(from: original))
+        }
+        draft.startDelay = "30"
+        try await detail.saveOptions(draft.changes(from: original))
+        #expect(detail.options?.values["startall-onboot-delay"] == "30")
+    }
+
+    @Test func wakeOnLANBringsAnOfflineNodeBack() async throws {
+        let connection = try await connection()
+        let offline = NodeDetail(node: "pve3", connection: connection)
+        #expect(!offline.isOnline)
+        #expect(try await offline.wakeOnLAN() == "BC:24:11:5A:00:03")
+        await #expect(throws: ConfigUpdateError.self) { try await NodeDetail(node: "pve1", connection: connection).wakeOnLAN() }
+    }
+
     @Test func rebootTakesTheNodeOffline() async throws {
         let connection = try await connection()
         let detail = NodeDetail(node: "pve2", connection: connection)

@@ -592,6 +592,49 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.backups(node: node, storage: "local", vmid: 101)).contains { $0.notes == "ProxFleet stop test" })
     }
 
+    /// Notes and wake-on-LAN options are written, read back and removed; a stale digest is refused. A standalone node
+    /// cannot wake itself.
+    @Test func nodeNotesAndOptions() async throws {
+        let (session, node) = try await rootSession()
+        let before = try await session.send(PVE.nodeOptions(node))
+        try #require(before.values.isEmpty, "the node already has notes or options")
+
+        var draft = NodeOptionsDraft(before)
+        draft.macAddress = "aa:bb:cc:dd:ee:01"
+        draft.broadcastAddress = "10.10.100.255"
+        draft.startDelay = "5"
+        var update = draft.changes(from: NodeOptionsDraft(before))
+        update.set("description", "ProxFleet **live** test")
+        _ = try await session.send(PVE.updateNodeOptions(node, update))
+        let saved = try await session.send(PVE.nodeOptions(node))
+        #expect(saved.notes == "ProxFleet **live** test")
+        #expect(saved.values["wakeonlan"] == "AA:BB:CC:DD:EE:01,broadcast-address=10.10.100.255")
+        #expect(NodeOptionsDraft(saved).serialized() == draft.serialized())
+
+        var stale = GuestConfigUpdate(digest: String(repeating: "0", count: 40))
+        stale.set("startall-onboot-delay", "6")
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.updateNodeOptions(node, stale)) }
+        var invalid = GuestConfigUpdate()
+        invalid.set("wakeonlan", "nonsense")
+        do {
+            _ = try await session.send(PVE.updateNodeOptions(node, invalid))
+            Issue.record("expected a validation error")
+        } catch ProxmoxError.api(_, _, let fields) {
+            #expect(fields["wakeonlan"] != nil)
+        }
+        do {
+            _ = try await session.send(PVE.wakeOnLAN(node))
+            Issue.record("expected the node to refuse waking itself")
+        } catch ProxmoxError.api(_, let message, _) {
+            #expect(message?.contains("cannot wake my self") == true)
+        }
+
+        var cleanup = GuestConfigUpdate(digest: saved.digest)
+        for key in saved.values.keys { cleanup.set(key, nil) }
+        _ = try await session.send(PVE.updateNodeOptions(node, cleanup))
+        #expect(try await session.send(PVE.nodeOptions(node)).values.isEmpty)
+    }
+
     /// DNS, hosts and time zone are written back unchanged; a port-less bridge is created, applied and removed again.
     @Test func nodeSystemAndNetwork() async throws {
         let (session, node) = try await rootSession()

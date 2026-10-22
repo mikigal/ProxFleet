@@ -59,6 +59,8 @@ actor DemoState {
     var nodeDNS: [String: [String: String]] = [:]
     var nodeHosts: [String: String] = [:]
     var nodeTimeZones: [String: String] = [:]
+    /// `/nodes/{node}/config` values (notes, wake on LAN…) changed in demo mode, by node.
+    var nodeOptions: [String: [String: String]] = [:]
     var activeNetworks: [String: [DemoInterface]] = [:]
     /// Network configuration waiting for Apply Configuration, by node.
     var pendingNetworks: [String: [DemoInterface]] = [:]

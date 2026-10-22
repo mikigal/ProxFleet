@@ -72,7 +72,99 @@ public struct NodeTime: Decodable, Sendable, Equatable {
     }
 }
 
+/// `GET /nodes/{node}/config`: notes and options of a node, stored in `/etc/pve/nodes/{node}/config`.
+public struct NodeOptions: Decodable, Sendable, Equatable {
+    public var values: [String: String]
+    public var digest: String?
+
+    public init(values: [String: String] = [:], digest: String? = nil) {
+        self.values = values
+        self.digest = digest
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        var values: [String: String] = [:]
+        for key in container.allKeys where key.stringValue != "digest" {
+            if let value = container.lossyString(key) { values[key.stringValue] = value }
+        }
+        self.values = values
+        digest = container.lossyString(AnyCodingKey("digest"))
+    }
+
+    /// Notes shown in the web interface's node summary, in Markdown. Proxmox adds a trailing newline.
+    public var notes: String {
+        (values["description"] ?? "").trimmingCharacters(in: .newlines)
+    }
+
+    /// The MAC address other nodes send the wake-on-LAN packet to, if set.
+    public var wakeOnLANAddress: String? {
+        let property = PropertyString(parsing: values["wakeonlan"] ?? "")
+        return property["mac"] ?? property.defaultValue
+    }
+}
+
+/// The options of the web interface's node Options panel: wake on LAN, start-at-boot delay and ballooning target.
+public struct NodeOptionsDraft: OptionsDraft, Sendable {
+    public var macAddress: String
+    /// Interface to send the packet from, empty for the one carrying the default route.
+    public var bindInterface: String
+    /// Empty for 255.255.255.255.
+    public var broadcastAddress: String
+    /// Seconds before guests with Start at Boot are started, empty for none.
+    public var startDelay: String
+    /// RAM usage target for ballooning in percent, empty for the default of 80.
+    public var ballooningTarget: String
+    private var otherWakeOnLANOptions: PropertyString
+
+    public init(_ options: NodeOptions) {
+        let wakeOnLAN = PropertyString(parsing: options.values["wakeonlan"] ?? "")
+        macAddress = wakeOnLAN["mac"] ?? wakeOnLAN.defaultValue ?? ""
+        bindInterface = wakeOnLAN["bind-interface"] ?? ""
+        broadcastAddress = wakeOnLAN["broadcast-address"] ?? ""
+        otherWakeOnLANOptions = PropertyString(items: wakeOnLAN.items.filter { $0.key != nil && !["mac", "bind-interface", "broadcast-address"].contains($0.key!) })
+        startDelay = options.values["startall-onboot-delay"] ?? ""
+        ballooningTarget = options.values["ballooning-target"] ?? ""
+    }
+
+    public func serialized() -> [String: String?] {
+        var wakeOnLAN = PropertyString(items: [])
+        let mac = macAddress.trimmed
+        if !mac.isEmpty {
+            wakeOnLAN.items.append((key: nil, value: mac.uppercased()))
+            if !bindInterface.trimmed.isEmpty { wakeOnLAN["bind-interface"] = bindInterface.trimmed }
+            if !broadcastAddress.trimmed.isEmpty { wakeOnLAN["broadcast-address"] = broadcastAddress.trimmed }
+            wakeOnLAN.items += otherWakeOnLANOptions.items
+        }
+        return [
+            "wakeonlan": wakeOnLAN.items.isEmpty ? nil : wakeOnLAN.stringValue,
+            "startall-onboot-delay": startDelay.trimmed.isEmpty ? nil : startDelay.trimmed,
+            "ballooning-target": ballooningTarget.trimmed.isEmpty ? nil : ballooningTarget.trimmed,
+        ]
+    }
+
+    /// Settings without a MAC address cannot be stored, so the interface and broadcast address need one.
+    public var problems: [String: String] {
+        guard macAddress.trimmed.isEmpty, !(bindInterface.trimmed.isEmpty && broadcastAddress.trimmed.isEmpty) else { return [:] }
+        return ["wakeonlan": String(localized: "Enter the MAC address of the node's network card.")]
+    }
+}
+
 extension PVE {
+    public static func nodeOptions(_ node: String) -> APIRequest<NodeOptions> {
+        APIRequest(.get, "/nodes/\(node)/config")
+    }
+
+    /// Changes notes and options of a node. Needs `Sys.Modify` on `/`.
+    public static func updateNodeOptions(_ node: String, _ update: GuestConfigUpdate) -> APIRequest<Nothing> {
+        APIRequest(.put, "/nodes/\(node)/config", parameters: update.parameters)
+    }
+
+    /// Sends a wake-on-LAN packet for `node` from the node the app is connected to. Returns the MAC address used.
+    public static func wakeOnLAN(_ node: String) -> APIRequest<String> {
+        APIRequest(.post, "/nodes/\(node)/wakeonlan")
+    }
+
     public static func nodeDNS(_ node: String) -> APIRequest<NodeDNS> {
         APIRequest(.get, "/nodes/\(node)/dns")
     }

@@ -20,6 +20,36 @@ struct NodeSystemTests {
         #expect(parameters.formEncoded == "search=local&dns1=1.1.1.1&dns2=9.9.9.9")
     }
 
+    @Test func nodeOptionsKeepUnknownWakeOnLANKeysAndOnlySendChanges() throws {
+        // Recorded after setting notes and options in the web interface.
+        let json = #"{"startall-onboot-delay":"5","wakeonlan":"AA:BB:CC:DD:EE:01,bind-interface=vmbr0,broadcast-address=10.10.100.255","description":"Test **notes**\nline 2\n","digest":"e6c82288586090452411c34dd8fdab02413d8a95","ballooning-target":"70"}"#
+        let options = try JSONDecoder().decode(NodeOptions.self, from: Data(json.utf8))
+        #expect(options.notes == "Test **notes**\nline 2")
+        #expect(options.wakeOnLANAddress == "AA:BB:CC:DD:EE:01")
+        #expect(options.digest == "e6c82288586090452411c34dd8fdab02413d8a95" && options.values["digest"] == nil)
+
+        let original = NodeOptionsDraft(options)
+        #expect(original.bindInterface == "vmbr0" && original.broadcastAddress == "10.10.100.255" && original.startDelay == "5")
+        var edited = original
+        edited.broadcastAddress = ""
+        edited.ballooningTarget = " "
+        let update = edited.changes(from: original)
+        #expect(update.values == ["wakeonlan": "AA:BB:CC:DD:EE:01,bind-interface=vmbr0"])
+        #expect(update.deletions == ["ballooning-target"])
+
+        var cleared = original
+        cleared.macAddress = ""
+        #expect(cleared.problems["wakeonlan"] != nil)
+        cleared.bindInterface = ""
+        cleared.broadcastAddress = ""
+        #expect(cleared.problems.isEmpty && cleared.changes(from: original).deletions.contains("wakeonlan"))
+
+        var new = NodeOptionsDraft(NodeOptions())
+        new.macAddress = "bc:24:11:5a:00:03"
+        #expect(new.changes(from: NodeOptionsDraft(NodeOptions())).values == ["wakeonlan": "BC:24:11:5A:00:03"])
+        #expect(PVE.wakeOnLAN("pve3").path == "/nodes/pve3/wakeonlan")
+    }
+
     @Test func hostsAndTime() throws {
         let hosts = try JSONDecoder().decode(NodeHosts.self, from: Data(#"{"data": "127.0.0.1 localhost\n", "digest": "36b4dbe2"}"#.utf8))
         #expect(hosts.text == "127.0.0.1 localhost\n" && hosts.digest == "36b4dbe2")

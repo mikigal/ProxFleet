@@ -8,6 +8,8 @@ struct ServerOverviewView: View {
     /// Set by the creation sheet; opened once the sheet is gone, as pushing while it closes is unreliable.
     @State private var newGuest: GuestReference?
     @State private var createdGuest: GuestReference?
+    @State private var isWaking = false
+    @State private var wakeResult: WakeOnLANResult?
 
     var body: some View {
         List {
@@ -28,6 +30,15 @@ struct ServerOverviewView: View {
                         ForEach(snapshot.nodes) { node in
                             NavigationLink(value: ServerRoute.node(node.name)) {
                                 NodeRow(node: node)
+                            }
+                            .swipeActions {
+                                if !node.isOnline {
+                                    Button("Wake", systemImage: "power.circle") {
+                                        Task { wakeResult = await WakeOnLANResult.send(to: node.name, connection: connection, isSending: $isWaking) }
+                                    }
+                                    .tint(.green)
+                                    .disabled(isWaking)
+                                }
                             }
                             .accessibilityIdentifier("node.\(node.name)")
                         }
@@ -79,6 +90,7 @@ struct ServerOverviewView: View {
             }
         }
         .refreshable { await connection.refresh() }
+        .wakeOnLANAlert($wakeResult)
         .task { await connection.keepRefreshing() }
         .safeAreaInset(edge: .bottom) {
             if let error = connection.refreshError {

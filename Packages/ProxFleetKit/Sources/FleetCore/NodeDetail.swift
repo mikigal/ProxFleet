@@ -33,6 +33,7 @@ public final class NodeDetail {
     public private(set) var repositories: AptRepositories?
     public private(set) var subscription: NodeSubscription?
     public private(set) var certificates: [NodeCertificate]?
+    public private(set) var options: NodeOptions?
 
     public var timeframe: RRDTimeframe = .hour {
         didSet {
@@ -144,6 +145,11 @@ public final class NodeDetail {
     }
 
     @discardableResult
+    public func loadOptions() async -> String? {
+        await fetch(PVE.nodeOptions(node)) { options = $0 }
+    }
+
+    @discardableResult
     public func loadNetwork() async -> String? {
         await fetch(PVE.network(node: node)) { network = $0 }
     }
@@ -220,6 +226,29 @@ public final class NodeDetail {
     public func setTimeZone(_ timeZone: String) async throws(ConfigUpdateError) {
         try await perform(PVE.setNodeTimeZone(node, timeZone))
         await fetch(PVE.nodeTime(node)) { time = $0 }
+    }
+
+    /// Changes notes or options, unless they changed since `options` was loaded. Needs `Sys.Modify` on `/`.
+    public func saveOptions(_ update: GuestConfigUpdate) async throws(ConfigUpdateError) {
+        var update = update
+        update.digest = options?.digest
+        do {
+            try await perform(PVE.updateNodeOptions(node, update))
+        } catch .conflict {
+            await loadOptions()
+            throw .conflict
+        }
+        await loadOptions()
+    }
+
+    /// Asks the node the app is connected to to wake this one with a magic packet. Returns the MAC address used.
+    @discardableResult
+    public func wakeOnLAN() async throws(ConfigUpdateError) -> String {
+        do {
+            return try await connection.session.send(PVE.wakeOnLAN(node))
+        } catch {
+            throw ConfigUpdateError(error)
+        }
     }
 
     // MARK: - Network

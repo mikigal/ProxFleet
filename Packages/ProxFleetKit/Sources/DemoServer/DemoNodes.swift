@@ -22,7 +22,8 @@ extension DemoState {
     /// Routes below `/nodes/{node}` that concern the node itself. nil for other paths.
     func handleNode(_ method: HTTPMethod, node: String, rest: [String], parameters: [String: String], user: String) -> HTTPResponse? {
         settleNodeReboots()
-        if let response = handleNodeSystem(method, node: node, rest: rest, parameters: parameters, user: user)
+        if let response = handleNodeOptions(method, node: node, rest: rest, parameters: parameters, user: user)
+            ?? handleNodeSystem(method, node: node, rest: rest, parameters: parameters, user: user)
             ?? handleDisks(method, node: node, rest: rest, parameters: parameters, user: user)
             ?? handleNodeAdministration(method, node: node, rest: rest, parameters: parameters, user: user)
             ?? (method == .get ? handleScan(node: node, rest: rest, parameters: parameters) : nil) {
@@ -158,6 +159,75 @@ extension DemoState {
     private func uptime(of info: DemoCluster.Node) -> Int {
         if let booted = nodeBootTimes[info.name] { return max(0, Int(Date().timeIntervalSince(booted))) }
         return 1_814_400 + Int(Date().timeIntervalSince(started))
+    }
+
+    private static let nodeOptionKeys: Set<String> = ["description", "wakeonlan", "startall-onboot-delay", "ballooning-target"]
+
+    /// Notes and options of a node; the generated cluster has notes on the first node and wake on LAN set for all.
+    private func options(of node: String) -> [String: String] {
+        if let options = nodeOptions[node] { return options }
+        guard let index = cluster.nodes.firstIndex(where: { $0.name == node }) else { return [:] }
+        var options = ["wakeonlan": String(format: "BC:24:11:5A:00:%02X", index + 1)]
+        if index == 0 {
+            options["description"] = "# \(node)\nRack 2, top unit. UPS on the left outlet.\n\nHardware support until **2027-03**.\n"
+        }
+        return options
+    }
+
+    /// Routes for `config` and `wakeonlan` below `/nodes/{node}`. nil for other paths.
+    private func handleNodeOptions(_ method: HTTPMethod, node: String, rest: [String], parameters: [String: String], user: String) -> HTTPResponse? {
+        guard let info = cluster.nodes.first(where: { $0.name == node }) else { return nil }
+        let allowed = privileges(for: user)
+        switch (method, rest) {
+        case (.post, ["wakeonlan"]):
+            guard allowed.contains("Sys.PowerMgmt") else { return failure(403, "Permission check failed (/nodes/\(node), Sys.PowerMgmt)") }
+            if node == cluster.nodes.first(where: \.isOnline)?.name {
+                return failure(500, "'\(node)' is local node, cannot wake my self!")
+            }
+            let property = PropertyString(parsing: options(of: node)["wakeonlan"] ?? "")
+            guard let mac = property["mac"] ?? property.defaultValue else {
+                return failure(500, "No wake on LAN MAC address defined for '\(node)'!")
+            }
+            // The node boots a little later, unless it is already up.
+            if !info.isOnline, nodeReboots[node] == nil { nodeReboots[node] = Date().addingTimeInterval(15) }
+            return success(.string(mac))
+        case (.get, ["config"]):
+            guard info.isOnline else { return failure(595, "Connection refused: node '\(node)' seems to be offline") }
+            let values = options(of: node)
+            return success(.object(values.mapValues { .string($0) }.merging(["digest": .string(Self.optionsDigest(values))]) { $1 }))
+        case (.put, ["config"]):
+            guard info.isOnline else { return failure(595, "Connection refused: node '\(node)' seems to be offline") }
+            guard allowed.contains("Sys.Modify") else { return failure(403, "Permission check failed (/, Sys.Modify)") }
+            var values = options(of: node)
+            if let digest = parameters["digest"], digest != Self.optionsDigest(values) {
+                return failure(500, "detected modified configuration - file changed by other user? Try again.")
+            }
+            for key in (parameters["delete"] ?? "").split(separator: ",").map(String.init) { values[key] = nil }
+            for (key, value) in parameters where Self.nodeOptionKeys.contains(key) {
+                if key == "wakeonlan" {
+                    let property = PropertyString(parsing: value)
+                    let mac = property["mac"] ?? property.defaultValue ?? ""
+                    guard mac.split(separator: ":").count == 6, mac.allSatisfy({ $0.isHexDigit || $0 == ":" }) else {
+                        return fieldFailure(["wakeonlan": "invalid format - value does not look like a valid unicast MAC address"])
+                    }
+                }
+                if key == "ballooning-target", !(Int(value).map { (0...100).contains($0) } ?? false) {
+                    return fieldFailure([key: "value must have a maximum value of 100"])
+                }
+                if key == "startall-onboot-delay", !(Int(value).map { (0...300).contains($0) } ?? false) {
+                    return fieldFailure([key: "value must have a maximum value of 300"])
+                }
+                values[key] = key == "description" && !value.hasSuffix("\n") ? value + "\n" : value
+            }
+            nodeOptions[node] = values
+            return success(nil)
+        default:
+            return nil
+        }
+    }
+
+    private static func optionsDigest(_ values: [String: String]) -> String {
+        digest(values.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n"))
     }
 
     /// Stops the node and its guests; a reboot brings it back at `until`.

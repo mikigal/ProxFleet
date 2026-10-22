@@ -150,6 +150,18 @@ private struct NodeSummaryList: View {
             } header: {
                 Text("Performance")
             }
+            if let notes = detail.options?.notes, !notes.isEmpty, let options = detail.options {
+                Section("Notes") {
+                    NavigationLink {
+                        NodeNotesEditor(detail: detail, options: options)
+                    } label: {
+                        NotesText(notes: notes)
+                            .font(.subheadline)
+                            .lineLimit(8)
+                    }
+                    .accessibilityIdentifier("summary.notes")
+                }
+            }
             if let status = detail.status {
                 Section("System") {
                     if let version = status.pveVersion {
@@ -168,7 +180,11 @@ private struct NodeSummaryList: View {
                 }
             }
         }
-        .refreshable { await detail.load() }
+        .refreshable {
+            await detail.load()
+            await detail.loadOptions()
+        }
+        .task { if detail.isOnline { await detail.loadOptions() } }
         .overlay {
             if !detail.hasLoaded, detail.status == nil { ProgressView() }
         }
@@ -333,6 +349,13 @@ private struct NodeMoreList: View {
         List {
             Section {
                 NavigationLink {
+                    NodeSettingLoader(detail: detail, value: detail.options, load: { await detail.loadOptions() }) { NodeNotesEditor(detail: detail, options: $0) }
+                } label: {
+                    MoreRow(title: "Notes", systemImage: "note.text", color: .yellow, hint: detail.options.map { $0.notes.isEmpty ? String(localized: "None") : nil } ?? nil)
+                }
+                .disabled(!detail.isOnline)
+                .accessibilityIdentifier("more.notes")
+                NavigationLink {
                     NodeServicesView(detail: detail)
                 } label: {
                     MoreRow(title: "Services", systemImage: "gearshape.2", color: .gray)
@@ -400,33 +423,53 @@ private struct NodeMoreList: View {
                     MoreRow(title: "Certificates", systemImage: "checkmark.seal", color: .green)
                 }
                 .accessibilityIdentifier("more.certificates")
+                NavigationLink {
+                    NodeSettingLoader(detail: detail, value: detail.options, load: { await detail.loadOptions() }) { NodeOptionsEditor(detail: detail, options: $0) }
+                } label: {
+                    MoreRow(title: "Options", systemImage: "slider.horizontal.3", color: .gray, hint: detail.options?.wakeOnLANAddress.map { _ in String(localized: "Wake on LAN") })
+                }
+                .accessibilityIdentifier("more.options")
             }
             .disabled(!detail.isOnline)
-            Section {
-                Button {
-                    pendingPower = .reboot
-                } label: {
-                    Label("Reboot", systemImage: "arrow.clockwise")
+            if detail.isOnline {
+                Section {
+                    Button {
+                        pendingPower = .reboot
+                    } label: {
+                        Label("Reboot", systemImage: "arrow.clockwise")
+                    }
+                    .accessibilityIdentifier("node.reboot")
+                    Button(role: .destructive) {
+                        pendingPower = .shutdown
+                    } label: {
+                        Label("Shut Down", systemImage: "power")
+                    }
+                    .accessibilityIdentifier("node.shutdown")
+                } header: {
+                    Text("Power")
+                } footer: {
+                    if !detail.can("Sys.PowerMgmt") {
+                        Text("Rebooting and shutting down need the Sys.PowerMgmt privilege on /nodes/\(detail.node).")
+                    } else {
+                        Text("Running guests are shut down first. Guests set to start at boot start again after a reboot.")
+                    }
                 }
-                .accessibilityIdentifier("node.reboot")
-                Button(role: .destructive) {
-                    pendingPower = .shutdown
-                } label: {
-                    Label("Shut Down", systemImage: "power")
-                }
-                .accessibilityIdentifier("node.shutdown")
-            } header: {
-                Text("Power")
-            } footer: {
-                if !detail.can("Sys.PowerMgmt") {
-                    Text("Rebooting and shutting down need the Sys.PowerMgmt privilege on /nodes/\(detail.node).")
-                } else {
-                    Text("Running guests are shut down first. Guests set to start at boot start again after a reboot.")
+                .disabled(!detail.can("Sys.PowerMgmt") || isWorking)
+            } else {
+                Section {
+                    WakeOnLANButton(node: detail.node, connection: detail.connection)
+                        .disabled(!detail.can("Sys.PowerMgmt"))
+                } header: {
+                    Text("Power")
+                } footer: {
+                    Text("Another node of the cluster sends a magic packet to the MAC address set in this node's options.")
                 }
             }
-            .disabled(!detail.can("Sys.PowerMgmt") || !detail.isOnline || isWorking)
         }
-        .task { await detail.loadSystemSettings() }
+        .task {
+            await detail.loadSystemSettings()
+            await detail.loadOptions()
+        }
         .alert(pendingPower == .shutdown ? "Shut down \(detail.node)?" : "Reboot \(detail.node)?", isPresented: Binding(get: { pendingPower != nil }, set: { if !$0 { pendingPower = nil } }), presenting: pendingPower) { command in
             Button("Cancel", role: .cancel) {}
             Button(command == .shutdown ? "Shut Down" : "Reboot", role: .destructive) { Task { await power(command) } }
