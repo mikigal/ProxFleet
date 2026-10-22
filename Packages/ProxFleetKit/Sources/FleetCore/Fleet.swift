@@ -113,8 +113,8 @@ public final class Fleet {
     }
 
     /// Address that opens the demo cluster when typed in Add Server. It is not offered anywhere in the app; App Review
-    /// gets it in the review notes. The `.invalid` top-level domain is reserved, so no real server can have this name.
-    public static let demoHost = "demo.proxfleet.invalid"
+    /// gets it in the review notes. There is no `.proxfleet` top-level domain, so no real server has this name.
+    public static let demoHost = "demo.proxfleet"
 
     /// Adds the built-in demo cluster, or returns it when it already exists.
     @discardableResult

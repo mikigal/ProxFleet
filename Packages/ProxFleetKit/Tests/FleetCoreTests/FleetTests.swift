@@ -211,7 +211,7 @@ struct ConnectionTests {
     @Test func demoAddressOpensDemoCluster() async throws {
         let fleet = Fleet(environment: .inMemory())
         let onboarding = fleet.makeOnboarding()
-        onboarding.addressText = " Demo.ProxFleet.invalid "
+        onboarding.addressText = " Demo.ProxFleet "
         await onboarding.submitAddress()
         guard case .finished(let profile) = onboarding.step else {
             Issue.record("expected finished")
