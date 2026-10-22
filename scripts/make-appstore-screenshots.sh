@@ -25,6 +25,9 @@ SCREENSHOTS=(
   "2-guest"    "flat" "Every VM.|Every container." "One tap away."
   "3-hardware" "flat" "Edit hardware|on the fly."  "No laptop needed."
   "4-console"  "flat" "Server down|at 3 AM?"       "Fix it from bed."
+  "5-create"   "flat" "Spin up VMs|and containers." "From the couch."
+  "6-backups"  "flat" "Backups on|autopilot."      "Set it. Forget it."
+  "7-more"     "flat" "Not just|start and stop."   "Fine-tune anything."
 )
 
 encode() { python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1"; }
