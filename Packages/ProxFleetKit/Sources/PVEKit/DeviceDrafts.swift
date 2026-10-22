@@ -330,12 +330,19 @@ public struct NodePCIDevice: Decodable, Sendable, Hashable, Identifiable {
     public let iommuGroup: Int?
     /// Whether the device offers mediated devices (vGPU).
     public let mdev: Bool?
+    /// `0x8086`-style IDs, for resource mappings.
+    public let vendor: String?
+    public let device: String?
+    public let subsystemVendor: String?
+    public let subsystemDevice: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, mdev
+        case id, mdev, vendor, device
         case vendorName = "vendor_name"
         case deviceName = "device_name"
         case iommuGroup = "iommugroup"
+        case subsystemVendor = "subsystem_vendor"
+        case subsystemDevice = "subsystem_device"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -345,6 +352,21 @@ public struct NodePCIDevice: Decodable, Sendable, Hashable, Identifiable {
         deviceName = try? container.decode(String.self, forKey: .deviceName)
         iommuGroup = try? container.decode(Int.self, forKey: .iommuGroup)
         mdev = (try? container.decode(Bool.self, forKey: .mdev)) ?? (try? container.decode(Int.self, forKey: .mdev)).map { $0 != 0 }
+        vendor = try? container.decode(String.self, forKey: .vendor)
+        device = try? container.decode(String.self, forKey: .device)
+        subsystemVendor = try? container.decode(String.self, forKey: .subsystemVendor)
+        subsystemDevice = try? container.decode(String.self, forKey: .subsystemDevice)
+    }
+
+    /// `8086:293e`, as resource mappings expect.
+    public var vendorDeviceID: String? {
+        guard let vendor, let device else { return nil }
+        return "\(vendor):\(device)".replacingOccurrences(of: "0x", with: "")
+    }
+
+    public var subsystemID: String? {
+        guard let subsystemVendor, let subsystemDevice else { return nil }
+        return "\(subsystemVendor):\(subsystemDevice)".replacingOccurrences(of: "0x", with: "")
     }
 }
 

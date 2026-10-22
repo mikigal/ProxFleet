@@ -29,6 +29,7 @@ extension DemoState {
             ?? handlePools(method, parts: parts, parameters: parameters, user: user)
             ?? handleFirewall(method, parts: parts, parameters: parameters, user: user)
             ?? handleSDN(method, parts: parts, parameters: parameters, user: user)
+            ?? handleMappings(method, parts: parts, parameters: parameters, user: user)
             ?? handleAccess(method, parts: parts, parameters: parameters, user: user)
             ?? handleTwoFactorAndRealms(method, parts: parts, parameters: parameters, user: user)
             ?? handleNotifications(method, parts: parts, parameters: parameters, user: user) {
@@ -41,8 +42,6 @@ extension DemoState {
         case (.get, 2) where parts == ["access", "permissions"]:
             let path = parameters["path"] ?? "/"
             return success(.object([path: .object(Dictionary(uniqueKeysWithValues: privileges(for: user).map { ($0, JSONValue.int(1)) }))]))
-        case (.get, 3) where parts[0] == "cluster" && parts[1] == "mapping":
-            return success(resourceMappings(parts[2]))
         default:
             break
         }

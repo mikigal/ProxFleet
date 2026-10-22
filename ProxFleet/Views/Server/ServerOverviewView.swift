@@ -87,6 +87,12 @@ struct ServerOverviewView: View {
                     }
                     .accessibilityIdentifier("datacenter.sdn")
                     NavigationLink {
+                        ResourceMappingsView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Resource Mappings", systemImage: "cpu", color: .indigo)
+                    }
+                    .accessibilityIdentifier("datacenter.mappings")
+                    NavigationLink {
                         NotificationsView(connection: connection)
                     } label: {
                         MoreRow(title: "Notifications", systemImage: "bell", color: .pink)

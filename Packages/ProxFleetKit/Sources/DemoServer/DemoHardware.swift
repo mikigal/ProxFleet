@@ -1,6 +1,13 @@
 import Foundation
 import ProxmoxCore
 
+/// A PCI, USB or directory mapping in demo mode.
+struct DemoMapping: Sendable {
+    var id: String
+    var values: [String: String]
+    var map: [String]
+}
+
 /// Consoles, host devices, resource mappings and disk handling in demo mode.
 extension DemoState {
     // MARK: - Consoles
@@ -23,11 +30,16 @@ extension DemoState {
     // MARK: - Host devices
 
     static let pciDevices: JSONValue = [
-        ["id": "0000:00:02.0", "vendor_name": "Intel Corporation", "device_name": "Alder Lake-N [UHD Graphics]", "iommugroup": 0, "mdev": 1],
-        ["id": "0000:01:00.0", "vendor_name": "NVIDIA Corporation", "device_name": "GA106 [RTX A2000 12GB]", "iommugroup": 14],
-        ["id": "0000:01:00.1", "vendor_name": "NVIDIA Corporation", "device_name": "GA106 High Definition Audio Controller", "iommugroup": 14],
-        ["id": "0000:04:00.0", "vendor_name": "Intel Corporation", "device_name": "Ethernet Controller I226-V", "iommugroup": 17],
-        ["id": "0000:05:00.0", "vendor_name": "ASMedia Technology Inc.", "device_name": "ASM1166 Serial ATA Controller", "iommugroup": 18],
+        ["id": "0000:00:02.0", "vendor_name": "Intel Corporation", "device_name": "Alder Lake-N [UHD Graphics]", "iommugroup": 0, "mdev": 1,
+         "vendor": "0x8086", "device": "0x46d1", "subsystem_vendor": "0x8086", "subsystem_device": "0x7270"],
+        ["id": "0000:01:00.0", "vendor_name": "NVIDIA Corporation", "device_name": "GA106 [RTX A2000 12GB]", "iommugroup": 14,
+         "vendor": "0x10de", "device": "0x2571", "subsystem_vendor": "0x10de", "subsystem_device": "0x1611"],
+        ["id": "0000:01:00.1", "vendor_name": "NVIDIA Corporation", "device_name": "GA106 High Definition Audio Controller", "iommugroup": 14,
+         "vendor": "0x10de", "device": "0x228e", "subsystem_vendor": "0x10de", "subsystem_device": "0x1611"],
+        ["id": "0000:04:00.0", "vendor_name": "Intel Corporation", "device_name": "Ethernet Controller I226-V", "iommugroup": 17,
+         "vendor": "0x8086", "device": "0x125c", "subsystem_vendor": "0x8086", "subsystem_device": "0x0000"],
+        ["id": "0000:05:00.0", "vendor_name": "ASMedia Technology Inc.", "device_name": "ASM1166 Serial ATA Controller", "iommugroup": 18,
+         "vendor": "0x1b21", "device": "0x1166", "subsystem_vendor": "0x2116", "subsystem_device": "0x2116"],
     ]
 
     /// The integrated GPU, directly or by its mapping, offers GVT-g vGPUs; other devices have no mediated devices.
@@ -46,13 +58,65 @@ extension DemoState {
         ["busnum": 2, "devnum": 2, "port": 1, "level": 1, "usbpath": "1", "class": 0, "vendid": "046d", "prodid": "c52b", "product": "USB Receiver", "manufacturer": "Logitech"],
     ]
 
-    func resourceMappings(_ type: String) -> JSONValue {
-        switch type {
-        case "pci": [["id": "gpu-a2000", "description": "NVIDIA RTX A2000 on pve1"], ["id": "igpu", "description": "Intel UHD Graphics (GVT-g)", "mdev": 1]]
-        case "usb": [["id": "zigbee-dongle", "description": "Sonoff Zigbee coordinator"]]
-        case "dir": [["id": "media", "description": "/tank/media on every node"]]
-        default: []
+    static func sampleMappings(for cluster: DemoCluster) -> [String: [DemoMapping]] {
+        let node = cluster.nodes.first?.name ?? "pve"
+        return [
+            "pci": [
+                DemoMapping(id: "gpu-a2000", values: ["description": "NVIDIA RTX A2000 on \(node)"],
+                            map: ["node=\(node),path=0000:01:00,id=10de:2571,subsystem-id=10de:1611,iommugroup=14"]),
+                DemoMapping(id: "igpu", values: ["description": "Intel UHD Graphics (GVT-g)", "mdev": "1"],
+                            map: ["node=\(node),path=0000:00:02.0,id=8086:46d1,subsystem-id=8086:7270,iommugroup=0"]),
+            ],
+            "usb": [DemoMapping(id: "zigbee-dongle", values: ["description": "Sonoff Zigbee coordinator"], map: ["node=\(node),id=10c4:ea60"])],
+            "dir": [DemoMapping(id: "media", values: ["description": "/tank/media on every node"], map: cluster.nodes.map { "node=\($0.name),path=/tank/media" })],
+        ]
+    }
+
+    /// `/cluster/mapping/{pci,usb,dir}`. nil for other paths.
+    func handleMappings(_ method: HTTPMethod, parts: [String], parameters: [String: String], user: String) -> HTTPResponse? {
+        guard parts.count >= 3, parts[0] == "cluster", parts[1] == "mapping", ["pci", "usb", "dir"].contains(parts[2]) else { return nil }
+        let type = parts[2]
+        if method != .get, !privileges(for: user).contains("Mapping.Modify") { return failure(403, "Permission check failed (/mapping/\(type), Mapping.Modify)") }
+        let entries = (parameters["map"] ?? "").split(separator: Character(Self.listSeparator)).map(String.init).filter { !$0.isEmpty }
+        let keys: Set<String> = ["description", "mdev", "live-migration-capable"]
+        switch (method, parts.count) {
+        case (.get, 3):
+            return success(.array((mappings[type] ?? []).map { mappingJSON($0, type: type, checks: parameters["check-node"] != nil) }))
+        case (.post, 3):
+            let id = parameters["id"] ?? ""
+            guard !id.isEmpty else { return fieldFailure(["id": "property is missing and it is not optional"]) }
+            guard !(mappings[type] ?? []).contains(where: { $0.id == id }) else { return failure(500, "\(type) mapping '\(id)' already defined") }
+            guard !entries.isEmpty else { return fieldFailure(["map": "property is missing and it is not optional"]) }
+            mappings[type, default: []].append(DemoMapping(id: id, values: parameters.filter { keys.contains($0.key) }, map: entries))
+            return success(nil)
+        case (.put, 4):
+            guard let index = mappings[type]?.firstIndex(where: { $0.id == parts[3] }) else { return failure(500, "\(type) mapping '\(parts[3])' does not exist") }
+            if let digest = parameters["digest"], digest != mappingDigest(mappings[type]![index]) {
+                return failure(500, "detected modified configuration - file changed by other user? Try again.")
+            }
+            for key in (parameters["delete"] ?? "").split(separator: ",") { mappings[type]![index].values[String(key)] = nil }
+            for (key, value) in parameters where keys.contains(key) { mappings[type]![index].values[key] = value }
+            if !entries.isEmpty { mappings[type]![index].map = entries }
+            return success(nil)
+        case (.delete, 4):
+            guard let index = mappings[type]?.firstIndex(where: { $0.id == parts[3] }) else { return failure(500, "\(type) mapping '\(parts[3])' does not exist") }
+            mappings[type]!.remove(at: index)
+            return success(nil)
+        default:
+            return nil
         }
+    }
+
+    private func mappingDigest(_ mapping: DemoMapping) -> String {
+        String(format: "%08x", (mapping.values.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" } + mapping.map).joined().hashValue & 0xffff_ffff)
+    }
+
+    private func mappingJSON(_ mapping: DemoMapping, type: String, checks: Bool) -> JSONValue {
+        var object: [String: JSONValue] = ["id": .string(mapping.id), "type": .string(type), "map": .array(mapping.map.map { .string($0) }),
+                                           "digest": .string(mappingDigest(mapping))]
+        for (key, value) in mapping.values { object[key] = key == "description" ? .string(value) : .int(Int(value) ?? 0) }
+        if checks { object[type == "usb" ? "errors" : "checks"] = [] }
+        return .object(object)
     }
 
     // MARK: - Disks

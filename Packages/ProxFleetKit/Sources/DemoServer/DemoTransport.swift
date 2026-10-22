@@ -71,6 +71,8 @@ actor DemoState {
     var backupJobs: [DemoBackupJob]
     var pools = DemoPool.sample
     var sdn = DemoSDN.sample
+    /// PCI, USB and directory mappings by type.
+    var mappings: [String: [DemoMapping]]
     var access = DemoAccess.sample
     var notifications = DemoNotifications.sample
     var firewall: DemoFirewall
@@ -91,6 +93,7 @@ actor DemoState {
         storageConfigs = DemoStorageConfig.defaults(for: cluster)
         backupJobs = Self.sampleBackupJobs(for: cluster)
         firewall = DemoFirewall.sample(for: cluster)
+        mappings = Self.sampleMappings(for: cluster)
     }
 
     func takeConsole(ticket: String) -> DemoConsoleRequest? {

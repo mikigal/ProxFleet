@@ -2055,6 +2055,80 @@ struct LiveServerTests {
         #expect(try await session.send(PVE.sdnZoneStatus(node: node)).allSatisfy { $0.zone != "pflive" })
     }
 
+    /// PCI, USB and directory mappings built from the node's devices, checked, changed, used by a VM and removed.
+    @Test func resourceMappings() async throws {
+        let (session, node) = try await rootSession()
+        for kind in ResourceMappingKind.allCases {
+            try #require(try await !session.send(PVE.resourceMappingDetails(kind, checkNode: nil)).contains { $0.id.hasPrefix("pflive") }, "left over from an earlier run")
+        }
+        let pciDevices = try await session.send(PVE.pciDevices(node: node))
+        let audio = try #require(pciDevices.first { $0.id.hasSuffix(".0") && $0.vendorDeviceID != nil && $0.subsystemID != nil })
+        let usbController = try #require(pciDevices.first { $0.id.hasSuffix(".1") })
+        let usbDevice = try #require(try await session.send(PVE.usbDevices(node: node)).first { !$0.isHub && $0.portID != nil })
+
+        var pci = ResourceMappingDraft(kind: .pci)
+        pci.id = "pflive-pci"
+        pci.description = "ProxFleet live test"
+        pci.mdev = true
+        pci.entries = [ResourceMappingDraft.pciEntry(audio, node: node), ResourceMappingDraft.pciEntry(usbController, node: node, allFunctions: true)]
+        #expect(pci.problems(isNew: true).isEmpty)
+        // Without an IOMMU, devices are in group -1, which is left out as in the web interface.
+        #expect(pci.entries[0]["iommugroup"] == nil || audio.iommuGroup != -1)
+        _ = try await session.send(PVE.createResourceMapping(pci))
+        var usb = ResourceMappingDraft(kind: .usb)
+        usb.id = "pflive-usb"
+        usb.entries = [ResourceMappingDraft.usbEntry(usbDevice, node: node, byPort: true)]
+        _ = try await session.send(PVE.createResourceMapping(usb))
+        var dir = ResourceMappingDraft(kind: .dir)
+        dir.id = "pflive-dir"
+        dir.entries = [ResourceMappingDraft.directoryEntry("relative/path", node: node)]
+        #expect(dir.problems(isNew: true)["map"] != nil)
+        dir.entries = [ResourceMappingDraft.directoryEntry("/var/lib/vz/template", node: node)]
+        _ = try await session.send(PVE.createResourceMapping(dir))
+        dir.id = "pflive-missing"
+        dir.entries = [ResourceMappingDraft.directoryEntry("/proxfleet/does/not/exist", node: node)]
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.createResourceMapping(dir)) }
+
+        let savedPCI = try #require(try await session.send(PVE.resourceMappingDetails(.pci, checkNode: node)).first { $0.id == "pflive-pci" })
+        #expect(savedPCI.mdev && savedPCI.description == "ProxFleet live test" && savedPCI.nodes == [node])
+        #expect(savedPCI.entries.map { $0["path"] } == [audio.id, String(usbController.id.dropLast(2))])
+        #expect(!savedPCI.checks.contains { $0.message.contains("iommugroup") }, "\(savedPCI.checks)")
+        let savedUSB = try #require(try await session.send(PVE.resourceMappingDetails(.usb, checkNode: node)).first { $0.id == "pflive-usb" })
+        #expect(savedUSB.entries.first?["path"] == usbDevice.portID && savedUSB.entries.first?["id"] == usbDevice.deviceID && savedUSB.checks.isEmpty)
+        let savedDir = try #require(try await session.send(PVE.resourceMappingDetails(.dir, checkNode: node)).first { $0.id == "pflive-dir" })
+        #expect(savedDir.entries.first?["path"] == "/var/lib/vz/template")
+
+        var edited = ResourceMappingDraft(kind: .pci, savedPCI)
+        let original = edited
+        #expect(edited.changes(from: original).isEmpty)
+        edited.description = ""
+        edited.mdev = false
+        edited.setEntries([ResourceMappingDraft.pciEntry(audio, node: node)], on: node)
+        let changes = edited.changes(from: original)
+        #expect(changes["delete"] == "description,mdev" && changes.values("map").count == 1)
+        _ = try await session.send(PVE.updateResourceMapping(.pci, id: "pflive-pci", changes, digest: savedPCI.digest))
+        let changedPCI = try #require(try await session.send(PVE.resourceMappingDetails(.pci, checkNode: nil)).first { $0.id == "pflive-pci" })
+        #expect(changedPCI.description == nil && !changedPCI.mdev && changedPCI.entries.count == 1)
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PVE.updateResourceMapping(.pci, id: "pflive-pci", ["description": "stale"], digest: savedPCI.digest))
+        }
+
+        // A VM shares the mapped directory with virtiofs.
+        let vm = GuestReference(node: node, vmid: 101, kind: .virtualMachine)
+        var share = GuestConfigUpdate()
+        share.set("virtiofs0", "dirid=pflive-dir")
+        _ = try await session.send(PVE.updateConfig(vm, share))
+        #expect(try await session.send(PVE.guestConfig(vm)).values["virtiofs0"] == "dirid=pflive-dir")
+        var unshare = GuestConfigUpdate()
+        unshare.set("virtiofs0", nil)
+        _ = try await session.send(PVE.updateConfig(vm, unshare))
+
+        for (kind, id) in [(ResourceMappingKind.pci, "pflive-pci"), (.usb, "pflive-usb"), (.dir, "pflive-dir")] {
+            _ = try await session.send(PVE.deleteResourceMapping(kind, id: id))
+            #expect(try await !session.send(PVE.resourceMappingDetails(kind, checkNode: nil)).contains { $0.id == id })
+        }
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()
