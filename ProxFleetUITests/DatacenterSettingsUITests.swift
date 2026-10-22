@@ -62,13 +62,37 @@ final class DatacenterSettingsUITests: XCTestCase {
         XCTAssertEqual(app.textFields["options.nextIDLower"].value as? String, "1000")
     }
 
+    @MainActor
+    func testMetricServers() {
+        app.launch()
+        open("datacenter.metrics")
+        XCTAssertTrue(app.buttons["metric.graphite"].waitForExistence(timeout: 10))
+        openAddMenu(showing: app.buttons["metric.add.influxdb"], menu: "metric.add")
+        type("influx", into: app.textFields["metric.id"])
+        type("influx.home.arpa", into: app.textFields["metric.server"])
+        snapshot("68-metric-server")
+        app.buttons["save"].tap()
+        let created = app.buttons["metric.influx"]
+        XCTAssertTrue(created.waitForExistence(timeout: 10))
+        XCTAssertTrue(created.label.contains("influx.home.arpa:8089"))
+
+        created.tap()
+        let port = app.textFields["metric.port"]
+        XCTAssertTrue(port.waitForExistence(timeout: 10))
+        XCTAssertEqual(port.value as? String, "8089")
+    }
+
     /// Opens the Add menu, again if a closing sheet swallowed the tap, and picks an item.
-    private func openAddMenu(showing item: XCUIElement) {
+    private func openAddMenu(showing item: XCUIElement, menu: String) {
         for _ in 0..<5 where !item.exists {
-            app.buttons["notifications.add"].tap()
+            app.buttons[menu].tap()
             _ = item.waitForExistence(timeout: 2)
         }
         item.tap()
+    }
+
+    private func openAddMenu(showing item: XCUIElement) {
+        openAddMenu(showing: item, menu: "notifications.add")
     }
 
     private func open(_ identifier: String) {

@@ -101,6 +101,12 @@ struct ServerOverviewView: View {
                     }
                     .accessibilityIdentifier("datacenter.notifications")
                     NavigationLink {
+                        MetricServersView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Metric Servers", systemImage: "chart.xyaxis.line", color: .mint)
+                    }
+                    .accessibilityIdentifier("datacenter.metrics")
+                    NavigationLink {
                         DatacenterOptionsView(connection: connection)
                     } label: {
                         MoreRow(title: "Options", systemImage: "gearshape", color: .gray)

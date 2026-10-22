@@ -18,6 +18,10 @@ struct DemoAccess: Sendable {
     /// Users whose authenticator codes are locked after too many wrong ones.
     var lockedTOTP: Set<String> = ["auditor@pve"]
     var realms: [DemoRealm] = DemoAccess.sampleRealms
+    /// Realm sync jobs by ID, with their settings as the API names them.
+    var realmSyncJobs: [(id: String, values: [String: String])] = [
+        ("realmsync-corp", ["realm": "corp", "schedule": "sat 02:00", "enabled": "1", "scope": "both", "enable-new": "1", "remove-vanished": "acl;entry", "comment": "Weekly directory sync"]),
+    ]
 
     static let builtInRoles: [(id: String, privileges: [String])] = [
         ("Administrator", ["Datastore.Allocate", "Datastore.AllocateSpace", "Datastore.AllocateTemplate", "Datastore.Audit", "Group.Allocate",

@@ -23,17 +23,12 @@ extension DemoState {
     func handleGuestOrTask(_ method: HTTPMethod, path: String, parameters: [String: String], user: String) -> HTTPResponse? {
         settleTasks()
         let parts = path.split(separator: "/").map(String.init)
-        if let response = handleCreation(method, parts: parts, parameters: parameters, user: user)
-            ?? handleStorageConfig(method, parts: parts, parameters: parameters, user: user)
-            ?? handleBackupJobs(method, parts: parts, parameters: parameters, user: user)
-            ?? handlePools(method, parts: parts, parameters: parameters, user: user)
-            ?? handleFirewall(method, parts: parts, parameters: parameters, user: user)
-            ?? handleSDN(method, parts: parts, parameters: parameters, user: user)
-            ?? handleMappings(method, parts: parts, parameters: parameters, user: user)
-            ?? handleAccess(method, parts: parts, parameters: parameters, user: user)
-            ?? handleTwoFactorAndRealms(method, parts: parts, parameters: parameters, user: user)
-            ?? handleNotifications(method, parts: parts, parameters: parameters, user: user) {
-            return response
+        let handlers: [(HTTPMethod, [String], [String: String], String) -> HTTPResponse?] = [
+            handleCreation, handleStorageConfig, handleBackupJobs, handlePools, handleFirewall, handleSDN, handleMappings, handleAccess,
+            handleTwoFactorAndRealms, handleRealmSyncJobs, handleNotifications, handleMetricServers,
+        ]
+        for handler in handlers {
+            if let response = handler(method, parts, parameters, user) { return response }
         }
 
         switch (method, parts.count) {

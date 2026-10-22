@@ -136,6 +136,36 @@ final class AccessUITests: XCTestCase {
         XCTAssertTrue(app.buttons["realm.lab"].waitForExistence(timeout: 10))
     }
 
+    @MainActor
+    func testRealmSyncJobs() {
+        app.launch()
+        openAccess()
+        app.buttons["access.realms"].tap()
+        let jobs = app.buttons["realm.syncjobs"]
+        XCTAssertTrue(jobs.waitForExistence(timeout: 10))
+        jobs.tap()
+        XCTAssertTrue(app.buttons["syncjob.realmsync-corp"].waitForExistence(timeout: 10))
+
+        app.buttons["syncjob.add"].tap()
+        type("nightly", into: app.textFields["syncjob.id"])
+        let schedule = app.textFields["syncjob.schedule"]
+        XCTAssertTrue(schedule.waitForExistence(timeout: 5))
+        schedule.tap()
+        schedule.press(forDuration: 1.0)
+        if app.menuItems["Select All"].waitForExistence(timeout: 2) { app.menuItems["Select All"].tap() }
+        schedule.typeText("02:00")
+        snapshot("99-realm-sync-job")
+        app.buttons["save"].tap()
+        let created = app.buttons["syncjob.nightly"]
+        XCTAssertTrue(created.waitForExistence(timeout: 10))
+        XCTAssertTrue(created.label.contains("02:00"))
+
+        created.swipeRight()
+        app.buttons["Run Now"].firstMatch.tap()
+        XCTAssertTrue(app.alerts["Sync Started"].waitForExistence(timeout: 10))
+        app.alerts["Sync Started"].buttons["OK"].tap()
+    }
+
     private func openAccess() {
         let entry = app.buttons["datacenter.access"]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))

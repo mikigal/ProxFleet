@@ -187,6 +187,44 @@ public final class AccessControl {
         try await connection.start(PVE.syncRealm(realm, scope: scope, enableNew: enableNew, removeVanished: removeVanished, dryRun: dryRun))
     }
 
+    // MARK: - Realm sync jobs
+
+    public func realmSyncJobs() async throws(ConfigUpdateError) -> [RealmSyncJob] {
+        do {
+            return try await connection.session.send(PVE.realmSyncJobs()).sorted { $0.id < $1.id }
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+    }
+
+    /// The next runs of a schedule, or the server's error for it.
+    public func nextRuns(of schedule: String) async -> Result<[Date], ConfigUpdateError> {
+        do {
+            return .success(try await connection.session.send(PVE.scheduleRuns(schedule)).map(\.date))
+        } catch {
+            return .failure(ConfigUpdateError(error))
+        }
+    }
+
+    public func createRealmSyncJob(_ draft: RealmSyncJobDraft) async throws(ConfigUpdateError) {
+        try await perform(PVE.createRealmSyncJob(id: draft.resolvedID(), draft), reload: false)
+    }
+
+    public func updateRealmSyncJob(_ draft: RealmSyncJobDraft, _ update: GuestConfigUpdate) async throws(ConfigUpdateError) {
+        guard !update.isEmpty else { return }
+        try await perform(PVE.updateRealmSyncJob(draft, update), reload: false)
+    }
+
+    public func deleteRealmSyncJob(_ id: String) async throws(ConfigUpdateError) {
+        try await perform(PVE.deleteRealmSyncJob(id), reload: false)
+    }
+
+    /// Syncs now with the job's options, like the web interface's Run Now.
+    public func runRealmSyncJob(_ job: RealmSyncJob) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        try await syncRealm(job.realm, scope: job.options.scope.isEmpty ? "both" : job.options.scope, enableNew: job.options.enableNew ?? true,
+                            removeVanished: job.options.removeVanished, dryRun: false)
+    }
+
     /// Permissions granted directly to a user, a group or a token.
     public func permissions(of subject: ACLEntry.Subject, _ id: String) -> [ACLEntry] {
         (acl ?? []).filter { $0.subject == subject && $0.subjectID == id }

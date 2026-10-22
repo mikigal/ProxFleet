@@ -71,6 +71,10 @@ actor DemoState {
     var backupJobs: [DemoBackupJob]
     var pools = DemoPool.sample
     var sdn = DemoSDN.sample
+    /// External metric servers with their settings as the API names them, `type` included.
+    var metricServers: [(id: String, values: [String: String])] = [
+        (id: "graphite", values: ["type": "graphite", "server": "metrics.home.arpa", "port": "2003", "path": "proxmox"]),
+    ]
     /// PCI, USB and directory mappings by type.
     var mappings: [String: [DemoMapping]]
     var access = DemoAccess.sample

@@ -1919,11 +1919,38 @@ struct LiveServerTests {
         edit.comment = ""
         edit.mode = "ldaps"
         edit.twoFactor.kind = .none
+        edit.sslVersion = "tlsv1_3"
+        edit.caPath = "/etc/ssl/certs"
+        edit.certificate = "/etc/pve/pflive.pem"
+        edit.certificateKey = "/etc/pve/pflive.key"
+        edit.groupDN = "ou=groups,dc=example,dc=com"
         var update = edit.changes(from: saved)
         update.digest = config.digest
         _ = try await session.send(PVE.updateRealm("pflive", update))
         let edited = try #require(RealmDraft(realm: "pflive", try await session.send(PVE.realmConfig("pflive"))))
         #expect(edited.comment.isEmpty && edited.mode == "ldaps" && edited.twoFactor.kind == .none)
+        #expect(edited.sslVersion == "tlsv1_3" && edited.certificate == "/etc/pve/pflive.pem" && edited.groupDN == "ou=groups,dc=example,dc=com")
+        #expect(edited.changes(from: edited).isEmpty)
+
+        // A scheduled sync, changed and removed; Run Now syncs with the job's options.
+        var job = RealmSyncJobDraft(realm: "pflive", defaults: edited.syncDefaults)
+        job.id = "pflive-sync"
+        job.schedule = "sun 03:00"
+        job.comment = "ProxFleet live test"
+        #expect(job.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createRealmSyncJob(id: "pflive-sync", job))
+        let savedJob = try #require(try await session.send(PVE.realmSyncJobs()).first { $0.id == "pflive-sync" })
+        #expect(savedJob.realm == "pflive" && savedJob.options.scope == "users" && savedJob.options.removeVanished == [.acl, .entry] && savedJob.nextRun != nil)
+        #expect(RealmSyncJobDraft(savedJob) == job)
+        var editedJob = RealmSyncJobDraft(savedJob)
+        editedJob.isEnabled = false
+        editedJob.comment = ""
+        editedJob.options.removeVanished = []
+        _ = try await session.send(PVE.updateRealmSyncJob(editedJob, editedJob.changes(from: RealmSyncJobDraft(savedJob))))
+        let changedJob = try #require(try await session.send(PVE.realmSyncJobs()).first { $0.id == "pflive-sync" })
+        #expect(!changedJob.isEnabled && changedJob.comment == nil && changedJob.options.removeVanished.isEmpty)
+        _ = try await session.send(PVE.deleteRealmSyncJob("pflive-sync"))
+        #expect(try await !session.send(PVE.realmSyncJobs()).contains { $0.id == "pflive-sync" })
 
         // The server is not reachable, so the sync starts and then fails.
         let upid = try await session.send(PVE.syncRealm("pflive", scope: "users", enableNew: true, removeVanished: [], dryRun: true))
@@ -1935,6 +1962,88 @@ struct LiveServerTests {
         #expect(!status.isRunning && !status.succeeded)
         _ = try await session.send(PVE.deleteRealm("pflive"))
         #expect(try await !session.send(ProxmoxAccess.realms()).contains { $0.realm == "pflive" })
+    }
+
+    /// Graphite, InfluxDB over UDP and over HTTPS (disabled, as nothing listens), and OpenTelemetry against a
+    /// small HTTP server on the node that accepts every POST, since Proxmox checks OTLP endpoints before saving.
+    @Test(.timeLimit(.minutes(2))) func metricServers() async throws {
+        let (session, node) = try await rootSession()
+        try #require(try await !session.send(PVE.metricServers()).contains { $0.id.hasPrefix("pflive") }, "left over from an earlier run")
+
+        var graphite = MetricServerDraft(type: .graphite)
+        graphite.id = "pflive-graphite"
+        graphite.server = "192.0.2.10"
+        graphite.path = "proxfleet"
+        graphite.graphiteProtocol = "tcp"
+        graphite.timeout = "2"
+        // Over TCP, Proxmox connects before saving unless the server is disabled.
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.createMetricServer(graphite)) }
+        graphite.isEnabled = false
+        _ = try await session.send(PVE.createMetricServer(graphite))
+        var influxUDP = MetricServerDraft(type: .influxdb)
+        influxUDP.id = "pflive-influxudp"
+        influxUDP.server = "192.0.2.10"
+        influxUDP.mtu = "1400"
+        _ = try await session.send(PVE.createMetricServer(influxUDP))
+        var influx = MetricServerDraft(type: .influxdb)
+        influx.id = "pflive-influx"
+        influx.server = "192.0.2.10"
+        influx.port = "8086"
+        influx.influxProtocol = "https"
+        influx.organization = "lab"
+        influx.bucket = "pve"
+        influx.token = "secret-token"
+        influx.verifiesCertificate = false
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PVE.createMetricServer(influx)) }
+        influx.isEnabled = false
+        _ = try await session.send(PVE.createMetricServer(influx))
+
+        let list = try await session.send(PVE.metricServers())
+        #expect(Set(list.filter { $0.id.hasPrefix("pflive") }.map(\.id)) == ["pflive-graphite", "pflive-influxudp", "pflive-influx"])
+        var savedGraphite = try #require(MetricServerDraft(try await session.send(PVE.metricServer("pflive-graphite"))))
+        savedGraphite.id = "pflive-graphite"
+        #expect(savedGraphite == graphite)
+        var savedInflux = try #require(MetricServerDraft(try await session.send(PVE.metricServer("pflive-influx"))))
+        savedInflux.id = "pflive-influx"
+        var expected = influx
+        expected.token = ""
+        #expect(savedInflux == expected)
+        var editedInflux = savedInflux
+        editedInflux.bucket = ""
+        editedInflux.port = "8087"
+        _ = try await session.send(PVE.updateMetricServer(editedInflux, editedInflux.changes(from: savedInflux)))
+        let changed = try await session.send(PVE.metricServer("pflive-influx"))
+        #expect(changed.values["bucket"] == nil && changed.port == "8087" && changed.values["organization"] == "lab")
+
+        // A throwaway OTLP endpoint on the node itself.
+        let collector = try await runOnNode(session, node: node, """
+            setsid nohup python3 -c 'import http.server as h
+            class R(h.BaseHTTPRequestHandler):
+                def do_POST(s):
+                    s.rfile.read(int(s.headers.get("Content-Length") or 0)); s.send_response(200); s.end_headers()
+            h.HTTPServer(("127.0.0.1", 14318), R).serve_forever()' >/dev/null 2>&1 < /dev/null & sleep 1; echo started
+            """)
+        #expect(collector.output.contains("started"))
+        var otel = MetricServerDraft(type: .opentelemetry)
+        otel.id = "pflive-otel"
+        otel.server = "127.0.0.1"
+        otel.port = "14318"
+        otel.otelProtocol = "http"
+        otel.otelHeaders = #"{"X-Test": "proxfleet"}"#
+        otel.otelResourceAttributes = #"{"cluster": "lab"}"#
+        otel.otelCompression = "none"
+        otel.otelTimeout = "3"
+        #expect(otel.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createMetricServer(otel))
+        var savedOtel = try #require(MetricServerDraft(try await session.send(PVE.metricServer("pflive-otel"))))
+        savedOtel.id = "pflive-otel"
+        #expect(savedOtel == otel)
+        _ = try await runOnNode(session, node: node, "pkill -f 'HTTPServer((\"127.0.0.1\", 14318)' ; true")
+
+        for id in ["pflive-graphite", "pflive-influxudp", "pflive-influx", "pflive-otel"] {
+            _ = try await session.send(PVE.deleteMetricServer(id))
+        }
+        #expect(try await !session.send(PVE.metricServers()).contains { $0.id.hasPrefix("pflive") })
     }
 
     /// Temporary notification endpoints and a matcher, and datacenter options changed and put back.
@@ -2225,6 +2334,13 @@ struct LiveServerTests {
         let lease = entries.first { $0.vmid == 101 && $0.vnet == "pfnet" }
         #expect(lease?.ip.hasPrefix("10.77.0.") == true && lease?.mac != nil, "\(entries)")
         #expect(entries.contains { $0.isGateway && $0.ip == "10.77.0.1" })
+        // Addresses reserved by hand take effect right away, without Apply.
+        _ = try await session.send(PVE.createIPMapping(vnet: "pfnet", zone: "pflive", ip: "10.77.0.150", mac: "BC:24:11:AA:BB:CC"))
+        #expect(try await session.send(PVE.ipamEntries("pve")).contains { $0.ip == "10.77.0.150" && $0.mac?.uppercased() == "BC:24:11:AA:BB:CC" })
+        _ = try await session.send(PVE.updateIPMapping(vnet: "pfnet", zone: "pflive", ip: "10.77.0.151", mac: "BC:24:11:AA:BB:CC", vmid: nil))
+        #expect(try await session.send(PVE.ipamEntries("pve")).contains { $0.ip == "10.77.0.151" && $0.mac?.uppercased() == "BC:24:11:AA:BB:CC" })
+        _ = try await session.send(PVE.deleteIPMapping(vnet: "pfnet", zone: "pflive", ip: "10.77.0.151", mac: "BC:24:11:AA:BB:CC"))
+        #expect(try await !session.send(PVE.ipamEntries("pve")).contains { $0.mac?.uppercased() == "BC:24:11:AA:BB:CC" })
         #expect(try await finishTask(session, node: node, try await session.send(PVE.powerAction(.stop, on: vm)))?.succeeded == true)
         var detach = GuestConfigUpdate()
         detach.set("net1", nil)
@@ -2236,6 +2352,128 @@ struct LiveServerTests {
         #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
         #expect(try await !session.send(PVE.sdnZones()).contains { $0.id == "pflive" })
         #expect(try await session.send(PVE.sdnZoneStatus(node: node)).allSatisfy { $0.zone != "pflive" })
+    }
+
+    /// A prefix list and a route map used by an EVPN controller, an EVPN zone with a VNet, a BGP controller and an
+    /// OpenFabric fabric on a port-less bridge, applied to the node and checked in FRR's running configuration.
+    /// Needs frr on the node.
+    @Test(.timeLimit(.minutes(3))) func sdnRouting() async throws {
+        let (session, node) = try await rootSession()
+        try #require(try await session.send(PVE.sdnZones()).allSatisfy { $0.state == nil }, "the server has pending SDN changes")
+        try #require(try await session.send(PVE.sdnControllers()).isEmpty, "the test server has SDN controllers")
+        let frr = try await runOnNode(session, node: node, "dpkg-query -W -f='${Status}' frr")
+        try #require(frr.output.contains("install ok installed"), "install frr on the node")
+        let network = try await session.send(PVE.network(node: node))
+        try #require(network.pendingChanges == nil, "the test server has unapplied network changes")
+        let address = try #require(network.interfaces.first { $0.gateway != nil }?.cidr?.split(separator: "/").first.map(String.init))
+
+        // A bridge without ports carries the fabric, so the node's own uplink is never touched.
+        var bridge = NetworkInterfaceDraft(creating: .bridge, existing: network.interfaces)
+        bridge.name = "vmbr94"
+        _ = try await session.send(PVE.createInterface(node: node, bridge))
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+
+        _ = try await session.send(PVE.createSDNPrefixList("pflst"))
+        var entry = SDNPrefixListEntryDraft()
+        entry.prefix = "10.0.0.0/8"
+        entry.le = "24"
+        _ = try await session.send(PVE.createSDNPrefixListEntry(list: "pflst", entry))
+        let entries = try await session.send(PVE.sdnPrefixListEntries("pflst"))
+        #expect(entries.count == 1 && entries.first?.le == 24 && entries.first?.sequence == 5)
+        var route = SDNRouteMapEntryDraft(routeMap: "pfrmap", order: "10")
+        route.match = [SDNRouteMapClause(key: "ip-address-prefix-list", value: "pflst")]
+        route.set = [SDNRouteMapClause(key: "local-preference", value: "200")]
+        route.exitAction = .next
+        #expect(route.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createSDNRouteMapEntry(route))
+        let savedRoute = try #require(try await session.send(PVE.sdnRouteMapEntries()).map(SDNRouteMapEntry.init).first { $0.routeMap == "pfrmap" })
+        #expect(savedRoute.state == .new && SDNRouteMapEntryDraft(savedRoute) == route)
+
+        var evpn = SDNControllerDraft()
+        evpn.id = "pfevpn"
+        evpn.peers = address
+        evpn.routeMapIn = "pfrmap"
+        _ = try await session.send(PVE.createSDNController(evpn))
+        var bgp = SDNControllerDraft(type: .bgp)
+        bgp.node = node
+        bgp.asn = "65001"
+        bgp.peers = "192.0.2.1"
+        bgp.ebgp = true
+        #expect(bgp.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createSDNController(bgp))
+        var isis = SDNControllerDraft(type: .isis)
+        isis.node = node
+        isis.isisDomain = "pflive"
+        isis.isisNet = "49.0001.1720.1600.1001.00"
+        isis.isisInterfaces = "vmbr94"
+        #expect(isis.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createSDNController(isis))
+        let controllers = try await session.send(PVE.sdnControllers())
+        #expect(Set(controllers.map(\.id)) == ["pfevpn", "bgp\(node)", "isis\(node)"])
+        #expect(SDNControllerDraft(try #require(controllers.first { $0.id == "pfevpn" })) == evpn)
+        // IS-IS is only checked as configuration; it is removed before Apply.
+        _ = try await session.send(PVE.deleteSDNController("isis\(node)"))
+
+        var zone = SDNZoneDraft()
+        zone.id = "pfevz"
+        zone.type = .evpn
+        zone.controller = "pfevpn"
+        zone.vrfVXLAN = "10000"
+        zone.exitNodes = [node]
+        zone.advertisesSubnets = true
+        #expect(zone.problems(isNew: true).isEmpty)
+        _ = try await session.send(PVE.createSDNZone(zone))
+        var vnet = SDNVNetDraft()
+        vnet.id = "pfevnet"
+        vnet.zone = "pfevz"
+        vnet.tag = "11000"
+        _ = try await session.send(PVE.createSDNVNet(vnet, zoneType: .evpn))
+        let savedZone = SDNZoneDraft(try #require(try await session.send(PVE.sdnZones()).first { $0.id == "pfevz" }))
+        #expect(savedZone.controller == "pfevpn" && savedZone.exitNodes == [node] && savedZone.advertisesSubnets && !savedZone.mac.isEmpty)
+
+        var fabric = SDNFabricDraft(protocol: .openfabric)
+        fabric.id = "pffab"
+        fabric.ipPrefix = "10.250.0.0/24"
+        fabric.routeFilter = "pflst"
+        _ = try await session.send(PVE.createSDNFabric(fabric))
+        var fabricNode = SDNFabricNodeDraft(protocol: .openfabric)
+        fabricNode.node = node
+        fabricNode.ip = "10.250.0.1"
+        fabricNode.interfaces = [SDNFabricInterface(name: "vmbr94")]
+        _ = try await session.send(PVE.addSDNFabricNode(fabric: "pffab", fabricNode))
+        let fabrics = try await session.send(PVE.sdnFabrics())
+        #expect(SDNFabricDraft(try #require(fabrics.fabrics.first { $0.id == "pffab" })) == fabric)
+        let savedNode = try #require(fabrics.nodes.first { $0.fabricID == "pffab" })
+        #expect(SDNFabricNodeDraft(savedNode) == fabricNode && savedNode.state == .new)
+        var editedFabric = fabric
+        editedFabric.helloInterval = "5"
+        _ = try await session.send(PVE.updateSDNFabric("pffab", protocol: .openfabric, editedFabric.changes(from: fabric)))
+
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
+        #expect(try await session.send(PVE.sdnZoneStatus(node: node)).first { $0.zone == "pfevz" }?.status == "available")
+        let config = try await runOnNode(session, node: node, "vtysh -c 'show running-config' | grep -E '^(router|route-map|ip prefix-list)'")
+        // The node's BGP controller sets the node's AS number for EVPN too.
+        for line in ["router bgp 65001", "router bgp 65001 vrf vrf_pfevz", "route-map pfrmap permit 10", "ip prefix-list pflst seq 5 permit 10.0.0.0/8 le 24", "router openfabric pffab"] {
+            #expect(config.output.contains(line), "\(line) missing in \(config.output)")
+        }
+        #expect(try await session.send(PVE.sdnFabrics()).fabrics.first { $0.id == "pffab" }?["hello_interval"] == "5")
+
+        // Removed in dependency order and applied.
+        _ = try await session.send(PVE.removeSDNFabricNode(fabric: "pffab", node: node))
+        _ = try await session.send(PVE.deleteSDNFabric("pffab"))
+        _ = try await session.send(PVE.deleteSDNVNet("pfevnet"))
+        _ = try await session.send(PVE.deleteSDNZone("pfevz"))
+        _ = try await session.send(PVE.deleteSDNController("pfevpn"))
+        _ = try await session.send(PVE.deleteSDNController("bgp\(node)"))
+        _ = try await session.send(PVE.deleteSDNRouteMapEntry(routeMap: "pfrmap", order: 10))
+        _ = try await session.send(PVE.deleteSDNPrefixList("pflst"))
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
+        #expect(try await session.send(PVE.sdnControllers()).isEmpty)
+        #expect(try await session.send(PVE.sdnFabrics()).fabrics.isEmpty)
+        #expect(try await session.send(PVE.sdnRouteMapEntries()).isEmpty)
+        #expect(try await session.send(PVE.sdnPrefixLists()).isEmpty)
+        _ = try await session.send(PVE.deleteInterface(node: node, name: "vmbr94"))
+        #expect(try await finishTask(session, node: node, try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
     }
 
     /// PCI, USB and directory mappings built from the node's devices, checked, changed, used by a VM and removed.

@@ -33,6 +33,16 @@ struct RealmsView: View {
                 } footer: {
                     Text("Users sign in as name@realm. LDAP and Active Directory realms can copy their users and groups into Proxmox VE.")
                 }
+                Section {
+                    NavigationLink {
+                        RealmSyncJobsView(access: access)
+                    } label: {
+                        MoreRow(title: "Sync Jobs", systemImage: "calendar.badge.clock", color: .teal)
+                    }
+                    .accessibilityIdentifier("realm.syncjobs")
+                } footer: {
+                    Text("Scheduled syncs of LDAP and Active Directory realms.")
+                }
             }
         }
         .overlay { if access.realms == nil { ProgressView() } }
@@ -309,6 +319,25 @@ private struct DirectoryServerSection: View {
         } footer: {
             Text("Without verification, the connection is encrypted but the server's identity is not checked. Checking the connection needs the bind user below.")
         }
+        if draft.mode != "ldap" || !draft.sslVersion.isEmpty || !draft.caPath.isEmpty || !draft.certificate.isEmpty {
+            Section {
+                Picker("TLS Version", selection: $draft.sslVersion) {
+                    Text("Default").tag("")
+                    Text(verbatim: "TLS 1.0").tag("tlsv1")
+                    Text(verbatim: "TLS 1.1").tag("tlsv1_1")
+                    Text(verbatim: "TLS 1.2").tag("tlsv1_2")
+                    Text(verbatim: "TLS 1.3").tag("tlsv1_3")
+                }
+                LabeledTextField(title: "CA Path", prompt: "/etc/ssl/certs", text: $draft.caPath)
+                LabeledTextField(title: "Client Certificate", prompt: "None", text: $draft.certificate, identifier: "realm.cert")
+                LabeledTextField(title: "Client Key", prompt: "None", text: $draft.certificateKey, identifier: "realm.certkey")
+                FieldError(message: errors["certkey"])
+            } header: {
+                Text("TLS")
+            } footer: {
+                Text("Paths on the nodes, for example below /etc/pve so every node has them. TLS versions before 1.2 are not recommended. The web interface does not show these settings.")
+            }
+        }
     }
 }
 
@@ -342,6 +371,8 @@ private struct DirectorySyncSection: View {
             FieldError(message: errors["filter"])
             LabeledTextField(title: "Group Filter", prompt: "None", text: $draft.groupFilter)
             FieldError(message: errors["group_filter"])
+            LabeledTextField(title: "Group Base DN", prompt: "Base DN", text: $draft.groupDN)
+            FieldError(message: errors["group_dn"])
         } header: {
             Text("Sync Options")
         } footer: {
@@ -359,7 +390,7 @@ private struct DirectorySyncSection: View {
 }
 
 /// Scope, new users and what vanished entries remove, for a sync or a realm's defaults.
-private struct SyncOptionFields: View {
+struct SyncOptionFields: View {
     @Binding var scope: String
     @Binding var enableNew: Bool?
     @Binding var removeVanished: Set<VanishedRemoval>

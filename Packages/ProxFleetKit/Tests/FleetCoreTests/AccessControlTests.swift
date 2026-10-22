@@ -18,6 +18,60 @@ struct AccessControlModelTests {
         return connection
     }
 
+    @Test func realmSyncJobs() async throws {
+        let access = AccessControl(connection: try await connection())
+        await access.load()
+        let jobs = try await access.realmSyncJobs()
+        #expect(jobs.map(\.id) == ["realmsync-corp"] && jobs.first?.nextRun != nil)
+        var draft = RealmSyncJobDraft(realm: "corp")
+        draft.id = "nightly"
+        draft.options.scope = "users"
+        draft.schedule = "nope"
+        await #expect(throws: ConfigUpdateError.self) { try await access.createRealmSyncJob(draft) }
+        draft.schedule = "02:00"
+        try await access.createRealmSyncJob(draft)
+        let created = try #require(try await access.realmSyncJobs().first { $0.id == "nightly" })
+        var edited = RealmSyncJobDraft(created)
+        edited.isEnabled = false
+        try await access.updateRealmSyncJob(edited, edited.changes(from: RealmSyncJobDraft(created)))
+        #expect(try await access.realmSyncJobs().first { $0.id == "nightly" }?.isEnabled == false)
+        let task = try await access.runRealmSyncJob(created)
+        #expect(task.upid.type == "auth-realm-sync")
+        try await access.deleteRealmSyncJob("nightly")
+        #expect(try await access.realmSyncJobs().map(\.id) == ["realmsync-corp"])
+        // Only LDAP and Active Directory realms sync.
+        await #expect(throws: ConfigUpdateError.self) { try await access.createRealmSyncJob(RealmSyncJobDraft(realm: "sso")) }
+    }
+
+    @Test func metricServers() async throws {
+        let settings = MetricServerSettings(connection: try await connection())
+        await settings.load()
+        #expect(settings.servers?.map(\.id) == ["graphite"] && settings.canModify)
+        let full = try await settings.server("graphite")
+        #expect(full.values["path"] == "proxmox")
+
+        var influx = MetricServerDraft(type: .influxdb)
+        influx.id = "influx"
+        influx.server = "influx.home.arpa"
+        influx.influxProtocol = "https"
+        // An enabled HTTP(S) server is contacted before saving, which fails here.
+        await #expect(throws: ConfigUpdateError.self) { try await settings.create(influx) }
+        influx.isEnabled = false
+        try await settings.create(influx)
+        var loaded = try #require(MetricServerDraft(try await settings.server("influx")))
+        loaded.id = "influx"
+        var edited = loaded
+        edited.port = "8087"
+        try await settings.update(edited, edited.changes(from: loaded))
+        #expect(settings.servers?.first { $0.id == "influx" }?.port == "8087")
+        try await settings.delete("influx")
+        #expect(settings.servers?.map(\.id) == ["graphite"])
+
+        let auditor = MetricServerSettings(connection: try await connection(username: "auditor"))
+        await auditor.load()
+        #expect(!auditor.canModify)
+    }
+
     @Test func usersGroupsRolesAndPermissions() async throws {
         let access = AccessControl(connection: try await connection())
         await access.load()

@@ -163,6 +163,46 @@ extension DemoState {
         }
     }
 
+    /// `/cluster/jobs/realm-sync`. nil for other paths.
+    func handleRealmSyncJobs(_ method: HTTPMethod, parts: [String], parameters: [String: String], user: String) -> HTTPResponse? {
+        guard parts.count >= 3, parts[0] == "cluster", parts[1] == "jobs", parts[2] == "realm-sync" else { return nil }
+        let keys: Set<String> = ["realm", "schedule", "enabled", "comment", "scope", "enable-new", "remove-vanished"]
+        if method != .get, !privileges(for: user).contains("Realm.AllocateUser") {
+            return failure(403, "Permission check failed (/access/realm, Realm.AllocateUser)")
+        }
+        switch (method, Array(parts.dropFirst(3))) {
+        case (.get, []):
+            return success(.array(access.realmSyncJobs.map { job in
+                var object: [String: JSONValue] = ["id": .string(job.id)]
+                for (key, value) in job.values { object[key] = key == "enabled" || key == "enable-new" ? .int(Int(value) ?? 1) : .string(value) }
+                if job.values["enabled"] != "0", let next = Self.nextRuns(of: job.values["schedule"] ?? "", count: 1)?.first {
+                    object["next-run"] = .int(Int(next.timeIntervalSince1970))
+                }
+                return .object(object)
+            }))
+        case (.post, let path) where path.count == 1:
+            guard !access.realmSyncJobs.contains(where: { $0.id == path[0] }) else { return failure(500, "Job '\(path[0])' already exists") }
+            guard let realm = access.realms.first(where: { $0.id == parameters["realm"] }), ["ldap", "ad"].contains(realm.type) else {
+                return fieldFailure(["realm": "realm '\(parameters["realm"] ?? "")' is not an LDAP or AD realm"])
+            }
+            guard let schedule = parameters["schedule"], Self.nextRuns(of: schedule, count: 1) != nil else { return fieldFailure(["schedule": "value does not look like a valid calendar event"]) }
+            access.realmSyncJobs.append((id: path[0], values: parameters.filter { keys.contains($0.key) }))
+            return success(nil)
+        case (.put, let path) where path.count == 1:
+            guard let index = access.realmSyncJobs.firstIndex(where: { $0.id == path[0] }) else { return failure(500, "no such realm-sync job") }
+            guard parameters["schedule"] != nil else { return fieldFailure(["schedule": "property is missing and it is not optional"]) }
+            if let schedule = parameters["schedule"], Self.nextRuns(of: schedule, count: 1) == nil { return fieldFailure(["schedule": "value does not look like a valid calendar event"]) }
+            for key in (parameters["delete"] ?? "").split(separator: ",") { access.realmSyncJobs[index].values[String(key)] = nil }
+            for (key, value) in parameters where keys.contains(key) && key != "realm" { access.realmSyncJobs[index].values[key] = value }
+            return success(nil)
+        case (.delete, let path) where path.count == 1:
+            access.realmSyncJobs.removeAll { $0.id == path[0] }
+            return success(nil)
+        default:
+            return nil
+        }
+    }
+
     /// Everyone may change their own second factors; others need User.Modify. Like a real server, everyone but
     /// root@pam confirms with their password, which is `demo` here.
     private func refuseTwoFactorChange(of userid: String, by user: String, parameters: [String: String]) -> HTTPResponse? {

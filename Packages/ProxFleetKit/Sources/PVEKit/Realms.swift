@@ -184,6 +184,14 @@ public struct RealmDraft: Equatable, Sendable {
     public var groupClasses = ""
     public var userFilter = ""
     public var groupFilter = ""
+    /// Where group sync searches; empty for the base DN.
+    public var groupDN = ""
+    /// TLS details the web interface leaves out: the minimum version, the CA store path and a client certificate
+    /// and key, all as paths on the nodes.
+    public var sslVersion = ""
+    public var caPath = ""
+    public var certificate = ""
+    public var certificateKey = ""
     public var syncDefaults = RealmSyncOptions()
     /// Not stored: asks the server to try binding before it saves.
     public var checksConnection = false
@@ -206,6 +214,7 @@ public struct RealmDraft: Equatable, Sendable {
     public var audiences = ""
 
     public static let modes = ["ldap", "ldaps", "ldap+starttls"]
+    public static let sslVersions = ["tlsv1", "tlsv1_1", "tlsv1_2", "tlsv1_3"]
 
     public init(type: RealmType) {
         self.type = type
@@ -238,6 +247,11 @@ public struct RealmDraft: Equatable, Sendable {
         groupClasses = values["group_classes"] ?? ""
         userFilter = values["filter"] ?? ""
         groupFilter = values["group_filter"] ?? ""
+        groupDN = values["group_dn"] ?? ""
+        sslVersion = values["sslversion"] ?? ""
+        caPath = values["capath"] ?? ""
+        certificate = values["cert"] ?? ""
+        certificateKey = values["certkey"] ?? ""
         syncDefaults = RealmSyncOptions(values["sync-defaults-options"])
         issuerURL = values["issuer-url"] ?? ""
         clientID = values["client-id"] ?? ""
@@ -292,6 +306,11 @@ public struct RealmDraft: Equatable, Sendable {
             set("group_classes", Self.text(groupClasses))
             set("filter", Self.text(userFilter))
             set("group_filter", Self.text(groupFilter))
+            set("group_dn", Self.text(groupDN))
+            set("sslversion", Self.text(sslVersion))
+            set("capath", Self.text(caPath))
+            set("cert", Self.text(certificate))
+            set("certkey", Self.text(certificateKey))
             set("sync-defaults-options", syncDefaults.serialized)
         case .openid:
             set("issuer-url", Self.text(issuerURL))
@@ -368,6 +387,9 @@ public struct RealmDraft: Equatable, Sendable {
             }
             require("client-id", clientID, String(localized: "Enter the client ID."))
         }
+        if Self.text(certificate) != nil, Self.text(certificateKey) == nil {
+            problems["certkey"] = String(localized: "A client certificate needs its key.")
+        }
         if let port = Self.text(port), !(Int(port).map { (1...65535).contains($0) } ?? false) {
             problems["port"] = String(localized: "Enter a port from 1 to 65535.")
         }
@@ -385,7 +407,130 @@ public struct RealmDraft: Equatable, Sendable {
     }
 }
 
+/// A scheduled sync of an LDAP or Active Directory realm, from `GET /cluster/jobs/realm-sync`.
+public struct RealmSyncJob: Decodable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var realm: String
+    public var schedule: String
+    public var isEnabled: Bool
+    public var comment: String?
+    public var options: RealmSyncOptions
+    public var nextRun: Date?
+    public var lastRun: Date?
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        id = container.lossyString(AnyCodingKey("id")) ?? ""
+        realm = container.lossyString(AnyCodingKey("realm")) ?? ""
+        schedule = container.lossyString(AnyCodingKey("schedule")) ?? ""
+        isEnabled = container.lossyBool(AnyCodingKey("enabled")) ?? true
+        comment = container.lossyString(AnyCodingKey("comment"))
+        var options = RealmSyncOptions()
+        options.scope = container.lossyString(AnyCodingKey("scope")) ?? ""
+        options.enableNew = container.lossyBool(AnyCodingKey("enable-new"))
+        options.removeVanished = VanishedRemoval.parse(container.lossyString(AnyCodingKey("remove-vanished")))
+        self.options = options
+        nextRun = container.lossyInt(AnyCodingKey("next-run")).map { Date(timeIntervalSince1970: TimeInterval($0)) }
+        lastRun = container.lossyInt(AnyCodingKey("last-run")).map { Date(timeIntervalSince1970: TimeInterval($0)) }
+    }
+}
+
+/// The form for a realm sync job. A new job starts from its realm's sync defaults, as in the web interface.
+public struct RealmSyncJobDraft: Equatable, Sendable {
+    /// Empty on creation gets a generated `realmsync-…` ID.
+    public var id = ""
+    public var realm = ""
+    public var schedule = "sat 02:00"
+    public var isEnabled = true
+    public var comment = ""
+    public var options = RealmSyncOptions()
+
+    public init(realm: String = "", defaults: RealmSyncOptions = RealmSyncOptions()) {
+        self.realm = realm
+        options = defaults
+        if options.enableNew == nil { options.enableNew = true }
+    }
+
+    public init(_ job: RealmSyncJob) {
+        id = job.id
+        realm = job.realm
+        schedule = job.schedule
+        isEnabled = job.isEnabled
+        comment = job.comment ?? ""
+        options = job.options
+        if options.enableNew == nil { options.enableNew = true }
+    }
+
+    func serialized() -> [String: String?] {
+        [
+            "schedule": schedule.trimmingCharacters(in: .whitespaces),
+            "enabled": isEnabled ? "1" : "0",
+            "comment": comment.trimmingCharacters(in: .whitespaces).isEmpty ? nil : comment.trimmingCharacters(in: .whitespaces),
+            "scope": options.scope.isEmpty ? nil : options.scope,
+            "enable-new": (options.enableNew ?? true) ? "1" : "0",
+            "remove-vanished": VanishedRemoval.serialized(options.removeVanished),
+        ]
+    }
+
+    /// The job's ID, generated like the web interface does when none was typed.
+    public func resolvedID(random: () -> String = { UUID().uuidString.lowercased() }) -> String {
+        let id = id.trimmingCharacters(in: .whitespaces)
+        return id.isEmpty ? "realmsync-" + String(random().prefix(13)) : id
+    }
+
+    /// The ID goes in the path.
+    var creationParameters: APIParameters {
+        var parameters: APIParameters = ["realm": .string(realm)]
+        for (key, value) in serialized().sorted(by: { $0.key < $1.key }) {
+            if let value { parameters[key] = .string(value) }
+        }
+        return parameters
+    }
+
+    public func changes(from original: RealmSyncJobDraft) -> GuestConfigUpdate {
+        var update = GuestConfigUpdate()
+        let old = original.serialized()
+        for (key, value) in serialized() where value != (old[key] ?? nil) {
+            update.set(key, value)
+        }
+        return update
+    }
+
+    public func problems(isNew: Bool) -> [String: String] {
+        var problems: [String: String] = [:]
+        if isNew {
+            if realm.isEmpty { problems["realm"] = String(localized: "Choose an LDAP or Active Directory realm.") }
+            let id = id.trimmingCharacters(in: .whitespaces)
+            if !id.isEmpty, !(id.first?.isLetter == true && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "-_.".contains($0)) }) {
+                problems["id"] = String(localized: "Use letters, digits, and - _ . only, starting with a letter.")
+            }
+        }
+        if schedule.trimmingCharacters(in: .whitespaces).isEmpty { problems["schedule"] = String(localized: "Enter a schedule.") }
+        if options.scope.isEmpty { problems["scope"] = String(localized: "Choose what to sync.") }
+        return problems
+    }
+}
+
 extension PVE {
+    public static func realmSyncJobs() -> APIRequest<[RealmSyncJob]> {
+        APIRequest(.get, "/cluster/jobs/realm-sync")
+    }
+
+    public static func createRealmSyncJob(id: String, _ draft: RealmSyncJobDraft) -> APIRequest<Nothing> {
+        APIRequest(.post, "/cluster/jobs/realm-sync/\(escapePath(id))", parameters: draft.creationParameters)
+    }
+
+    /// `PUT` needs the schedule even when it did not change.
+    public static func updateRealmSyncJob(_ draft: RealmSyncJobDraft, _ update: GuestConfigUpdate) -> APIRequest<Nothing> {
+        var parameters = update.parameters
+        parameters["schedule"] = .string(draft.schedule.trimmingCharacters(in: .whitespaces))
+        return APIRequest(.put, "/cluster/jobs/realm-sync/\(escapePath(draft.id))", parameters: parameters)
+    }
+
+    public static func deleteRealmSyncJob(_ id: String) -> APIRequest<Nothing> {
+        APIRequest(.delete, "/cluster/jobs/realm-sync/\(escapePath(id))")
+    }
+
     public static func realmConfig(_ realm: String) -> APIRequest<RealmConfig> {
         APIRequest(.get, "/access/domains/\(escapePath(realm))")
     }
