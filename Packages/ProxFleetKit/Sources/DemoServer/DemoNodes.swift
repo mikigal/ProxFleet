@@ -161,7 +161,7 @@ extension DemoState {
         return 1_814_400 + Int(Date().timeIntervalSince(started))
     }
 
-    private static let nodeOptionKeys: Set<String> = ["description", "wakeonlan", "startall-onboot-delay", "ballooning-target"]
+    private static let nodeOptionKeys: Set<String> = ["description", "wakeonlan", "startall-onboot-delay", "ballooning-target", "location"]
 
     /// Notes and options of a node; the generated cluster has notes on the first node and wake on LAN set for all.
     private func options(of node: String) -> [String: String] {

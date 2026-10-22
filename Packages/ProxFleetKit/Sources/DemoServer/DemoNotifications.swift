@@ -32,7 +32,7 @@ struct DemoNotifications: Sendable {
             Entry(name: "backup-failures", type: "matcher", values: ["mode": "all", "comment": "Failed backups to the phone"],
                   lists: ["target": ["phone", "team-chat"], "match-severity": ["error"], "match-field": ["exact:type=vzdump"]]),
         ],
-        options: ["keyboard": "en-us", "mac_prefix": "BC:24:11", "email_from": "pve@homelab.example", "tag-style": "shape=circle,ordering=config",
+        options: ["keyboard": "en-us", "mac_prefix": "BC:24:11", "email_from": "pve@homelab.example", "tag-style": "shape=circle,ordering=config,color-map=prod:C62828;db:6A1B9A",
                   "description": "Home lab cluster. Ask Anna before changing the network."]
     )
 }

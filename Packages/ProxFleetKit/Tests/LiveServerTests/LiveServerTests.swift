@@ -841,6 +841,9 @@ struct LiveServerTests {
         draft.macAddress = "aa:bb:cc:dd:ee:01"
         draft.broadcastAddress = "10.10.100.255"
         draft.startDelay = "5"
+        draft.location.latitude = "50.0647"
+        draft.location.longitude = "19.945"
+        draft.location.name = "Krakow"
         var update = draft.changes(from: NodeOptionsDraft(before))
         update.set("description", "ProxFleet **live** test")
         _ = try await session.send(PVE.updateNodeOptions(node, update))
@@ -848,6 +851,7 @@ struct LiveServerTests {
         #expect(saved.notes == "ProxFleet **live** test")
         #expect(saved.values["wakeonlan"] == "AA:BB:CC:DD:EE:01,broadcast-address=10.10.100.255")
         #expect(NodeOptionsDraft(saved).serialized() == draft.serialized())
+        #expect(NodeOptionsDraft(saved).location.name == "Krakow")
 
         var stale = GuestConfigUpdate(digest: String(repeating: "0", count: 40))
         stale.set("startall-onboot-delay", "6")
@@ -2218,6 +2222,42 @@ struct LiveServerTests {
             _ = try await session.send(PVE.deleteResourceMapping(kind, id: id))
             #expect(try await !session.send(PVE.resourceMappingDetails(kind, checkNode: nil)).contains { $0.id == id })
         }
+    }
+
+    /// Tag colors, WebAuthn, U2F, replication, fencing, location and the HA resource scheduler, saved and restored.
+    @Test func datacenterOptionsExtras() async throws {
+        let (session, _) = try await rootSession()
+        let options = DatacenterOptionsDraft(try await session.send(PVE.datacenterOptions()))
+        var edited = options
+        edited.tagColors = [TagColor(tag: "prod", background: "C62828"), TagColor(tag: "web", background: "2E7D32", text: "FFFFFF")]
+        edited.fillWebauthn(host: "pve.example.com", port: 8006)
+        edited.webauthnAllowsSubdomains = false
+        edited.u2fAppID = "https://pve.example.com"
+        edited.u2fOrigin = "https://pve.example.com:8006"
+        edited.replicationType = "insecure"
+        edited.replicationNetwork = "10.10.0.0/24"
+        edited.fencing = "both"
+        edited.location = Location()
+        edited.location.latitude = "52.2297"
+        edited.location.longitude = "21.0122"
+        edited.location.name = "Warsaw rack"
+        edited.haScheduler = "dynamic"
+        edited.haRebalanceOnStart = true
+        edited.haAutoRebalance = true
+        edited.haRebalanceThreshold = "40"
+        edited.haRebalanceMethod = "topsis"
+        #expect(edited.problems.isEmpty, "\(edited.problems)")
+        _ = try await session.send(PVE.updateDatacenterOptions(edited.changes(from: options)))
+        let config = try await session.send(PVE.datacenterOptions())
+        let saved = DatacenterOptionsDraft(config)
+        #expect(saved.tagColors == edited.tagColors, "\(config.values["tag-style"] ?? "")")
+        #expect(saved.webauthnOrigin == "https://pve.example.com:8006" && saved.webauthnID == "pve.example.com" && !saved.webauthnAllowsSubdomains)
+        #expect(saved.u2fAppID == "https://pve.example.com" && saved.replicationType == "insecure" && saved.replicationNetwork == "10.10.0.0/24")
+        #expect(saved.fencing == "both" && saved.location == edited.location)
+        #expect(saved.haScheduler == "dynamic" && saved.haRebalanceOnStart && saved.haAutoRebalance && saved.haRebalanceThreshold == "40" && saved.haRebalanceMethod == "topsis")
+        #expect(saved.changes(from: saved).isEmpty)
+        _ = try await session.send(PVE.updateDatacenterOptions(options.changes(from: saved)))
+        #expect(DatacenterOptionsDraft(try await session.send(PVE.datacenterOptions())) == options)
     }
 
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))

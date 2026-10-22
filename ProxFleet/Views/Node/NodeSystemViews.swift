@@ -247,6 +247,16 @@ struct NodeOptionsEditor: View {
             } footer: {
                 Text("The node's memory use, in percent, that ballooning aims for by taking memory back from VMs.")
             }
+            Section {
+                LabeledTextField(title: "Latitude", prompt: "52.2297", text: $draft.location.latitude, keyboard: .numbersAndPunctuation, identifier: "options.latitude")
+                LabeledTextField(title: "Longitude", prompt: "21.0122", text: $draft.location.longitude, keyboard: .numbersAndPunctuation, identifier: "options.longitude")
+                LabeledTextField(title: "Name", prompt: "None", text: $draft.location.name)
+                FieldError(message: errors["location"])
+            } header: {
+                Text("Location")
+            } footer: {
+                Text("Where this node is, for the web interface's map. Empty uses the datacenter's location.")
+            }
         }
     }
 }

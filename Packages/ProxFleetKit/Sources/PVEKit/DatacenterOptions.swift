@@ -67,8 +67,33 @@ public struct DatacenterOptionsDraft: Equatable, Sendable {
     public var registeredTags: [String] = []
     /// `freeze`, `failover`, `conditional`, `migrate` or empty for the default (conditional).
     public var haShutdownPolicy = ""
-    /// `basic`, `static` or empty for the default (basic).
+    /// `basic`, `static`, `dynamic` or empty for the default (basic).
     public var haScheduler = ""
+    public var haRebalanceOnStart = false
+    public var haAutoRebalance = false
+    /// Percent of node imbalance that starts automatic rebalancing; empty for the default (30).
+    public var haRebalanceThreshold = ""
+    /// Minimum improvement in percent; empty for the default (10).
+    public var haRebalanceMargin = ""
+    /// HA rounds the imbalance has to last; empty for the default (3).
+    public var haRebalanceHoldDuration = ""
+    /// `bruteforce`, `topsis` or empty for the default (bruteforce).
+    public var haRebalanceMethod = ""
+    /// `watchdog`, `hardware`, `both` or empty for the default (watchdog).
+    public var fencing = ""
+    /// Tags with their own colors in the web interface.
+    public var tagColors: [TagColor] = []
+    /// `secure` or `insecure`; empty for the default (secure).
+    public var replicationType = ""
+    public var replicationNetwork = ""
+    /// WebAuthn relying party name, ID (the domain) and origin.
+    public var webauthnName = ""
+    public var webauthnID = ""
+    public var webauthnOrigin = ""
+    public var webauthnAllowsSubdomains = true
+    public var u2fAppID = ""
+    public var u2fOrigin = ""
+    public var location = Location()
 
     private var otherMigration = PropertyString(items: [])
     private var otherNextID = PropertyString(items: [])
@@ -77,6 +102,9 @@ public struct DatacenterOptionsDraft: Equatable, Sendable {
     private var otherTagAccess = PropertyString(items: [])
     private var otherHA = PropertyString(items: [])
     private var otherCRS = PropertyString(items: [])
+    private var otherReplication = PropertyString(items: [])
+    private var otherWebauthn = PropertyString(items: [])
+    private var otherU2F = PropertyString(items: [])
 
     public static let bandwidthOperations = ["default", "restore", "migration", "clone", "move"]
     public static let keyboards = ["de", "de-ch", "da", "en-gb", "en-us", "es", "fi", "fr", "fr-be", "fr-ca", "fr-ch", "hu", "is", "it",
@@ -119,7 +147,7 @@ public struct DatacenterOptionsDraft: Equatable, Sendable {
         tagShape = Self.take("shape", from: &tagStyle) ?? ""
         tagOrdering = Self.take("ordering", from: &tagStyle) ?? ""
         tagsCaseSensitive = Self.take("case-sensitive", from: &tagStyle) == "1"
-        otherTagStyle = tagStyle
+        var tagStyleRest = tagStyle
 
         var tagAccess = PropertyString(parsing: values["user-tag-access"] ?? "")
         userTagAccess = Self.take("user-allow", from: &tagAccess) ?? ""
@@ -132,7 +160,36 @@ public struct DatacenterOptionsDraft: Equatable, Sendable {
 
         var crs = PropertyString(parsing: values["crs"] ?? "")
         haScheduler = Self.take("ha", from: &crs) ?? ""
+        haRebalanceOnStart = Self.take("ha-rebalance-on-start", from: &crs) == "1"
+        haAutoRebalance = Self.take("ha-auto-rebalance", from: &crs) == "1"
+        haRebalanceThreshold = Self.take("ha-auto-rebalance-threshold", from: &crs) ?? ""
+        haRebalanceMargin = Self.take("ha-auto-rebalance-margin", from: &crs) ?? ""
+        haRebalanceHoldDuration = Self.take("ha-auto-rebalance-hold-duration", from: &crs) ?? ""
+        haRebalanceMethod = Self.take("ha-auto-rebalance-method", from: &crs) ?? ""
         otherCRS = crs
+
+        fencing = values["fencing"] ?? ""
+        tagColors = TagColor.parse(Self.take("color-map", from: &tagStyleRest))
+        otherTagStyle = tagStyleRest
+
+        var replication = PropertyString(parsing: values["replication"] ?? "")
+        replicationType = Self.take("type", from: &replication, default: true) ?? ""
+        replicationNetwork = Self.take("network", from: &replication) ?? ""
+        otherReplication = replication
+
+        var webauthn = PropertyString(parsing: values["webauthn"] ?? "")
+        webauthnName = Self.take("rp", from: &webauthn) ?? ""
+        webauthnID = Self.take("id", from: &webauthn) ?? ""
+        webauthnOrigin = Self.take("origin", from: &webauthn) ?? ""
+        webauthnAllowsSubdomains = Self.take("allow-subdomains", from: &webauthn) != "0"
+        otherWebauthn = webauthn
+
+        var u2f = PropertyString(parsing: values["u2f"] ?? "")
+        u2fAppID = Self.take("appid", from: &u2f) ?? ""
+        u2fOrigin = Self.take("origin", from: &u2f) ?? ""
+        otherU2F = u2f
+
+        location = Location(values["location"])
     }
 
     /// Removes a key from a property string and returns its value; `default` also takes a first value without a key.
@@ -185,13 +242,26 @@ public struct DatacenterOptionsDraft: Equatable, Sendable {
         set("bwlimit", Self.property(Self.bandwidthOperations.map { ($0, bandwidthLimits[$0].flatMap(Self.text)) }, others: otherBandwidth))
         set("tag-style", Self.property([
             ("shape", Self.text(tagShape)), ("ordering", Self.text(tagOrdering)), ("case-sensitive", tagsCaseSensitive ? "1" : nil),
+            ("color-map", TagColor.serialize(tagColors)),
         ], others: otherTagStyle))
         let allowList = userTagList.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         set("user-tag-access", Self.property([
             ("user-allow", Self.text(userTagAccess)), ("user-allow-list", allowList.isEmpty ? nil : allowList.joined(separator: ";")),
         ], others: otherTagAccess))
         set("ha", Self.property([("shutdown_policy", Self.text(haShutdownPolicy))], others: otherHA))
-        set("crs", Self.property([("ha", Self.text(haScheduler))], others: otherCRS))
+        set("crs", Self.property([
+            ("ha", Self.text(haScheduler)), ("ha-rebalance-on-start", haRebalanceOnStart ? "1" : nil), ("ha-auto-rebalance", haAutoRebalance ? "1" : nil),
+            ("ha-auto-rebalance-threshold", Self.text(haRebalanceThreshold)), ("ha-auto-rebalance-margin", Self.text(haRebalanceMargin)),
+            ("ha-auto-rebalance-hold-duration", Self.text(haRebalanceHoldDuration)), ("ha-auto-rebalance-method", Self.text(haRebalanceMethod)),
+        ], others: otherCRS))
+        set("fencing", Self.text(fencing))
+        set("replication", Self.property([("type", Self.text(replicationType)), ("network", Self.text(replicationNetwork))], others: otherReplication))
+        set("webauthn", Self.property([
+            ("rp", Self.text(webauthnName)), ("id", Self.text(webauthnID)), ("origin", Self.text(webauthnOrigin)),
+            ("allow-subdomains", webauthnAllowsSubdomains ? nil : "0"),
+        ], others: otherWebauthn))
+        set("u2f", Self.property([("appid", Self.text(u2fAppID)), ("origin", Self.text(u2fOrigin))], others: otherU2F))
+        set("location", location.serialized)
         return values
     }
 
@@ -237,7 +307,118 @@ public struct DatacenterOptionsDraft: Equatable, Sendable {
         if let workers = Self.text(maxWorkers), !(Int(workers).map { $0 >= 1 } ?? false) {
             problems["max_workers"] = String(localized: "Use a whole number of 1 or more.")
         }
+        if let problem = TagColor.problem(tagColors) { problems["tag-style"] = problem }
+        if [haRebalanceThreshold, haRebalanceMargin, haRebalanceHoldDuration].contains(where: { text in
+            Self.text(text).map { Double($0).map { $0 < 0 } ?? true } ?? false
+        }) {
+            problems["crs"] = String(localized: "Use numbers of 0 or more, or leave fields empty.")
+        }
+        if let origin = Self.text(webauthnOrigin), !(origin.hasPrefix("https://") || origin.hasPrefix("http://localhost")) {
+            problems["webauthn"] = String(localized: "The origin is an https:// address, as typed in the browser.")
+        } else if let id = Self.text(webauthnID), id.contains("/") || id.contains(":") {
+            problems["webauthn"] = String(localized: "The ID is a domain name only, without protocol or port.")
+        }
+        if let origin = Self.text(u2fOrigin), !origin.hasPrefix("https://") {
+            problems["u2f"] = String(localized: "The origin is an https:// address.")
+        }
+        if let problem = location.problem { problems["location"] = problem }
         return problems
+    }
+
+    /// Fills the WebAuthn settings for an address users type into the browser, as the web interface's Auto-Fill.
+    public mutating func fillWebauthn(host: String, port: Int) {
+        webauthnName = host
+        webauthnID = host
+        webauthnOrigin = port == 443 ? "https://\(host)" : "https://\(host):\(port)"
+    }
+}
+
+/// A tag with its own background and optionally text color, from `tag-style`'s `color-map`.
+public struct TagColor: Equatable, Sendable, Identifiable {
+    public var id = UUID()
+    public var tag: String
+    /// Hexadecimal `RRGGBB`.
+    public var background: String
+    /// Empty to let the web interface pick a readable color.
+    public var text: String
+
+    public init(tag: String, background: String, text: String = "") {
+        self.tag = tag
+        self.background = background
+        self.text = text
+    }
+
+    public static func == (lhs: TagColor, rhs: TagColor) -> Bool {
+        (lhs.tag, lhs.background, lhs.text) == (rhs.tag, rhs.background, rhs.text)
+    }
+
+    /// `prod:FF0000;web:00AA00:FFFFFF`.
+    static func parse(_ text: String?) -> [TagColor] {
+        (text ?? "").split(separator: ";").compactMap { item in
+            let parts = item.split(separator: ":").map(String.init)
+            guard parts.count >= 2 else { return nil }
+            return TagColor(tag: parts[0], background: parts[1].uppercased(), text: parts.count > 2 ? parts[2].uppercased() : "")
+        }
+    }
+
+    static func serialize(_ colors: [TagColor]) -> String? {
+        let items = colors.filter { !$0.tag.trimmingCharacters(in: .whitespaces).isEmpty }.map { color in
+            ([color.tag.trimmingCharacters(in: .whitespaces), color.background] + (color.text.isEmpty ? [] : [color.text])).joined(separator: ":")
+        }
+        return items.isEmpty ? nil : items.joined(separator: ";")
+    }
+
+    static func problem(_ colors: [TagColor]) -> String? {
+        let isHex = { (text: String) in text.count == 6 && text.allSatisfy(\.isHexDigit) }
+        for color in colors where !color.tag.trimmingCharacters(in: .whitespaces).isEmpty {
+            if !isHex(color.background) || !(color.text.isEmpty || isHex(color.text)) {
+                return String(localized: "Colors are six hexadecimal digits, e.g. 2E7D32.")
+            }
+        }
+        return nil
+    }
+}
+
+/// `latitude=…,longitude=…[,name=…]` of the datacenter's or a node's `location`.
+public struct Location: Equatable, Sendable {
+    public var latitude = ""
+    public var longitude = ""
+    public var name = ""
+
+    public init() {}
+
+    public init(_ text: String?) {
+        let property = PropertyString(parsing: text ?? "")
+        latitude = property["latitude"] ?? ""
+        longitude = property["longitude"] ?? ""
+        name = property["name"] ?? ""
+    }
+
+    private static func text(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// nil when no coordinates are set.
+    public var serialized: String? {
+        guard let latitude = Self.text(latitude), let longitude = Self.text(longitude) else { return nil }
+        var property = PropertyString(items: [])
+        property["latitude"] = latitude
+        property["longitude"] = longitude
+        if let name = Self.text(name) { property["name"] = name }
+        return property.stringValue
+    }
+
+    public var problem: String? {
+        let latitude = Self.text(latitude), longitude = Self.text(longitude)
+        if latitude == nil && longitude == nil {
+            return Self.text(name) == nil ? nil : String(localized: "A location needs coordinates.")
+        }
+        guard let lat = latitude.flatMap(Double.init), (-90...90).contains(lat), let lon = longitude.flatMap(Double.init), (-180...180).contains(lon) else {
+            return String(localized: "Use a latitude from -90 to 90 and a longitude from -180 to 180, with a dot for decimals.")
+        }
+        if Self.text(name)?.contains(",") == true { return String(localized: "The name cannot contain commas.") }
+        return nil
     }
 }
 

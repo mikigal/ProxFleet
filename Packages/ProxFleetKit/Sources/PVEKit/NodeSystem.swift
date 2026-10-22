@@ -115,6 +115,8 @@ public struct NodeOptionsDraft: OptionsDraft, Sendable {
     public var startDelay: String
     /// RAM usage target for ballooning in percent, empty for the default of 80.
     public var ballooningTarget: String
+    /// Overrides the datacenter's location for this node.
+    public var location: Location
     private var otherWakeOnLANOptions: PropertyString
 
     public init(_ options: NodeOptions) {
@@ -125,6 +127,7 @@ public struct NodeOptionsDraft: OptionsDraft, Sendable {
         otherWakeOnLANOptions = PropertyString(items: wakeOnLAN.items.filter { $0.key != nil && !["mac", "bind-interface", "broadcast-address"].contains($0.key!) })
         startDelay = options.values["startall-onboot-delay"] ?? ""
         ballooningTarget = options.values["ballooning-target"] ?? ""
+        location = Location(options.values["location"])
     }
 
     public func serialized() -> [String: String?] {
@@ -140,13 +143,18 @@ public struct NodeOptionsDraft: OptionsDraft, Sendable {
             "wakeonlan": wakeOnLAN.items.isEmpty ? nil : wakeOnLAN.stringValue,
             "startall-onboot-delay": startDelay.trimmed.isEmpty ? nil : startDelay.trimmed,
             "ballooning-target": ballooningTarget.trimmed.isEmpty ? nil : ballooningTarget.trimmed,
+            "location": location.serialized,
         ]
     }
 
     /// Settings without a MAC address cannot be stored, so the interface and broadcast address need one.
     public var problems: [String: String] {
-        guard macAddress.trimmed.isEmpty, !(bindInterface.trimmed.isEmpty && broadcastAddress.trimmed.isEmpty) else { return [:] }
-        return ["wakeonlan": String(localized: "Enter the MAC address of the node's network card.")]
+        var problems: [String: String] = [:]
+        if macAddress.trimmed.isEmpty, !(bindInterface.trimmed.isEmpty && broadcastAddress.trimmed.isEmpty) {
+            problems["wakeonlan"] = String(localized: "Enter the MAC address of the node's network card.")
+        }
+        if let problem = location.problem { problems["location"] = problem }
+        return problems
     }
 }
 

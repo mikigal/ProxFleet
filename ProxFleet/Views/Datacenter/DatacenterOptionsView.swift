@@ -65,6 +65,8 @@ private struct DatacenterOptionsForm: View {
                 bandwidthSection
                 tagsSection
                 haSection
+                twoFactorSection
+                locationSection
                 otherSection
             }
             .disabled(!settings.canModifyOptions)
@@ -133,10 +135,16 @@ private struct DatacenterOptionsForm: View {
                 Text("Insecure").tag("insecure")
             }
             LabeledTextField(title: "Migration Network", prompt: "10.0.0.0/24", text: $draft.migrationNetwork, keyboard: .numbersAndPunctuation)
+            Picker("Replication", selection: $draft.replicationType) {
+                Text("Default (Secure)").tag("")
+                Text("Secure").tag("secure")
+                Text("Insecure").tag("insecure")
+            }
+            LabeledTextField(title: "Replication Network", prompt: "10.0.0.0/24", text: $draft.replicationNetwork, keyboard: .numbersAndPunctuation)
         } header: {
             Text("Network")
         } footer: {
-            Text("The proxy is used for downloads such as updates and templates. Insecure migration skips the SSH tunnel; use it only on a private network.")
+            Text("The proxy is used for downloads such as updates and templates. Insecure migration and replication skip the SSH tunnel; use them only on a private network.")
         }
     }
 
@@ -202,6 +210,13 @@ private struct DatacenterOptionsForm: View {
             } label: {
                 LabeledContent("Registered Tags", value: draft.registeredTags.isEmpty ? String(localized: "None") : draft.registeredTags.joined(separator: ", "))
             }
+            NavigationLink {
+                TagColorsEditor(colors: $draft.tagColors, error: errors["tag-style"])
+            } label: {
+                LabeledContent("Tag Colors", value: draft.tagColors.isEmpty ? String(localized: "Automatic") : draft.tagColors.map(\.tag).joined(separator: ", "))
+            }
+            .accessibilityIdentifier("options.tagColors")
+            FieldError(message: errors["tag-style"])
         } header: {
             Text("Tags")
         } footer: {
@@ -222,11 +237,70 @@ private struct DatacenterOptionsForm: View {
                 Text("Default (Basic)").tag("")
                 Text("Basic").tag("basic")
                 Text("Static Load").tag("static")
+                Text("Dynamic Load").tag("dynamic")
+            }
+            Toggle("Rebalance on Start", isOn: $draft.haRebalanceOnStart)
+            Toggle("Automatic Rebalancing", isOn: $draft.haAutoRebalance)
+                .accessibilityIdentifier("options.autoRebalance")
+            if draft.haAutoRebalance {
+                LabeledTextField(title: "Imbalance Threshold (%)", prompt: "30", text: $draft.haRebalanceThreshold, keyboard: .decimalPad)
+                LabeledTextField(title: "Minimum Improvement (%)", prompt: "10", text: $draft.haRebalanceMargin, keyboard: .decimalPad)
+                LabeledTextField(title: "Hold Duration (Rounds)", prompt: "3", text: $draft.haRebalanceHoldDuration, keyboard: .numberPad)
+                Picker("Method", selection: $draft.haRebalanceMethod) {
+                    Text("Default (Brute Force)").tag("")
+                    Text("Brute Force").tag("bruteforce")
+                    Text("TOPSIS").tag("topsis")
+                }
+            }
+            FieldError(message: errors["crs"])
+            Picker("Fencing", selection: $draft.fencing) {
+                Text("Default (Watchdog)").tag("")
+                Text("Watchdog").tag("watchdog")
+                Text("Hardware").tag("hardware")
+                Text("Both").tag("both")
             }
         } header: {
             Text("High Availability")
         } footer: {
-            Text("What HA guests do when their node shuts down, and how a new node is chosen for them. Static load weighs the guests' CPU and memory settings.")
+            Text("What HA guests do when their node shuts down, and how a new node is chosen for them. Static load weighs the guests' CPU and memory settings, dynamic load their actual use. Rebalancing moves guests when nodes are loaded unevenly. Hardware fencing needs fence devices in /etc/pve/ha/fence.cfg.")
+        }
+    }
+
+    private var twoFactorSection: some View {
+        Section {
+            LabeledTextField(title: "WebAuthn Name", prompt: "pve.example.com", text: $draft.webauthnName, identifier: "options.webauthnName")
+            LabeledTextField(title: "WebAuthn ID", prompt: "pve.example.com", text: $draft.webauthnID, keyboard: .URL, identifier: "options.webauthnID")
+                .textInputAutocapitalization(.never)
+            LabeledTextField(title: "WebAuthn Origin", prompt: "https://pve.example.com:8006", text: $draft.webauthnOrigin, keyboard: .URL, identifier: "options.webauthnOrigin")
+                .textInputAutocapitalization(.never)
+            Toggle("Allow Subdomains", isOn: $draft.webauthnAllowsSubdomains)
+            Button("Fill In for \(settings.connection.currentAddress.host)", systemImage: "wand.and.stars") {
+                draft.fillWebauthn(host: settings.connection.currentAddress.host, port: settings.connection.currentAddress.port)
+            }
+            .accessibilityIdentifier("options.webauthnFill")
+            FieldError(message: errors["webauthn"])
+            LabeledTextField(title: "U2F AppID", prompt: "Origin", text: $draft.u2fAppID, keyboard: .URL)
+                .textInputAutocapitalization(.never)
+            LabeledTextField(title: "U2F Origin", prompt: "Automatic", text: $draft.u2fOrigin, keyboard: .URL)
+                .textInputAutocapitalization(.never)
+            FieldError(message: errors["u2f"])
+        } header: {
+            Text("Two-Factor Authentication")
+        } footer: {
+            Text("Security keys and passkeys (WebAuthn) are tied to the address users type into the browser. Changing the ID makes every registered key stop working; changing the origin may. U2F is the older standard, kept for existing keys.")
+        }
+    }
+
+    private var locationSection: some View {
+        Section {
+            LabeledTextField(title: "Latitude", prompt: "52.2297", text: $draft.location.latitude, keyboard: .numbersAndPunctuation, identifier: "options.latitude")
+            LabeledTextField(title: "Longitude", prompt: "21.0122", text: $draft.location.longitude, keyboard: .numbersAndPunctuation, identifier: "options.longitude")
+            LabeledTextField(title: "Name", prompt: "None", text: $draft.location.name)
+            FieldError(message: errors["location"])
+        } header: {
+            Text("Location")
+        } footer: {
+            Text("Where the cluster is, for the web interface's map. Nodes can have their own location.")
         }
     }
 
@@ -300,5 +374,61 @@ private struct DatacenterOptionsForm: View {
         let identifier = code.replacingOccurrences(of: "ukr", with: "uk").replacingOccurrences(of: "kr", with: "ko")
         let name = Locale.current.localizedString(forIdentifier: identifier) ?? code
         return "\(name) (\(code))"
+    }
+}
+
+/// Background and text colors of tags in the web interface.
+private struct TagColorsEditor: View {
+    @Binding var colors: [TagColor]
+    var error: String?
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach($colors) { $color in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            TextField("Tag", text: $color.tag)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            Text(color.tag.isEmpty ? "tag" : color.tag)
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color(hex: color.background) ?? .gray, in: .capsule)
+                                .foregroundStyle(Color(hex: color.text) ?? .white)
+                        }
+                        ColorPicker("Background", selection: Binding(get: { Color(hex: color.background) ?? .gray }, set: { color.background = $0.hex }), supportsOpacity: false)
+                        Toggle("Own Text Color", isOn: Binding(get: { !color.text.isEmpty }, set: { color.text = $0 ? "FFFFFF" : "" }))
+                        if !color.text.isEmpty {
+                            ColorPicker("Text", selection: Binding(get: { Color(hex: color.text) ?? .white }, set: { color.text = $0.hex }), supportsOpacity: false)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onDelete { colors.remove(atOffsets: $0) }
+                Button("Add Tag Color", systemImage: "plus") { colors.append(TagColor(tag: "", background: "1565C0")) }
+                    .accessibilityIdentifier("options.tagColors.add")
+                FieldError(message: error)
+            } footer: {
+                Text("Tags without a color here get one picked from their name. Without an own text color, the web interface picks black or white.")
+            }
+        }
+        .navigationTitle("Tag Colors")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private extension Color {
+    /// `RRGGBB`.
+    init?(hex: String) {
+        guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
+        self.init(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255, blue: Double(value & 0xFF) / 255)
+    }
+
+    var hex: String {
+        let resolved = resolve(in: EnvironmentValues())
+        let component = { (value: Float) in Int((min(max(value, 0), 1) * 255).rounded()) }
+        return String(format: "%02X%02X%02X", component(resolved.red), component(resolved.green), component(resolved.blue))
     }
 }
