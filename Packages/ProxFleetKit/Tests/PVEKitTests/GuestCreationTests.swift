@@ -307,4 +307,80 @@ struct GuestCreationTests {
         #expect(templates.first?.summary == nil)
         #expect(templates.first?.headline == "LXC default image for fedora 44 (20260713)")
     }
+
+    @Test func efiFormatTPMVersionAndPhysicalDrive() {
+        var draft = VMCreationDraft(node: "pve", vmid: 122)
+        draft.bios = "ovmf"
+        draft.efiStorage = "local"
+        draft.efiFormat = "qcow2"
+        draft.addTPM = true
+        draft.tpmStorage = "local-lvm"
+        draft.tpmVersion = "v1.2"
+        draft.isoVolume = GuestConfig.physicalCDROM
+        draft.disks = []
+        #expect(draft.problems.isEmpty)
+        #expect(draft.parameters["efidisk0"] == "local:1,format=qcow2,efitype=4m,pre-enrolled-keys=1")
+        #expect(draft.parameters["tpmstate0"] == "local-lvm:1,version=v1.2")
+        #expect(draft.parameters["ide2"] == "cdrom,media=cdrom")
+        draft.isoVolume = nil
+        draft.networks = []
+        // Without boot devices there is no boot order; Proxmox rejects an empty one.
+        #expect(draft.parameters["boot"] == nil)
+        draft.addEFIDisk = false
+        draft.efiStorage = ""
+        #expect(draft.problems.isEmpty)
+        #expect(draft.parameters["efidisk0"] == nil)
+        #expect(draft.parameters["bios"] == "ovmf")
+    }
+
+    @Test func armVMsFollowTheWebInterface() {
+        var draft = VMCreationDraft(node: "pve", vmid: 123)
+        draft.applyDefaults(for: "win11")
+        draft.scsiController = "lsi"
+        draft.setArchitecture("aarch64")
+        #expect(draft.isARM)
+        #expect(draft.osType == "l26")
+        #expect(draft.bios == "ovmf" && draft.machine == "virt" && !draft.addTPM)
+        #expect(draft.scsiController == "virtio-scsi-single")
+        #expect(draft.cpu.model.isEmpty)
+        #expect(draft.disks[0].bus == .scsi)
+        draft.disks[0].storage = "local-lvm"
+        draft.efiStorage = "local-lvm"
+        draft.isoVolume = "local:iso/debian-13-arm64.iso"
+        #expect(draft.problems.isEmpty)
+        #expect(draft.diskKeys == ["scsi0"])
+        let parameters = draft.parameters
+        #expect(parameters["arch"] == "aarch64")
+        #expect(parameters["machine"] == nil)
+        #expect(parameters["cpu"] == nil)
+        #expect(parameters["scsi2"] == "local:iso/debian-13-arm64.iso,media=cdrom")
+        #expect(parameters["ide2"] == nil)
+        #expect(parameters["boot"] == "order=scsi0;scsi2;net0")
+
+        draft.addDisk()
+        draft.addDisk()
+        // scsi2 holds the CD/DVD drive.
+        #expect(draft.diskKeys == ["scsi0", "scsi1", "scsi3"])
+        draft.disks[1].bus = .ide
+        #expect(draft.problems.keys.sorted() == ["ide0"])
+
+        draft.setArchitecture("")
+        #expect(!draft.isARM && draft.machine == "i440fx" && draft.bios == "seabios")
+        #expect(draft.cpu.model == "x86-64-v2-AES")
+        #expect(draft.parameters["arch"] == nil)
+    }
+
+    @Test func importedDisks() {
+        var draft = VMCreationDraft(node: "pve", vmid: 124)
+        draft.disks[0].storage = "local-lvm"
+        draft.addImportedDisk()
+        #expect(draft.disks[1].isImport)
+        #expect(draft.problems["scsi1"] != nil)
+        draft.disks[1].importSource = "local:import/debian-13-genericcloud-amd64.qcow2"
+        #expect(draft.problems.isEmpty)
+        #expect(draft.parameters["scsi1"] == "local-lvm:0,import-from=local:import/debian-13-genericcloud-amd64.qcow2,discard=on,iothread=1")
+        draft.disks[1].storage = "local"
+        draft.disks[1].format = "qcow2"
+        #expect(draft.parameters["scsi1"] == "local:0,import-from=local:import/debian-13-genericcloud-amd64.qcow2,format=qcow2,discard=on,iothread=1")
+    }
 }

@@ -48,6 +48,52 @@ struct GuestDetailTests {
         #expect(added.options["format"] == nil)
     }
 
+    @Test func importDiskPhysicalDriveAndMediatedTypes() async throws {
+        let connection = try await connection()
+        let detail = GuestDetail(reference: vm(101), connection: connection)
+        await detail.load()
+        let images = try await connection.send(PVE.storageContent(node: "pve1", storage: "local", content: "import"))
+        let image = try #require(images.first { $0.format == "qcow2" })
+        var disk = NewVMDisk(bus: .scsi, storage: "local-lvm")
+        disk.isImport = true
+        disk.importSource = image.volumeID
+        var update = GuestConfigUpdate()
+        update.set("scsi5", disk.value)
+        update.set("ide3", GuestConfig.cdromValue(isoVolume: GuestConfig.physicalCDROM))
+        try await detail.apply(update)
+        let imported = try #require(detail.config?.disks.first { $0.key == "scsi5" })
+        // The image of about 405 MiB becomes a disk of 1 GiB.
+        #expect(imported.volume.hasPrefix("local-lvm:vm-101-disk-") && imported.size == "1G" && imported.options["import-from"] == nil)
+        #expect(detail.config?.disks.first { $0.key == "ide3" }?.volume == GuestConfig.physicalCDROM)
+
+        let types = try await connection.send(PVE.mediatedDeviceTypes(node: "pve1", device: "0000:00:02.0"))
+        #expect(types.map(\.type) == ["i915-GVTg_V5_4", "i915-GVTg_V5_8"])
+        #expect(try await connection.send(PVE.mediatedDeviceTypes(node: "pve1", device: "0000:01:00.0")).isEmpty)
+        #expect(try await connection.send(PVE.cpuModels(node: "pve1", architecture: "aarch64")).contains { $0.name == "cortex-a72" })
+    }
+
+    @Test func restoreOverridesInDemo() async throws {
+        let connection = try await connection()
+        let vm = GuestDetail(reference: vm(100), connection: connection)
+        await vm.load()
+        await vm.loadBackups()
+        let backup = try #require(vm.backups?.first { $0.isOnBackupServer })
+        var restore = RestoreDraft(backup: backup, source: vm.reference)
+        restore.overwrites = false
+        restore.vmid = try await connection.send(PVE.nextVMID()).value
+        restore.name = "ha-copy"
+        restore.cores = 1
+        restore.memoryMiB = 1024
+        restore.liveRestore = true
+        let task = try await connection.start(PVE.restore(restore))
+        #expect(await connection.tasks.result(of: task.id) == .succeeded)
+        let restored = GuestDetail(reference: restore.target, connection: connection)
+        await restored.load()
+        #expect(restored.name == "ha-copy")
+        #expect(restored.config?["cores"] == "1" && restored.config?["memory"] == "1024")
+        #expect(restored.powerState == .running)
+    }
+
     @Test func loadsStatusConfigHistoryAndAddresses() async throws {
         let detail = GuestDetail(reference: vm(101), connection: try await connection())
         await detail.load()
@@ -220,8 +266,9 @@ struct GuestDetailTests {
         let vm = GuestDetail(reference: vm(100), connection: connection)
         await vm.load()
         #expect(await vm.loadBackups() == nil)
-        // Sample backups, newest first; one is protected.
-        #expect(vm.backups?.count == 2)
+        // Sample backups, newest first, on the local storage and the backup server; one is protected.
+        #expect(vm.backups?.count == 3)
+        #expect(vm.backups?.first?.isOnBackupServer == true)
         #expect(vm.backups?.last?.isProtected == true)
         #expect(vm.backups?.first?.notes == "home-assistant")
 
@@ -233,7 +280,7 @@ struct GuestDetailTests {
         #expect(await connection.tasks.result(of: task.id) == .succeeded)
         await vm.loadBackups()
         let backup = try #require(vm.backups?.first)
-        #expect(vm.backups?.count == 3)
+        #expect(vm.backups?.count == 4)
         #expect(backup.notes == "home-assistant on pve1")
 
         try await vm.runBackupAction(PVE.updateBackup(node: "pve1", volume: backup.volumeID, notes: "edited", isProtected: true))
@@ -259,6 +306,6 @@ struct GuestDetailTests {
         #expect(restored.config?["scsi0"]?.hasPrefix("local-lvm:vm-\(restore.vmid)-disk-0") == true)
 
         try await vm.runBackupAction(PVE.deleteBackup(node: "pve1", volume: backup.volumeID))
-        #expect(vm.backups?.count == 2)
+        #expect(vm.backups?.count == 3)
     }
 }

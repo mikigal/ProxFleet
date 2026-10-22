@@ -58,4 +58,18 @@ struct ContainerDraftTests {
         #expect(MountPointDraft.newValue(source: "local-lvm", sizeGiB: 8, path: "/data", includeInBackup: true, readOnly: false) == "local-lvm:8,mp=/data,backup=1")
         #expect(MountPointDraft.newValue(source: "/mnt/share", sizeGiB: nil, path: "/share", includeInBackup: false, readOnly: true) == "/mnt/share,mp=/share,ro=1")
     }
+
+    @Test func devicePassthrough() {
+        var draft = ContainerDeviceDraft("/dev/dri/renderD128,gid=104,mode=0666,future=1")
+        #expect(draft.path == "/dev/dri/renderD128")
+        #expect(draft.gid == 104 && draft.uid == nil && draft.mode == "0666")
+        draft.isReadOnly = true
+        #expect(draft.stringValue == "/dev/dri/renderD128,gid=104,mode=0666,deny-write=1,future=1")
+        #expect(ContainerDeviceDraft("path=/dev/ttyUSB0,uid=1000").stringValue == "/dev/ttyUSB0,uid=1000")
+        draft.path = "dri"
+        draft.mode = "666"
+        #expect(draft.problems.keys.sorted() == ["mode", "path"])
+        let config = GuestConfig(values: ["dev10": "/dev/b", "dev2": "/dev/a", "devices": "x", "net0": "name=eth0"])
+        #expect(config.containerDevices.map(\.key) == ["dev2", "dev10"])
+    }
 }

@@ -17,6 +17,8 @@ public struct BackupVolume: Decodable, Sendable, Equatable, Hashable, Identifiab
     public var isEncrypted: Bool
 
     public var id: String { volumeID }
+    /// Backups on a Proxmox Backup Server, which VMs can be restored from while they already run.
+    public var isOnBackupServer: Bool { format?.hasPrefix("pbs-") ?? false }
     /// The storage, from the part of the volume ID before the colon.
     public var storage: String { String(volumeID.prefix { $0 != ":" }) }
     public var fileName: String { volumeID.split(separator: "/").last.map(String.init) ?? volumeID }
@@ -112,6 +114,20 @@ public struct RestoreDraft: Sendable, Equatable {
     public var storage = ""
     public var uniqueMACAddresses = false
     public var startAfterRestore = false
+    /// VMs from a Proxmox Backup Server: start right away while the disks are restored in the background.
+    public var liveRestore = false
+    /// Adds the restored guest to high availability.
+    public var isHAManaged = false
+    /// MiB/s; 0 turns off all limits, nil uses the restore limit of the storage or datacenter.
+    public var bandwidthLimit: Double?
+    /// Overrides of the backup's configuration, empty or nil to keep its values.
+    public var name = ""
+    public var cores: Int?
+    /// VMs only.
+    public var sockets: Int?
+    public var memoryMiB: Int?
+    /// Containers: true or false to change the privilege level, nil to keep the backup's.
+    public var unprivileged: Bool?
     /// Whether the source guest is running, which rules out overwriting it.
     public var sourceIsRunning = false
 
@@ -130,6 +146,13 @@ public struct RestoreDraft: Sendable, Equatable {
         if overwrites, sourceIsRunning { problems["force"] = String(localized: "Stop the guest before restoring over it.") }
         if !overwrites, !(100...999_999_999).contains(vmid) { problems["vmid"] = String(localized: "Use a number from 100 to 999999999.") }
         if source.kind == .container, storage.isEmpty { problems["storage"] = String(localized: "Choose a storage.") }
+        if !name.isEmpty, !VMCreationDraft.isValidDNSName(name) {
+            problems[source.kind == .virtualMachine ? "name" : "hostname"] = String(localized: "Use letters, digits, hyphens and dots only.")
+        }
+        if let cores, !(1...128).contains(cores) { problems["cores"] = String(localized: "Use 1 to 128 cores.") }
+        if let sockets, !(1...4).contains(sockets) { problems["sockets"] = String(localized: "Use 1 to 4 sockets.") }
+        if let memoryMiB, memoryMiB < 16 { problems["memory"] = String(localized: "Use at least 16 MiB.") }
+        if let bandwidthLimit, bandwidthLimit < 0 { problems["bwlimit"] = String(localized: "Enter 0 or more.") }
         return problems
     }
 
@@ -145,7 +168,20 @@ public struct RestoreDraft: Sendable, Equatable {
         if overwrites { parameters["force"] = true }
         if !storage.isEmpty { parameters["storage"] = .string(storage) }
         if uniqueMACAddresses { parameters["unique"] = true }
-        if startAfterRestore { parameters["start"] = true }
+        let isLive = liveRestore && source.kind == .virtualMachine && backup.isOnBackupServer
+        // A live restore starts the VM by itself.
+        if isLive {
+            parameters["live-restore"] = true
+        } else if startAfterRestore {
+            parameters["start"] = true
+        }
+        if isHAManaged { parameters["ha-managed"] = true }
+        if let bandwidthLimit { parameters["bwlimit"] = .int(Int((bandwidthLimit * 1024).rounded())) }
+        if !name.isEmpty { parameters[source.kind == .virtualMachine ? "name" : "hostname"] = .string(name) }
+        if let cores { parameters["cores"] = .int(cores) }
+        if let sockets, source.kind == .virtualMachine { parameters["sockets"] = .int(sockets) }
+        if let memoryMiB { parameters["memory"] = .int(memoryMiB) }
+        if let unprivileged, source.kind == .container { parameters["unprivileged"] = .bool(unprivileged) }
         return parameters
     }
 }

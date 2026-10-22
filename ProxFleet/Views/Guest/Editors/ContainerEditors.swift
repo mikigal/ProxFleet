@@ -361,3 +361,83 @@ struct MountOptionsSection: View {
         }
     }
 }
+
+/// Passes a host device into the container (`dev0` and up), or edits one, like the web interface's Device Passthrough.
+struct ContainerDeviceEditor: View {
+    let detail: GuestDetail
+    let config: GuestConfig
+    let key: String?
+    @State private var draft: ContainerDeviceDraft
+    @State private var confirmsRemoval = false
+    @Environment(\.dismiss) private var dismiss
+
+    init(detail: GuestDetail, config: GuestConfig, key: String?) {
+        self.detail = detail
+        self.config = config
+        self.key = key
+        _draft = State(initialValue: key.flatMap { config[$0] }.map(ContainerDeviceDraft.init) ?? ContainerDeviceDraft())
+    }
+
+    /// New devices take the next free key of the latest configuration.
+    private var targetKey: String? { key ?? (detail.config ?? config).nextFreeKey(prefix: "dev", slots: ContainerDeviceDraft.slots) }
+
+    var body: some View {
+        ConfigEditor(title: key.map { LocalizedStringKey($0) } ?? "Device Passthrough", detail: detail, makeUpdate: update) { errors in
+            Section {
+                LabeledContent("Device Path") {
+                    TextField("/dev/xyz", text: $draft.path)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.body.monospaced())
+                        .accessibilityIdentifier("device.path")
+                }
+                if !draft.path.isEmpty { FieldError(message: draft.problems["path"]) }
+            } footer: {
+                Text("A device node of the host, e.g. /dev/dri/renderD128 for a GPU or /dev/ttyUSB0 for a serial adapter.")
+            }
+            Section {
+                OptionalNumberField(title: "UID in CT", placeholder: "0", value: $draft.uid)
+                OptionalNumberField(title: "GID in CT", placeholder: "0", value: $draft.gid)
+                LabeledContent("Access Mode in CT") {
+                    TextField("0660", text: $draft.mode)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .font(.body.monospaced())
+                }
+                FieldError(message: draft.problems["mode"])
+                Toggle("Read Only", isOn: $draft.isReadOnly)
+                if let targetKey { FieldError(message: errors[targetKey]) }
+            } header: {
+                Text("Advanced")
+            } footer: {
+                Text("Owner and permissions of the device node inside the container.")
+            }
+            if let key {
+                Section {
+                    Button("Remove Device", role: .destructive) { confirmsRemoval = true }
+                }
+                .alert("Remove \(key)?", isPresented: $confirmsRemoval) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Remove", role: .destructive) { Task { await remove(key) } }
+                }
+            }
+        }
+    }
+
+    private func update() -> GuestConfigUpdate? {
+        guard let targetKey, draft.problems.isEmpty else { return nil }
+        let value = draft.stringValue
+        guard value != key.flatMap({ config[$0] }).map({ ContainerDeviceDraft($0).stringValue }) else { return nil }
+        var update = GuestConfigUpdate()
+        update.set(targetKey, value)
+        return update
+    }
+
+    private func remove(_ key: String) async {
+        var update = GuestConfigUpdate()
+        update.set(key, nil)
+        try? await detail.apply(update)
+        dismiss()
+    }
+}

@@ -472,11 +472,13 @@ struct OSTypePicker: View {
     let connection: ServerConnection
     let kind: GuestKind
     @Binding var selection: String
+    /// Limits the choices, e.g. to the OS types of ARM VMs.
+    var allowed: Set<String>?
     @State private var offered: [String] = []
     @State private var labels: [String: String] = [:]
 
     private var choices: [String] {
-        var types = GuestConfig.orderedOSTypes(offered, kind: kind)
+        var types = GuestConfig.orderedOSTypes(offered, kind: kind).filter { allowed?.contains($0) ?? true }
         if !selection.isEmpty, !types.contains(selection) { types.insert(selection, at: 0) }
         return types
     }

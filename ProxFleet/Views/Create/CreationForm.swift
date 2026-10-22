@@ -426,31 +426,65 @@ struct NodeStoragePicker: View {
     /// Label of an empty choice that leaves the storage to the server, e.g. "Same as Source".
     /// Without it, the first storage is picked.
     var defaultTitle: LocalizedStringKey?
+    /// Image format for new disks; adds a Format picker for storages with several formats and follows the storage.
+    var format: Binding<String?>?
     @State private var storages: [StorageInfo] = []
 
     var body: some View {
-        Picker(title, selection: $selection) {
-            if let defaultTitle {
-                Text(defaultTitle).tag("")
+        Group {
+            Picker(title, selection: $selection) {
+                if let defaultTitle {
+                    Text(defaultTitle).tag("")
+                }
+                if !storages.contains(where: { $0.storage == selection }), !(defaultTitle != nil && selection.isEmpty) {
+                    Text(selection.isEmpty ? "None" : selection).tag(selection)
+                }
+                ForEach(storages) { info in
+                    Text(Self.label(info)).tag(info.storage)
+                }
             }
-            if !storages.contains(where: { $0.storage == selection }), !(defaultTitle != nil && selection.isEmpty) {
-                Text(selection.isEmpty ? "None" : selection).tag(selection)
-            }
-            ForEach(storages) { info in
-                Text(Self.label(info)).tag(info.storage)
+            if let format, let formats = selected?.diskFormats, formats.count > 1 {
+                DiskFormatPicker(formats: formats, selection: format)
             }
         }
+        .onChange(of: selection) { format?.wrappedValue = selected?.preferredDiskFormat }
         .task(id: node) {
             storages = await connection.load(PVE.storages(node: node, content: content)).filter(\.isActive)
             if defaultTitle == nil, !storages.contains(where: { $0.storage == selection }) {
                 selection = storages.first?.storage ?? ""
             }
+            if let format, !(selected?.diskFormats.contains { $0 == format.wrappedValue } ?? false) {
+                format.wrappedValue = selected?.preferredDiskFormat
+            }
         }
     }
+
+    private var selected: StorageInfo? { storages.first { $0.storage == selection } }
 
     static func label(_ info: StorageInfo) -> String {
         guard let available = info.available else { return info.storage }
         return "\(info.storage) (\(Format.bytes(available)) free)"
+    }
+}
+
+/// Image format of a new disk, for storages that offer several.
+struct DiskFormatPicker: View {
+    let formats: [String]
+    @Binding var selection: String?
+
+    var body: some View {
+        Picker("Format", selection: $selection) {
+            ForEach(formats, id: \.self) { Text(Self.title($0)).tag(String?.some($0)) }
+        }
+    }
+
+    static func title(_ format: String) -> String {
+        switch format {
+        case "raw": String(localized: "Raw Disk Image (raw)")
+        case "qcow2": String(localized: "QEMU Image (qcow2)")
+        case "vmdk": String(localized: "VMware Image (vmdk)")
+        default: format
+        }
     }
 }
 
@@ -465,6 +499,10 @@ struct VolumePicker: View {
     @Binding var selection: String?
     /// Change it to load the list again, e.g. after a download.
     var reloadID = 0
+    /// Offers the host's physical CD/DVD drive, as `GuestConfig.physicalCDROM`.
+    var offersPhysicalDrive = false
+    /// Volumes to offer, e.g. disk images among the files of an import storage.
+    var filter: (@Sendable (StorageVolume) -> Bool)?
     @State private var volumes: [StorageVolume] = []
     @State private var isLoading = true
 
@@ -474,6 +512,9 @@ struct VolumePicker: View {
                 Text(noneTitle).tag(String?.none)
             } else if selection == nil {
                 Text("Choose").tag(String?.none)
+            }
+            if offersPhysicalDrive {
+                Text("Physical CD/DVD Drive").tag(String?.some(GuestConfig.physicalCDROM))
             }
             ForEach(volumes) { volume in
                 Text(volume.fileName).tag(String?.some(volume.volumeID))
@@ -490,9 +531,9 @@ struct VolumePicker: View {
             let loaded = await connection.volumes(node: node, content: content)
             // A newer reload replaced this one, e.g. right after a download; its older list would clear the new choice.
             guard !Task.isCancelled else { return }
-            volumes = loaded
+            volumes = filter.map { loaded.filter($0) } ?? loaded
             isLoading = false
-            if let selection, !volumes.contains(where: { $0.volumeID == selection }) {
+            if let selection, !(offersPhysicalDrive && selection == GuestConfig.physicalCDROM), !volumes.contains(where: { $0.volumeID == selection }) {
                 self.selection = nil
             }
         }

@@ -83,6 +83,8 @@ public struct CloneDraft: Sendable, Equatable {
     public var fullClone: Bool
     /// Full clones only, empty for the same storage as the source.
     public var storage = ""
+    /// VMs, full clones to a chosen storage: the image format, nil for the storage's default.
+    public var format: String?
     public var pool = ""
     /// Clones the state of a snapshot instead of the current one. Not possible for templates.
     public var snapshot: String?
@@ -111,7 +113,10 @@ public struct CloneDraft: Sendable, Equatable {
         if targetNode != source.node { parameters["target"] = .string(targetNode) }
         // Only templates can be cloned linked; for other guests Proxmox always copies, and rejects `full=0`.
         if sourceIsTemplate { parameters["full"] = .bool(fullClone) }
-        if fullClone, !storage.isEmpty { parameters["storage"] = .string(storage) }
+        if fullClone, !storage.isEmpty {
+            parameters["storage"] = .string(storage)
+            if source.kind == .virtualMachine, let format { parameters["format"] = .string(format) }
+        }
         if !pool.isEmpty { parameters["pool"] = .string(pool) }
         if let snapshot, !sourceIsTemplate { parameters["snapname"] = .string(snapshot) }
         return parameters

@@ -20,6 +20,7 @@ struct NodeTests {
         let status = try JSONDecoder().decode(NodeStatus.self, from: Data(json.utf8))
         #expect(status.pveVersion == "9.2.21")
         #expect(status.kernel == "7.0.14-25-pve")
+        #expect(status.architecture == "x86_64")
         #expect(status.loadAverage == [0.47, 0.45, 0.45])
         #expect(status.cpuCount == 6 && status.cores == 6 && status.sockets == 1)
         #expect(status.memoryUsed == 2_040_315_904 && status.swapTotal == 8_250_191_872)

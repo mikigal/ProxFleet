@@ -92,6 +92,13 @@ public struct StorageInfo: Decodable, Sendable, Equatable, Identifiable, Hashabl
             defaultDiskFormat = formats.lossyString(AnyCodingKey("default"))
         }
     }
+
+    /// The format the web interface picks for a new disk here: qcow2 where it can, otherwise raw.
+    /// nil for storages with a single format, which need no explicit one.
+    public var preferredDiskFormat: String? {
+        guard diskFormats.count > 1 else { return nil }
+        return ["qcow2", "raw"].first(where: diskFormats.contains) ?? defaultDiskFormat ?? diskFormats[0]
+    }
 }
 
 /// A volume on a storage, e.g. an ISO image, from `GET /nodes/{node}/storage/{storage}/content`.
@@ -193,8 +200,11 @@ extension PVE {
         APIRequest(.get, "/nodes/\(node)/network", parameters: ["type": "any_bridge"])
     }
 
-    public static func cpuModels(node: String) -> APIRequest<[CPUModel]> {
-        APIRequest(.get, "/nodes/\(node)/capabilities/qemu/cpu")
+    /// CPU models for VMs; `architecture` (`x86_64` or `aarch64`) for another one than the node's.
+    public static func cpuModels(node: String, architecture: String? = nil) -> APIRequest<[CPUModel]> {
+        var parameters = APIParameters()
+        if let architecture { parameters["arch"] = .string(architecture) }
+        return APIRequest(.get, "/nodes/\(node)/capabilities/qemu/cpu", parameters: parameters)
     }
 
     public static func machineTypes(node: String) -> APIRequest<[MachineType]> {

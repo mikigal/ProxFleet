@@ -201,3 +201,62 @@ public struct MountPointDraft: Sendable, Equatable {
         return property.stringValue
     }
 }
+
+/// A host device passed into a container (`dev0` and up), like the web interface's Device Passthrough.
+public struct ContainerDeviceDraft: Sendable, Equatable {
+    /// For example `/dev/dri/renderD128`.
+    public var path = ""
+    /// Owner of the device node in the container, nil for root.
+    public var uid: Int?
+    public var gid: Int?
+    /// Octal access mode such as `0660`, empty for the default.
+    public var mode = ""
+    public var isReadOnly = false
+    private var others = PropertyString(items: [])
+
+    /// Proxmox allows `dev0` to `dev255`.
+    public static let slots = 256
+
+    public init() {}
+
+    public init(_ value: String) {
+        let property = PropertyString(parsing: value)
+        path = property["path"] ?? property.defaultValue ?? ""
+        uid = property["uid"].flatMap { Int($0) }
+        gid = property["gid"].flatMap { Int($0) }
+        mode = property["mode"] ?? ""
+        isReadOnly = property["deny-write"] == "1"
+        others.items = property.items.filter { $0.key != nil && !["path", "uid", "gid", "mode", "deny-write"].contains($0.key!) }
+    }
+
+    public var stringValue: String {
+        var property = PropertyString(items: [(key: nil, value: path.trimmed)])
+        if let uid { property["uid"] = String(uid) }
+        if let gid { property["gid"] = String(gid) }
+        if !mode.trimmed.isEmpty { property["mode"] = mode.trimmed }
+        if isReadOnly { property["deny-write"] = "1" }
+        property.items += others.items
+        return property.stringValue
+    }
+
+    public var problems: [String: String] {
+        var problems: [String: String] = [:]
+        if !path.trimmed.hasPrefix("/dev/") { problems["path"] = String(localized: "Enter a path that starts with /dev/.") }
+        let mode = mode.trimmed
+        if !mode.isEmpty, !(mode.count == 4 && mode.first == "0" && mode.allSatisfy({ ("0"..."7").contains($0) })) {
+            problems["mode"] = String(localized: "Enter an octal mode such as 0660.")
+        }
+        return problems
+    }
+}
+
+extension GuestConfig {
+    /// Container device passthroughs, `dev0` and up, in key order.
+    public var containerDevices: [(key: String, value: String)] {
+        values.compactMap { key, value in
+            guard key.hasPrefix("dev"), Int(key.dropFirst(3)) != nil else { return nil }
+            return (key, value)
+        }
+        .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+}

@@ -82,4 +82,16 @@ struct GuestLifecycleTests {
         #expect(destroy.method == .delete && destroy.path == "/nodes/pve/lxc/200" && destroy.parameters.isEmpty)
         #expect(PVE.convertToTemplate(vm).path == "/nodes/pve/qemu/100/template")
     }
+
+    @Test func fullCloneOfVMToAStorageCanPickTheFormat() {
+        var draft = CloneDraft(source: vm, isTemplate: false, vmid: 121)
+        draft.format = "qcow2"
+        #expect(draft.parameters.formEncoded == "newid=121")
+        draft.storage = "local"
+        #expect(draft.parameters.formEncoded == "newid=121&storage=local&format=qcow2")
+        var containerDraft = CloneDraft(source: container, isTemplate: false, vmid: 211)
+        containerDraft.storage = "local"
+        containerDraft.format = "qcow2"
+        #expect(containerDraft.parameters.formEncoded == "newid=211&storage=local")
+    }
 }

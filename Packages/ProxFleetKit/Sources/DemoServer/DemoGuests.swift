@@ -92,10 +92,15 @@ extension DemoState {
             return success(Self.pciDevices)
         case (.get, ["hardware", "usb"]):
             return success(Self.usbDevices)
+        case (.get, let path) where path.count == 4 && path[0] == "hardware" && path[1] == "pci" && path[3] == "mdev":
+            return success(Self.mediatedDeviceTypes(of: path[2]))
         case (.post, let path) where path.count == 1 && ["startall", "stopall", "suspendall"].contains(path[0]):
             return bulkAction(path[0], node: node, parameters: parameters, user: user)
         case (.get, ["capabilities", "qemu", "cpu"]):
-            return success(.array(["host", "x86-64-v2-AES", "x86-64-v3", "kvm64", "qemu64", "EPYC-Rome", "Skylake-Server"].map { ["name": .string($0), "vendor": "default", "custom": 0] }))
+            let models = parameters["arch"] == "aarch64"
+                ? ["host", "max", "cortex-a53", "cortex-a57", "cortex-a72", "neoverse-n1"]
+                : ["host", "x86-64-v2-AES", "x86-64-v3", "kvm64", "qemu64", "EPYC-Rome", "Skylake-Server"]
+            return success(.array(models.map { ["name": .string($0), "vendor": "default", "custom": 0] }))
         default:
             break
         }
@@ -341,6 +346,8 @@ extension DemoState {
             data["rootfs"] = .string("local-lvm:vm-\(guest.vmid)-disk-0,size=\(guest.diskGiB)G")
             data["net0"] = .string("name=eth0,bridge=vmbr0,hwaddr=\(mac(for: guest)),ip=dhcp,type=veth")
             data["onboot"] = guest.tags.contains("prod") ? 1 : 0
+            // The media server transcodes on the host's GPU.
+            if guest.name == "jellyfin" { data["dev0"] = "/dev/dri/renderD128,gid=104" }
         }
         return .object(data)
     }

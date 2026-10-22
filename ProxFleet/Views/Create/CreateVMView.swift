@@ -22,7 +22,7 @@ nonisolated enum VMCreationStep: CreationStep {
 
     func owns(_ parameter: String) -> Bool {
         switch self {
-        case .general: ["vmid", "name", "pool", "ha-managed", "onboot", "startup", "tags"].contains(parameter)
+        case .general: ["vmid", "name", "pool", "ha-managed", "onboot", "startup", "tags", "arch"].contains(parameter)
         case .os: ["ostype", "ide0", "ide2"].contains(parameter)
         case .system: ["machine", "bios", "efidisk0", "tpmstate0", "scsihw", "agent", "vga"].contains(parameter)
         case .disks: Self.isDiskKey(parameter)
@@ -35,7 +35,7 @@ nonisolated enum VMCreationStep: CreationStep {
 
     /// Fields behind the web interface's Advanced checkbox. Disk and network options are part of their device's value.
     func isAdvanced(_ parameter: String) -> Bool {
-        ["onboot", "startup", "tags", "vcpus", "cpulimit", "cpuunits", "affinity", "numa", "balloon", "shares", "allow-ksm"].contains(parameter)
+        ["onboot", "startup", "tags", "arch", "vcpus", "cpulimit", "cpuunits", "affinity", "numa", "balloon", "shares", "allow-ksm"].contains(parameter)
     }
 
     /// `scsi0`, `sata0`…; the IDE drives of the OS page hold ISO images.
@@ -109,13 +109,37 @@ struct CreateVMView: View {
             }
         }
         .task { pools = await connection.load(PVE.pools()) }
+        .task(id: draft.node) {
+            if let status = try? await connection.send(PVE.nodeStatus(draft.node)), let architecture = status.architecture {
+                draft.setHostArchitecture(architecture)
+            }
+        }
         if showsAdvanced {
             StartupSection(startAtBoot: $draft.startOnBoot, startup: $draft.startup, error: errors["startup"])
+            Section {
+                Picker("Architecture", selection: Binding(get: { draft.architecture }, set: { draft.setArchitecture($0) })) {
+                    Text("Default (\(Self.architectureTitle(draft.hostArchitecture)))").tag("")
+                    Text(Self.architectureTitle("x86_64")).tag("x86_64")
+                    Text(Self.architectureTitle("aarch64")).tag("aarch64")
+                }
+                .accessibilityIdentifier("architecture")
+                FieldError(message: errors["arch"])
+            } footer: {
+                if draft.effectiveArchitecture != draft.hostArchitecture {
+                    Text("The vCPU architecture. The node cannot run this one natively, so the VM is emulated and much slower.")
+                } else {
+                    Text("The vCPU architecture; by default the node's own.")
+                }
+            }
             Section("Tags") {
                 TagsEditor(tags: $draft.tags)
                 FieldError(message: errors["tags"])
             }
         }
+    }
+
+    static func architectureTitle(_ architecture: String) -> String {
+        architecture == "aarch64" ? String(localized: "ARM 64-bit") : String(localized: "x86 64-bit")
     }
 
     /// High availability needs a cluster.
@@ -124,8 +148,8 @@ struct CreateVMView: View {
     @ViewBuilder
     private func operatingSystem(_ errors: [String: String]) -> some View {
         Section {
-            VolumePicker(title: "ISO Image", noneTitle: "No Media", connection: connection, node: draft.node, content: "iso", selection: $draft.isoVolume, reloadID: isoReloadID)
-            FieldError(message: errors["ide2"])
+            VolumePicker(title: "CD/DVD", noneTitle: "No Media", connection: connection, node: draft.node, content: "iso", selection: $draft.isoVolume, reloadID: isoReloadID, offersPhysicalDrive: true)
+            FieldError(message: errors[draft.cdromKey])
             NavigationLink("Download from URL") {
                 ISODownloadView(connection: connection, node: draft.node) { volume in
                     isoReloadID += 1
@@ -139,16 +163,16 @@ struct CreateVMView: View {
             Text("The node downloads the image itself and selects it here when done.")
         }
         Section {
-            OSTypePicker(connection: connection, kind: .virtualMachine, selection: Binding(get: { draft.osType }, set: { draft.applyDefaults(for: $0) }))
+            OSTypePicker(connection: connection, kind: .virtualMachine, selection: Binding(get: { draft.osType }, set: { draft.applyDefaults(for: $0) }), allowed: draft.isARM ? VMCreationDraft.armOSTypes : nil)
             FieldError(message: errors["ostype"])
-            if draft.isWindows {
+            if draft.isWindows, !draft.isARM {
                 VolumePicker(title: "VirtIO Drivers", noneTitle: "None", connection: connection, node: draft.node, content: "iso", selection: $draft.driversISOVolume)
                 FieldError(message: errors["ide0"])
             }
         } header: {
             Text("Guest OS")
         } footer: {
-            if draft.isWindows {
+            if draft.isWindows, !draft.isARM {
                 Text("Windows gets SATA disks and an Intel network card, which it supports without extra drivers. Add the VirtIO driver ISO to install faster VirtIO drivers.")
             } else {
                 Text("The OS type sets hardware defaults on the next pages.")
@@ -163,12 +187,16 @@ struct CreateVMView: View {
                 ForEach(VMSystemDraft.displays, id: \.id) { Text($0.title).tag($0.id) }
             }
             FieldError(message: errors["vga"])
-            Picker("Machine", selection: $draft.machine) {
-                Text("Default (i440fx)").tag("i440fx")
-                Text("q35").tag("q35")
+            if draft.isARM {
+                LabeledContent("Machine", value: String(localized: "Default (virt)"))
+            } else {
+                Picker("Machine", selection: $draft.machine) {
+                    Text("Default (i440fx)").tag("i440fx")
+                    Text("q35").tag("q35")
+                }
             }
             Picker("SCSI Controller", selection: $draft.scsiController) {
-                ForEach(VMSystemDraft.scsiControllers, id: \.self) { Text($0).tag($0) }
+                ForEach(draft.isARM ? VMCreationDraft.armSCSIControllers : VMSystemDraft.scsiControllers, id: \.self) { Text($0).tag($0) }
             }
             FieldError(message: errors["scsihw"])
             Toggle("QEMU Guest Agent", isOn: $draft.guestAgent)
@@ -176,32 +204,47 @@ struct CreateVMView: View {
             Text("Enable the guest agent once it is installed in the guest; it reports IP addresses and allows clean shutdowns.")
         }
         Section {
-            Picker("BIOS", selection: $draft.bios) {
-                Text("SeaBIOS").tag("seabios")
-                Text("OVMF (UEFI)").tag("ovmf")
+            if draft.isARM {
+                LabeledContent("BIOS", value: "OVMF (UEFI)")
+            } else {
+                Picker("BIOS", selection: $draft.bios) {
+                    Text("SeaBIOS").tag("seabios")
+                    Text("OVMF (UEFI)").tag("ovmf")
+                }
             }
             if draft.bios == "ovmf" {
-                NodeStoragePicker(title: "EFI Storage", connection: connection, node: draft.node, content: "images", selection: $draft.efiStorage)
-                Toggle("Pre-Enrolled Keys", isOn: $draft.preEnrolledKeys)
+                Toggle("Add EFI Disk", isOn: $draft.addEFIDisk)
+                    .accessibilityIdentifier("efi.add")
+                if draft.addEFIDisk {
+                    NodeStoragePicker(title: "EFI Storage", connection: connection, node: draft.node, content: "images", selection: $draft.efiStorage, format: $draft.efiFormat)
+                    Toggle("Pre-Enrolled Keys", isOn: $draft.preEnrolledKeys)
+                }
                 FieldError(message: errors["efidisk0"])
             }
         } header: {
             Text("Firmware")
         } footer: {
             if draft.bios == "ovmf" {
-                Text("Pre-enrolled keys turn on Secure Boot.")
+                Text(draft.addEFIDisk
+                    ? "The EFI disk keeps UEFI settings such as boot entries. Pre-enrolled keys turn on Secure Boot."
+                    : "Without an EFI disk, UEFI settings such as boot entries are lost at every start.")
             }
         }
         Section {
             Toggle("Add TPM", isOn: $draft.addTPM)
             if draft.addTPM {
                 NodeStoragePicker(title: "TPM Storage", connection: connection, node: draft.node, content: "images", selection: $draft.tpmStorage)
+                Picker("Version", selection: $draft.tpmVersion) {
+                    Text("v2.0").tag("v2.0")
+                    Text("v1.2").tag("v1.2")
+                }
+                .accessibilityIdentifier("tpm.version")
                 FieldError(message: errors["tpmstate0"])
             }
         } header: {
             Text("TPM")
         } footer: {
-            Text("A virtual TPM chip, needed by Windows 11 and for measured boot.")
+            Text("A virtual TPM chip, needed by Windows 11 and for measured boot. Its version cannot be changed later.")
         }
     }
 
@@ -212,7 +255,7 @@ struct CreateVMView: View {
             let key = draft.disks.firstIndex { $0.id == disk.id }.map { keys[$0] } ?? ""
             NewDiskSections(
                 disk: $disk, key: key, error: errors[key], connection: connection, node: draft.node,
-                storages: diskStorages, showsAdvanced: showsAdvanced,
+                storages: diskStorages, showsAdvanced: showsAdvanced, buses: draft.isARM ? DiskBus.allCases.filter { $0 != .ide } : DiskBus.allCases,
                 onRemove: { withAnimation { draft.disks.removeAll { $0.id == disk.id } } }
             )
         }
@@ -221,9 +264,15 @@ struct CreateVMView: View {
                 withAnimation { draft.addDisk() }
             }
             .accessibilityIdentifier("disk.add")
+            Button("Import Disk") {
+                withAnimation { draft.addImportedDisk() }
+            }
+            .accessibilityIdentifier("disk.import")
         } footer: {
             if draft.disks.isEmpty {
                 Text("The VM is created without a disk. It boots from the installation media or the network.")
+            } else {
+                Text("Import copies a disk image (qcow2, vmdk or raw) from a storage with import content, e.g. a cloud image.")
             }
         }
         .task(id: draft.node) {
@@ -260,7 +309,7 @@ struct CreateVMView: View {
         }
         Section {
             Picker("Type", selection: $draft.cpu.model) {
-                Text("Default (kvm64)").tag("")
+                Text(draft.isARM ? "Default (host)" : "Default (kvm64)").tag("")
                 ForEach(CPUModel.pickerNames(cpuModels, including: draft.cpu.model), id: \.self) { Text($0).tag($0) }
             }
             FieldError(message: errors["cpu"])
@@ -276,7 +325,9 @@ struct CreateVMView: View {
         } footer: {
             Text("“host” gives the best performance but prevents live migration to nodes with a different CPU.")
         }
-        .task(id: draft.node) { cpuModels = await connection.load(PVE.cpuModels(node: draft.node)) }
+        .task(id: "\(draft.node)/\(draft.effectiveArchitecture)") {
+            cpuModels = await connection.load(PVE.cpuModels(node: draft.node, architecture: draft.architecture.isEmpty ? nil : draft.architecture))
+        }
         if showsAdvanced {
             Section {
                 LabeledContent("CPU Limit") {
@@ -414,12 +465,14 @@ struct NewDiskSections: View {
     /// The node's storages for disk images, with their formats.
     let storages: [StorageInfo]
     let showsAdvanced: Bool
+    /// ARM VMs have no IDE bus.
+    var buses = DiskBus.allCases
     /// Device numbers free on each bus, to choose one as the web interface's Bus/Device field does; nil hides the choice.
     var freeSlots: ((DiskBus) -> [Int])?
     @Binding var slot: Int
     var onRemove: (() -> Void)?
 
-    init(disk: Binding<NewVMDisk>, key: String, error: String?, connection: ServerConnection, node: String, storages: [StorageInfo], showsAdvanced: Bool, freeSlots: ((DiskBus) -> [Int])? = nil, slot: Binding<Int> = .constant(0), onRemove: (() -> Void)? = nil) {
+    init(disk: Binding<NewVMDisk>, key: String, error: String?, connection: ServerConnection, node: String, storages: [StorageInfo], showsAdvanced: Bool, buses: [DiskBus] = DiskBus.allCases, freeSlots: ((DiskBus) -> [Int])? = nil, slot: Binding<Int> = .constant(0), onRemove: (() -> Void)? = nil) {
         _disk = disk
         self.key = key
         self.error = error
@@ -427,6 +480,7 @@ struct NewDiskSections: View {
         self.node = node
         self.storages = storages
         self.showsAdvanced = showsAdvanced
+        self.buses = buses
         self.freeSlots = freeSlots
         _slot = slot
         self.onRemove = onRemove
@@ -435,7 +489,8 @@ struct NewDiskSections: View {
     var body: some View {
         Section {
             Picker("Bus", selection: $disk.bus) {
-                ForEach(DiskBus.allCases) { Text($0.title).tag($0) }
+                ForEach(buses) { Text($0.title).tag($0) }
+                if !buses.contains(disk.bus) { Text(disk.bus.title).tag(disk.bus) }
             }
             if let freeSlots {
                 Picker("Device", selection: $slot) {
@@ -443,16 +498,27 @@ struct NewDiskSections: View {
                 }
                 .accessibilityIdentifier("disk.slot")
             }
-            NodeStoragePicker(title: "Storage", connection: connection, node: node, content: "images", selection: $disk.storage)
-            NumberField(title: "Size", value: $disk.sizeGiB, range: 1...65_536, unit: "GiB")
+            if disk.isImport {
+                VolumePicker(
+                    title: "Image", connection: connection, node: node, content: "import", selection: importSource,
+                    filter: { ["qcow2", "vmdk", "raw"].contains($0.format ?? "") }
+                )
+                .accessibilityIdentifier("disk.importSource")
+            }
+            NodeStoragePicker(title: disk.isImport ? "Target Storage" : "Storage", connection: connection, node: node, content: "images", selection: $disk.storage)
+            if !disk.isImport {
+                NumberField(title: "Size", value: $disk.sizeGiB, range: 1...65_536, unit: "GiB")
+            }
             if let formats = storage?.diskFormats, formats.count > 1 {
-                Picker("Format", selection: $disk.format) {
-                    ForEach(formats, id: \.self) { Text(Self.formatTitle($0)).tag(String?.some($0)) }
-                }
+                DiskFormatPicker(formats: formats, selection: $disk.format)
             }
             FieldError(message: error)
         } header: {
-            Text(verbatim: key)
+            Text(verbatim: disk.isImport ? String(localized: "\(key) – Import") : key)
+        } footer: {
+            if disk.isImport {
+                Text("The disk gets the size of the image.")
+            }
         }
         .onChange(of: disk.storage) { disk.chooseFormat(for: storage) }
         Section {
@@ -494,12 +560,7 @@ struct NewDiskSections: View {
 
     private var storage: StorageInfo? { storages.first { $0.storage == disk.storage } }
 
-    private static func formatTitle(_ format: String) -> String {
-        switch format {
-        case "raw": String(localized: "Raw Disk Image (raw)")
-        case "qcow2": String(localized: "QEMU Image (qcow2)")
-        case "vmdk": String(localized: "VMware Image (vmdk)")
-        default: format
-        }
+    private var importSource: Binding<String?> {
+        Binding(get: { disk.importSource.isEmpty ? nil : disk.importSource }, set: { disk.importSource = $0 ?? "" })
     }
 }

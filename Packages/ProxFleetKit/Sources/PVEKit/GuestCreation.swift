@@ -15,7 +15,12 @@ public struct VMCreationDraft: Sendable, Equatable {
     public var tags: [String] = []
     public var startAfterCreation = false
 
-    /// ISO image for the installation, nil for no CD/DVD drive.
+    /// vCPU architecture, `x86_64` or `aarch64`; empty for the node's own.
+    public var architecture = ""
+    /// The node's architecture, from its kernel.
+    public var hostArchitecture = "x86_64"
+
+    /// ISO image for the installation, `cdrom` for the host's physical drive, nil for no CD/DVD drive.
     public var isoVolume: String?
     public var osType = "l26"
     /// Windows only: a second drive with the VirtIO driver ISO.
@@ -25,11 +30,17 @@ public struct VMCreationDraft: Sendable, Equatable {
     public var machine = "i440fx"
     /// `seabios` or `ovmf`.
     public var bios = "seabios"
+    /// OVMF without an EFI disk starts with default settings each time and cannot keep boot entries.
+    public var addEFIDisk = true
     /// Storage for the EFI variables disk, used with OVMF.
     public var efiStorage = ""
+    /// Image format of the EFI disk on storages with several, nil for the storage's only one.
+    public var efiFormat: String?
     public var preEnrolledKeys = true
     public var addTPM = false
     public var tpmStorage = ""
+    /// `v2.0` or `v1.2`; it cannot be changed later.
+    public var tpmVersion = "v2.0"
     public var scsiController = "virtio-scsi-single"
     public var guestAgent = false
     /// Graphic card, empty for the default.
@@ -59,6 +70,39 @@ public struct VMCreationDraft: Sendable, Equatable {
 
     public var isWindows: Bool { Self.isWindows(osType) }
 
+    /// The architecture the VM gets, `x86_64` or `aarch64`.
+    public var effectiveArchitecture: String { architecture.isEmpty ? hostArchitecture : architecture }
+    public var isARM: Bool { effectiveArchitecture == "aarch64" }
+
+    /// The OS types the web interface offers for ARM VMs.
+    public static let armOSTypes: Set<String> = ["l26", "other"]
+    /// ARM VMs have no IDE bus and need a VirtIO SCSI controller.
+    public static let armSCSIControllers = ["virtio-scsi-single", "virtio-scsi-pci"]
+
+    /// Switches the vCPU architecture and adjusts the hardware to it, like the web interface.
+    public mutating func setArchitecture(_ architecture: String) {
+        let wasARM = isARM
+        self.architecture = architecture
+        adjustToArchitecture(wasARM: wasARM)
+    }
+
+    /// Sets the node's architecture once it is known; a VM with the default architecture follows it.
+    public mutating func setHostArchitecture(_ architecture: String) {
+        let wasARM = isARM
+        hostArchitecture = architecture
+        adjustToArchitecture(wasARM: wasARM)
+    }
+
+    private mutating func adjustToArchitecture(wasARM: Bool) {
+        guard isARM != wasARM else { return }
+        // On ARM the default model is the host's; x86 VMs get the wizard's usual one back.
+        cpu.model = isARM ? "" : "x86-64-v2-AES"
+        applyDefaults(for: isARM && !Self.armOSTypes.contains(osType) ? "l26" : osType)
+    }
+
+    /// The bus of the CD/DVD drive with the installation media: IDE on x86, SCSI on ARM.
+    public var cdromKey: String { isARM ? "scsi2" : "ide2" }
+
     public static func isWindows(_ osType: String) -> Bool {
         osType.hasPrefix("w")
     }
@@ -67,7 +111,13 @@ public struct VMCreationDraft: Sendable, Equatable {
     /// Windows gets devices it has drivers for out of the box; Windows 11 also needs UEFI and a TPM.
     public mutating func applyDefaults(for osType: String) {
         self.osType = osType
-        if Self.isWindows(osType) {
+        if isARM {
+            machine = "virt"
+            bios = "ovmf"
+            addTPM = false
+            driversISOVolume = nil
+            if !Self.armSCSIControllers.contains(scsiController) { scsiController = "virtio-scsi-single" }
+        } else if Self.isWindows(osType) {
             let isLegacy = Self.legacyWindows.contains(osType)
             machine = isLegacy ? "i440fx" : "q35"
             let needsUEFI = osType == "win11"
@@ -88,7 +138,7 @@ public struct VMCreationDraft: Sendable, Equatable {
 
     /// The bus the web interface uses for the OS type: IDE for old Windows versions, SATA for newer ones, SCSI otherwise.
     public var defaultDiskBus: DiskBus {
-        guard isWindows else { return .scsi }
+        guard isWindows, !isARM else { return .scsi }
         return Self.legacyWindows.contains(osType) ? .ide : .sata
     }
 
@@ -117,10 +167,16 @@ public struct VMCreationDraft: Sendable, Equatable {
         disks.append(disk)
     }
 
+    /// Adds a disk imported from an image on an import storage, like the web wizard's Import button.
+    public mutating func addImportedDisk() {
+        addDisk()
+        disks[disks.count - 1].isImport = true
+    }
+
     /// Keys of the disks in their order, e.g. `scsi0` and `scsi1`. The CD drives keep `ide2` and, with Windows drivers, `ide0`.
     /// A key past the last slot of its bus means the bus is full.
     public var diskKeys: [String] {
-        var used: Set<String> = ["ide2"]
+        var used: Set<String> = [cdromKey]
         if isWindows, driversISOVolume != nil { used.insert("ide0") }
         return disks.map { disk in
             let prefix = disk.bus.rawValue
@@ -142,9 +198,16 @@ public struct VMCreationDraft: Sendable, Equatable {
                 problems[key] = String(localized: "\(disk.bus.title) has no free slot left. Choose another bus.")
             } else if disk.storage.isEmpty {
                 problems[key] = String(localized: "Choose a storage.")
+            } else if disk.isImport, disk.importSource.isEmpty {
+                problems[key] = String(localized: "Choose an image to import.")
+            } else if isARM, disk.bus == .ide {
+                problems[key] = String(localized: "ARM VMs have no IDE bus. Choose another bus.")
             }
         }
-        if bios == "ovmf", efiStorage.isEmpty { problems["efidisk0"] = String(localized: "Choose a storage for the EFI disk.") }
+        if isARM, !Self.armSCSIControllers.contains(scsiController) {
+            problems["scsihw"] = String(localized: "ARM VMs need a VirtIO SCSI controller.")
+        }
+        if bios == "ovmf", addEFIDisk, efiStorage.isEmpty { problems["efidisk0"] = String(localized: "Choose a storage for the EFI disk.") }
         if addTPM, tpmStorage.isEmpty { problems["tpmstate0"] = String(localized: "Choose a storage for the TPM state.") }
         return problems
     }
@@ -155,17 +218,21 @@ public struct VMCreationDraft: Sendable, Equatable {
         if !pool.isEmpty { parameters["pool"] = .string(pool) }
         if isHAManaged { parameters["ha-managed"] = true }
         parameters["ostype"] = .string(osType)
+        if !architecture.isEmpty { parameters["arch"] = .string(architecture) }
 
         if machine == "q35" { parameters["machine"] = "q35" }
         if bios == "ovmf" {
             parameters["bios"] = "ovmf"
-            var efi = PropertyString(items: [(key: nil, value: "\(efiStorage):1")])
-            efi["efitype"] = "4m"
-            efi["pre-enrolled-keys"] = preEnrolledKeys ? "1" : "0"
-            parameters["efidisk0"] = .string(efi.stringValue)
+            if addEFIDisk {
+                var efi = PropertyString(items: [(key: nil, value: "\(efiStorage):1")])
+                if let efiFormat { efi["format"] = efiFormat }
+                efi["efitype"] = "4m"
+                efi["pre-enrolled-keys"] = preEnrolledKeys ? "1" : "0"
+                parameters["efidisk0"] = .string(efi.stringValue)
+            }
         }
         if addTPM {
-            parameters["tpmstate0"] = .string("\(tpmStorage):1,version=v2.0")
+            parameters["tpmstate0"] = .string(GuestConfig.tpmStateValue(storage: tpmStorage, version: tpmVersion))
         }
         parameters["scsihw"] = .string(scsiController)
         if guestAgent { parameters["agent"] = "1" }
@@ -177,10 +244,10 @@ public struct VMCreationDraft: Sendable, Equatable {
         }
         var bootOrder = Array(diskKeys.prefix(1))
         if let isoVolume {
-            parameters["ide2"] = .string(GuestConfig.cdromValue(isoVolume: isoVolume))
-            bootOrder.append("ide2")
+            parameters[cdromKey] = .string(GuestConfig.cdromValue(isoVolume: isoVolume))
+            bootOrder.append(cdromKey)
         }
-        if isWindows, let driversISOVolume {
+        if isWindows, !isARM, let driversISOVolume {
             parameters["ide0"] = .string(GuestConfig.cdromValue(isoVolume: driversISOVolume))
         }
 
@@ -207,7 +274,8 @@ public struct VMCreationDraft: Sendable, Equatable {
             parameters["net\(index)"] = .string(network.device.stringValue)
         }
         if !networks.isEmpty { bootOrder.append("net0") }
-        parameters["boot"] = .string("order=" + bootOrder.joined(separator: ";"))
+        // Proxmox rejects an empty order; without boot devices the default is left alone.
+        if !bootOrder.isEmpty { parameters["boot"] = .string("order=" + bootOrder.joined(separator: ";")) }
         addCommonOptions(to: &parameters, startOnBoot: startOnBoot, startup: startup, tags: tags, startAfterCreation: startAfterCreation)
         return parameters
     }
@@ -230,6 +298,10 @@ public struct NewVMDisk: Sendable, Equatable, Identifiable {
     public var sizeGiB = 32
     /// Image format such as `qcow2`, nil for the storage's default.
     public var format: String?
+    /// The disk is a copy of an existing image instead of an empty one; the size comes from the image.
+    public var isImport = false
+    /// The image to import, e.g. `local:import/debian.qcow2`; empty while none is chosen.
+    public var importSource = ""
     /// The bus decides which of these apply.
     public var options: DiskOptionsDraft
 
@@ -249,11 +321,7 @@ public struct NewVMDisk: Sendable, Equatable, Identifiable {
     /// Picks the format the web interface picks for a storage: qcow2 where it can, otherwise raw.
     /// Storages with a single format get no explicit one.
     public mutating func chooseFormat(for storage: StorageInfo?) {
-        guard let formats = storage?.diskFormats, formats.count > 1 else {
-            format = nil
-            return
-        }
-        format = ["qcow2", "raw"].first(where: formats.contains) ?? storage?.defaultDiskFormat ?? formats[0]
+        format = storage?.preferredDiskFormat
     }
 
     /// The disk's parameter value, e.g. `local-lvm:32,discard=on,iothread=1`.
@@ -262,8 +330,10 @@ public struct NewVMDisk: Sendable, Equatable, Identifiable {
         options.ioThread = options.ioThread && supportsIOThread
         options.readOnly = options.readOnly && supportsIOThread
         options.ssdEmulation = options.ssdEmulation && supportsSSDEmulation
-        var value = PropertyString(parsing: options.newDiskValue(storage: storage, sizeGiB: sizeGiB))
+        // Imports allocate a disk of the image's size, given as 0.
+        var value = PropertyString(parsing: options.newDiskValue(storage: storage, sizeGiB: isImport ? 0 : sizeGiB))
         if let format { value.items.insert((key: "format", value: format), at: 1) }
+        if isImport { value.items.insert((key: "import-from", value: importSource), at: 1) }
         return value.stringValue
     }
 }

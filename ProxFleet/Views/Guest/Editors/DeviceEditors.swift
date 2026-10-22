@@ -177,7 +177,8 @@ struct DiskEditor: View {
                     LabeledContent("Size", value: size)
                 }
             }
-            if !disk.isUnused, disk.size != nil {
+            // EFI and TPM state disks have a fixed size.
+            if !disk.isUnused, disk.size != nil, disk.key != "efidisk0", disk.key != "tpmstate0" {
                 Section {
                     NumberField(title: "Grow By", value: $growBy, range: 1...16_384, unit: "GiB")
                     Button("Grow Disk") { confirmsGrow = true }
@@ -325,7 +326,9 @@ struct CDROMEditor: View {
     let detail: GuestDetail
     let config: GuestConfig
     let drive: GuestDisk?
+    /// An ISO image's volume, `GuestConfig.physicalCDROM` for the host's drive, nil for no disc.
     @State private var selection: String?
+    @State private var media: CDROMMedia
     @State private var bus: DiskBus = .ide
     @State private var images: [StorageVolume] = []
     @State private var isLoading = true
@@ -336,7 +339,9 @@ struct CDROMEditor: View {
         self.detail = detail
         self.config = config
         self.drive = drive
-        _selection = State(initialValue: drive.flatMap { $0.volume == "none" ? nil : $0.volume })
+        let volume = drive.flatMap { $0.volume == "none" ? nil : $0.volume }
+        _selection = State(initialValue: volume == GuestConfig.physicalCDROM ? nil : volume)
+        _media = State(initialValue: volume == nil ? (drive == nil ? .image : .none) : volume == GuestConfig.physicalCDROM ? .physical : .image)
     }
 
     var body: some View {
@@ -351,20 +356,39 @@ struct CDROMEditor: View {
                 }
             }
             Section {
-                Picker("Image", selection: $selection) {
-                    Text("No Disc").tag(String?.none)
-                    ForEach(images) { image in
-                        Text(image.fileName).tag(String?.some(image.volumeID))
-                    }
+                Picker("Media", selection: $media) {
+                    Text("ISO Image").tag(CDROMMedia.image)
+                    Text("Physical Drive").tag(CDROMMedia.physical)
+                    Text("None").tag(CDROMMedia.none)
                 }
-                .pickerStyle(.inline)
-                .labelsHidden()
-                if isLoading { ProgressView() }
-                FieldError(message: (drive?.key).flatMap { errors[$0] })
-            } header: {
-                Text("ISO Images")
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("cdrom.media")
             } footer: {
-                Text("Upload ISO images in the web interface or download them to a storage with ISO content.")
+                switch media {
+                case .physical: Text("Passes the host's own CD/DVD drive to the guest.")
+                case .none: Text("The drive stays empty.")
+                case .image: EmptyView()
+                }
+            }
+            if media == .image {
+                Section {
+                    Picker("Image", selection: $selection) {
+                        if selection == nil { Text("Choose").tag(String?.none) }
+                        ForEach(images) { image in
+                            Text(image.fileName).tag(String?.some(image.volumeID))
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    if isLoading { ProgressView() }
+                } header: {
+                    Text("ISO Images")
+                } footer: {
+                    Text("Download ISO images to a storage with ISO content from the storage's screen.")
+                }
+            }
+            if let key = drive?.key ?? newKey, let message = errors[key] {
+                Section { FieldError(message: message) }
             }
             if let drive {
                 Section {
@@ -384,15 +408,27 @@ struct CDROMEditor: View {
         isLoading = false
     }
 
+    private var newKey: String? { config.nextFreeKey(prefix: bus.rawValue, slots: bus.slots) }
+
+    /// The drive's volume as chosen, nil for no disc; `.image` without a chosen image cannot be saved.
+    private var volume: String?? {
+        switch media {
+        case .image: selection.map { .some($0) }
+        case .physical: .some(GuestConfig.physicalCDROM)
+        case .none: .some(nil)
+        }
+    }
+
     private func update() -> GuestConfigUpdate? {
-        let value = GuestConfig.cdromValue(isoVolume: selection)
+        guard let volume else { return nil }
+        let value = GuestConfig.cdromValue(isoVolume: volume)
         var update = GuestConfigUpdate()
         if let drive {
-            guard selection != (drive.volume == "none" ? nil : drive.volume) else { return nil }
+            guard volume != (drive.volume == "none" ? nil : drive.volume) else { return nil }
             update.set(drive.key, value)
         } else {
-            guard let key = config.nextFreeKey(prefix: bus.rawValue, slots: bus.slots) else { return nil }
-            update.set(key, value)
+            guard let newKey else { return nil }
+            update.set(newKey, value)
         }
         return update
     }
@@ -405,6 +441,11 @@ struct CDROMEditor: View {
     }
 }
 
+/// What a CD/DVD drive holds.
+enum CDROMMedia: Hashable {
+    case image, physical, none
+}
+
 /// Creates a new disk on a storage and attaches it, with every option of the web interface's Add Hard Disk dialog.
 struct AddDiskEditor: View {
     let detail: GuestDetail
@@ -415,6 +456,18 @@ struct AddDiskEditor: View {
 
     var body: some View {
         ConfigEditor(title: "Add Hard Disk", detail: detail, makeUpdate: update, footer: "New disks are available to the guest right away if it supports hot-plugging.") { errors in
+            Section {
+                Picker("Source", selection: $disk.isImport) {
+                    Text("New Disk").tag(false)
+                    Text("Import Image").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("disk.source")
+            } footer: {
+                if disk.isImport {
+                    Text("Copies a disk image (qcow2, vmdk or raw) from a storage with import content, e.g. a cloud image.")
+                }
+            }
             NewDiskSections(
                 disk: $disk, key: key, error: errors[key], connection: detail.connection, node: detail.reference.node,
                 storages: storages, showsAdvanced: true, freeSlots: freeSlots, slot: $slot
@@ -436,7 +489,7 @@ struct AddDiskEditor: View {
     }
 
     private func update() -> GuestConfigUpdate? {
-        guard !disk.storage.isEmpty, config[key] == nil, freeSlots(disk.bus).contains(slot) else { return nil }
+        guard !disk.storage.isEmpty, config[key] == nil, freeSlots(disk.bus).contains(slot), !disk.isImport || !disk.importSource.isEmpty else { return nil }
         var update = GuestConfigUpdate()
         update.set(key, disk.value)
         return update

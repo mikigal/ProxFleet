@@ -60,7 +60,11 @@ struct CloneView: View {
                     .accessibilityIdentifier("clone.mode")
                 }
                 if draft.fullClone {
-                    NodeStoragePicker(title: "Target Storage", connection: connection, node: draft.targetNode, content: isVM ? "images" : "rootdir", selection: $draft.storage, defaultTitle: "Same as Source")
+                    NodeStoragePicker(
+                        title: "Target Storage", connection: connection, node: draft.targetNode, content: isVM ? "images" : "rootdir",
+                        selection: $draft.storage, defaultTitle: "Same as Source", format: isVM ? $draft.format : nil
+                    )
+                    FieldError(message: errors["format"])
                     FieldError(message: errors["storage"])
                 }
                 if !draft.sourceIsTemplate, snapshots.count > 1 {

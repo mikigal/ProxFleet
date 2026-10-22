@@ -30,6 +30,15 @@ extension DemoState {
         ["id": "0000:05:00.0", "vendor_name": "ASMedia Technology Inc.", "device_name": "ASM1166 Serial ATA Controller", "iommugroup": 18],
     ]
 
+    /// The integrated GPU, directly or by its mapping, offers GVT-g vGPUs; other devices have no mediated devices.
+    static func mediatedDeviceTypes(of device: String) -> JSONValue {
+        guard device == "0000:00:02.0" || device == "igpu" else { return [] }
+        return [
+            ["type": "i915-GVTg_V5_4", "available": 2, "description": "low_gm_size: 128MB\nhigh_gm_size: 512MB\nfence: 4\nresolution: 1920x1200"],
+            ["type": "i915-GVTg_V5_8", "available": 4, "description": "low_gm_size: 64MB\nhigh_gm_size: 384MB\nfence: 4\nresolution: 1024x768"],
+        ]
+    }
+
     static let usbDevices: JSONValue = [
         ["busnum": 1, "devnum": 1, "port": 0, "level": 0, "class": 9, "vendid": "1d6b", "prodid": "0002", "product": "xHCI Host Controller", "manufacturer": "Linux xhci-hcd"],
         ["busnum": 1, "devnum": 3, "port": 3, "level": 1, "usbpath": "3", "class": 0, "vendid": "10c4", "prodid": "ea60", "product": "Sonoff Zigbee 3.0 USB Dongle Plus", "manufacturer": "ITead"],
@@ -39,7 +48,7 @@ extension DemoState {
 
     func resourceMappings(_ type: String) -> JSONValue {
         switch type {
-        case "pci": [["id": "gpu-a2000", "description": "NVIDIA RTX A2000 on pve1"]]
+        case "pci": [["id": "gpu-a2000", "description": "NVIDIA RTX A2000 on pve1"], ["id": "igpu", "description": "Intel UHD Graphics (GVT-g)", "mdev": 1]]
         case "usb": [["id": "zigbee-dongle", "description": "Sonoff Zigbee coordinator"]]
         case "dir": [["id": "media", "description": "/tank/media on every node"]]
         default: []
@@ -55,7 +64,13 @@ extension DemoState {
         guard let source = property.defaultValue ?? property["file"] ?? property["volume"],
               let colon = source.firstIndex(of: ":") else { return value }
         let storage = source[..<colon]
-        let size = source[source.index(after: colon)...]
+        var size = source[source.index(after: colon)...]
+        // An import takes the size of its image.
+        if let image = property["import-from"] {
+            property["import-from"] = nil
+            let bytes = files.first { $0.volume == image }?.size ?? 2_147_483_648
+            size = Substring(String(max(1, Int((Double(bytes) / 1_073_741_824).rounded(.up)))))
+        }
         let allocated: String
         if size == "cloudinit" {
             allocated = "\(storage):vm-\(guest.vmid)-cloudinit"

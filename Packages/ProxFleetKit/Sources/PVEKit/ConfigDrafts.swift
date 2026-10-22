@@ -161,7 +161,10 @@ extension GuestConfig {
         (0..<slots).map { "\(prefix)\($0)" }.first { values[$0] == nil }
     }
 
-    /// Value for a CD/DVD drive with an ISO image, or empty when `isoVolume` is nil.
+    /// The volume of a CD/DVD drive that uses the host's physical drive.
+    public static let physicalCDROM = "cdrom"
+
+    /// Value for a CD/DVD drive with an ISO image or the host's drive (`physicalCDROM`), or empty when `isoVolume` is nil.
     public static func cdromValue(isoVolume: String?) -> String {
         "\(isoVolume ?? "none"),media=cdrom"
     }

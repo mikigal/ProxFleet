@@ -66,4 +66,24 @@ struct DeviceDraftTests {
         let pci = try JSONDecoder().decode(NodePCIDevice.self, from: Data(#"{"id":"0000:00:1a.0","vendor_name":"Intel","iommugroup":-1,"mdev":1}"#.utf8))
         #expect(pci.mdev == true)
     }
+
+    @Test func pciIDOverridesAndMediatedTypes() throws {
+        var draft = PCIDeviceDraft("host=0000:01:00.0,mdev=nvidia-63,device-id=0x1EB8,rombar=0")
+        #expect(draft.deviceID == "0x1EB8")
+        #expect(draft.mdev == "nvidia-63")
+        draft.vendorID = "0x10DE"
+        draft.subVendorID = "0x10de "
+        #expect(draft.idProblem == nil)
+        #expect(draft.stringValue == "host=0000:01:00.0,rombar=0,mdev=nvidia-63,vendor-id=0x10de,device-id=0x1eb8,sub-vendor-id=0x10de")
+        draft.subDeviceID = "1234"
+        #expect(draft.idProblem != nil)
+        #expect(!draft.isComplete)
+
+        let json = #"[{"type":"nvidia-63","name":"GRID T4-1Q","available":16,"description":"num_heads=4, frl_config=60"},{"type":"i915-GVTg_V5_4","available":"1"}]"#
+        let types = try JSONDecoder().decode([MediatedDeviceType].self, from: Data(json.utf8))
+        #expect(types.map(\.id) == ["nvidia-63", "i915-GVTg_V5_4"])
+        #expect(types[1].available == 1 && types[1].name == nil)
+        #expect(PVE.mediatedDeviceTypes(node: "pve", device: "0000:01:00.0").path == "/nodes/pve/hardware/pci/0000:01:00.0/mdev")
+        #expect(GuestConfig.efiDiskValue(storage: "local", preEnrolledKeys: false, format: "qcow2") == "local:1,format=qcow2,efitype=4m")
+    }
 }

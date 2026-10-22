@@ -23,11 +23,13 @@ extension DemoState {
             (100, 1, "home-assistant", false), (100, 8, "Before the 2026.10 update", true),
             (101, 2, "truenas", false), (200, 1, "pihole", false), (202, 3, "jellyfin", false),
         ]
-        return samples.compactMap { sample in
+        // Clusters also back up to the Proxmox Backup Server, which allows live restores.
+        let backupServerSamples: [(vmid: Int, daysAgo: Double, notes: String, isProtected: Bool)] = cluster.clusterName == nil ? [] : [(100, 0.5, "home-assistant", false)]
+        return (samples.map { ($0, "local") } + backupServerSamples.map { ($0, "pbs") }).compactMap { sample, storage in
             guard let guest = cluster.guests.first(where: { $0.vmid == sample.vmid }) else { return nil }
             let date = now.addingTimeInterval(-sample.daysAgo * 86_400 - 3 * 3600)
             return DemoBackup(
-                volume: volumeName(vmid: sample.vmid, kind: guest.kind, date: date), vmid: sample.vmid, kind: guest.kind, date: date,
+                volume: volumeName(vmid: sample.vmid, kind: guest.kind, date: date, storage: storage), vmid: sample.vmid, kind: guest.kind, date: date,
                 size: guest.diskGiB * 120_000_000, notes: sample.notes, isProtected: sample.isProtected, config: nil, availableAt: .distantPast
             )
         }
@@ -37,6 +39,10 @@ extension DemoState {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
+        if storage == "pbs" {
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+            return "\(storage):backup/\(kind == .qemu ? "vm" : "ct")/\(vmid)/\(formatter.string(from: date))"
+        }
         formatter.dateFormat = "yyyy_MM_dd-HH_mm_ss"
         return "\(storage):backup/vzdump-\(kind.rawValue)-\(vmid)-\(formatter.string(from: date)).\(kind == .qemu ? "vma" : "tar").zst"
     }
@@ -48,7 +54,7 @@ extension DemoState {
             var entry: [String: JSONValue] = [
                 "volid": .string(backup.volume), "vmid": .int(backup.vmid), "subtype": .string(backup.kind.rawValue),
                 "ctime": .int(Int(backup.date.timeIntervalSince1970)), "size": .int(backup.size), "content": "backup",
-                "format": .string(backup.kind == .qemu ? "vma.zst" : "tar.zst"),
+                "format": .string(backup.volume.hasPrefix("pbs:") ? (backup.kind == .qemu ? "pbs-vm" : "pbs-ct") : backup.kind == .qemu ? "vma.zst" : "tar.zst"),
             ]
             if !backup.notes.isEmpty { entry["notes"] = .string(backup.notes) }
             if backup.isProtected { entry["protected"] = 1 }
@@ -145,6 +151,10 @@ extension DemoState {
         config["digest"] = nil
         config = Self.movingDisks(of: config, from: backup.vmid, to: vmid, storage: parameters["storage"])
         let nameKey = kind == .qemu ? "name" : "hostname"
+        // Overrides of the restore dialog replace the backup's values.
+        for key in [nameKey, "cores", "memory"] + (kind == .qemu ? ["sockets"] : ["unprivileged"]) {
+            if let value = parameters[key] { config[key] = value }
+        }
         let name = config[nameKey] ?? "restored-\(vmid)"
 
         if let index = cluster.guests.firstIndex(where: { $0.vmid == vmid }) {
@@ -174,7 +184,11 @@ extension DemoState {
         configRevisions[vmid, default: 0] += 1
         snapshots[vmid] = nil
         currentSnapshot[vmid] = nil
-        let start = parameters["start"] == "1"
+        if let cores = parameters["cores"].flatMap(Int.init), let index = cluster.guests.firstIndex(where: { $0.vmid == vmid }) {
+            cluster.guests[index].cores = cores * (parameters["sockets"].flatMap(Int.init) ?? 1)
+        }
+        // A live restore starts the VM right away while the disks are restored in the background.
+        let start = parameters["start"] == "1" || parameters["live-restore"] == "1"
         return startTask(node: node, type: kind == .qemu ? "qmrestore" : "vzrestore", objectID: String(vmid), user: user, duration: 3) { guest in
             if start {
                 guest.isRunning = true

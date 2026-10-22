@@ -519,6 +519,8 @@ private struct GuestHardwareSections: View {
 
     private var kind: GuestKind { detail.reference.kind }
     private var isVM: Bool { kind == .virtualMachine }
+    /// Device passthrough into containers is limited to root@pam.
+    private var isRoot: Bool { detail.connection.profile.userID == "root@pam" }
 
     var body: some View {
         if !detail.pendingChanges.isEmpty {
@@ -587,7 +589,9 @@ private struct GuestHardwareSections: View {
                     HardwareRow(
                         systemImage: disk.isCDROM ? "opticaldisc" : disk.isUnused ? "externaldrive.badge.xmark" : "internaldrive",
                         title: disk.isUnused ? "\(disk.key) (\(String(localized: "unused")))" : disk.key,
-                        value: disk.isCDROM && disk.volume == "none" ? String(localized: "No disc") : disk.mountPoint.map { "\(disk.volume) → \($0)" } ?? disk.volume,
+                        value: disk.isCDROM && disk.volume == "none" ? String(localized: "No disc")
+                            : disk.isCDROM && disk.volume == GuestConfig.physicalCDROM ? String(localized: "Physical drive")
+                            : disk.mountPoint.map { "\(disk.volume) → \($0)" } ?? disk.volume,
                         detail: disk.size,
                         pending: detail.pendingChange(for: disk.key) != nil
                     )
@@ -664,6 +668,36 @@ private struct GuestHardwareSections: View {
                     Label("Add Network Device", systemImage: "plus.circle")
                 }
                 .accessibilityIdentifier("hardware.addNetwork")
+            }
+        }
+
+        if !isVM, !config.containerDevices.isEmpty || isRoot {
+            Section("Devices") {
+                ForEach(config.containerDevices, id: \.key) { device in
+                    let label = HardwareRow(
+                        systemImage: "memorychip",
+                        title: device.key,
+                        value: ContainerDeviceDraft(device.value).path,
+                        detail: ContainerDeviceDraft(device.value).isReadOnly ? String(localized: "Read only") : nil,
+                        pending: detail.pendingChange(for: device.key) != nil
+                    )
+                    if isRoot {
+                        NavigationLink {
+                            ContainerDeviceEditor(detail: detail, config: config, key: device.key)
+                        } label: { label }
+                        .accessibilityIdentifier("hardware.\(device.key)")
+                    } else {
+                        label.locked("Only root@pam can change device passthrough.")
+                    }
+                }
+                if isRoot {
+                    NavigationLink {
+                        ContainerDeviceEditor(detail: detail, config: config, key: nil)
+                    } label: {
+                        Label("Add Device Passthrough", systemImage: "plus.circle")
+                    }
+                    .accessibilityIdentifier("hardware.addDevicePassthrough")
+                }
             }
         }
 

@@ -135,7 +135,15 @@ public struct PCIDeviceDraft: Sendable, Equatable {
     public var primaryGPU = false
     /// Mediated device type, e.g. a vGPU profile.
     public var mdev = ""
+    /// IDs the guest sees instead of the device's own, e.g. `0x8086`; empty to pass them unchanged.
+    public var vendorID = ""
+    public var deviceID = ""
+    public var subVendorID = ""
+    public var subDeviceID = ""
     private var others = PropertyString(items: [])
+
+    /// Keys of the ID overrides, in the order of the web interface.
+    static let idKeys = ["vendor-id", "device-id", "sub-vendor-id", "sub-device-id"]
 
     public init() {}
 
@@ -153,7 +161,11 @@ public struct PCIDeviceDraft: Sendable, Equatable {
         romBar = property["rombar"] != "0"
         primaryGPU = property["x-vga"] == "1"
         mdev = property["mdev"] ?? ""
-        others.items = property.items.filter { $0.key != nil && !["host", "mapping", "pcie", "rombar", "x-vga", "mdev"].contains($0.key!) }
+        vendorID = property["vendor-id"] ?? ""
+        deviceID = property["device-id"] ?? ""
+        subVendorID = property["sub-vendor-id"] ?? ""
+        subDeviceID = property["sub-device-id"] ?? ""
+        others.items = property.items.filter { $0.key != nil && !(["host", "mapping", "pcie", "rombar", "x-vga", "mdev"] + Self.idKeys).contains($0.key!) }
     }
 
     public var stringValue: String {
@@ -167,11 +179,23 @@ public struct PCIDeviceDraft: Sendable, Equatable {
         if !romBar { property["rombar"] = "0" }
         if primaryGPU { property["x-vga"] = "1" }
         if !mdev.isEmpty { property["mdev"] = mdev }
+        for (key, value) in zip(Self.idKeys, [vendorID, deviceID, subVendorID, subDeviceID]) where !value.trimmed.isEmpty {
+            property[key] = value.trimmed.lowercased()
+        }
         property.items += others.items
         return property.stringValue
     }
 
-    public var isComplete: Bool { usesMapping ? !mapping.isEmpty : !host.isEmpty }
+    public var isComplete: Bool { (usesMapping ? !mapping.isEmpty : !host.isEmpty) && idProblem == nil }
+
+    /// Proxmox takes the ID overrides as four hexadecimal digits with `0x`, e.g. `0x8086`.
+    public var idProblem: String? {
+        let valid = [vendorID, deviceID, subVendorID, subDeviceID].allSatisfy { value in
+            let value = value.trimmed
+            return value.isEmpty || (value.count == 6 && value.lowercased().hasPrefix("0x") && value.dropFirst(2).allSatisfy(\.isHexDigit))
+        }
+        return valid ? nil : String(localized: "Enter IDs as 0x and four hexadecimal digits, e.g. 0x8086.")
+    }
 
     /// `0000:01:00.1` → `0000:01:00`.
     public static func withoutFunction(_ address: String) -> String {
@@ -280,9 +304,10 @@ public struct IVSHMEMDraft: Sendable, Equatable {
 }
 
 extension GuestConfig {
-    /// Value for a new EFI vars disk; Proxmox allocates the right size.
-    public static func efiDiskValue(storage: String, preEnrolledKeys: Bool) -> String {
+    /// Value for a new EFI vars disk; Proxmox allocates the right size. `format` is for storages with several image formats.
+    public static func efiDiskValue(storage: String, preEnrolledKeys: Bool, format: String? = nil) -> String {
         var property = PropertyString(items: [(key: nil, value: "\(storage):1")])
+        if let format { property["format"] = format }
         property["efitype"] = "4m"
         if preEnrolledKeys {
             property["pre-enrolled-keys"] = "1"
@@ -323,6 +348,25 @@ public struct NodePCIDevice: Decodable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// A mediated device type a PCI device offers, e.g. a vGPU profile, from `GET .../hardware/pci/{id}/mdev`.
+public struct MediatedDeviceType: Decodable, Sendable, Hashable, Identifiable {
+    public let type: String
+    public let name: String?
+    /// Instances of this type that can still be created.
+    public let available: Int?
+    public let description: String?
+
+    public var id: String { type }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        type = container.lossyString(AnyCodingKey("type")) ?? ""
+        name = container.lossyString(AnyCodingKey("name"))
+        available = container.lossyInt(AnyCodingKey("available"))
+        description = container.lossyString(AnyCodingKey("description")).flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
 /// A USB device of a node.
 public struct NodeUSBDevice: Decodable, Sendable, Hashable, Identifiable {
     public let busNumber: Int
@@ -355,11 +399,33 @@ public struct NodeUSBDevice: Decodable, Sendable, Hashable, Identifiable {
 public struct ResourceMapping: Decodable, Sendable, Hashable, Identifiable {
     public let id: String
     public let description: String?
+    /// PCI mappings: whether the mapped devices offer mediated devices.
+    public let mdev: Bool?
+
+    enum CodingKeys: String, CodingKey { case id, description, mdev }
+
+    public init(id: String, description: String? = nil, mdev: Bool? = nil) {
+        self.id = id
+        self.description = description
+        self.mdev = mdev
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        description = try? container.decode(String.self, forKey: .description)
+        mdev = (try? container.decode(Bool.self, forKey: .mdev)) ?? (try? container.decode(Int.self, forKey: .mdev)).map { $0 != 0 }
+    }
 }
 
 extension PVE {
     public static func pciDevices(node: String) -> APIRequest<[NodePCIDevice]> {
         APIRequest(.get, "/nodes/\(node)/hardware/pci", parameters: ["pci-class-blacklist": ""])
+    }
+
+    /// Mediated device types of a host PCI device (`0000:01:00.0`) or of a PCI mapping's device on the node.
+    public static func mediatedDeviceTypes(node: String, device: String) -> APIRequest<[MediatedDeviceType]> {
+        APIRequest(.get, "/nodes/\(node)/hardware/pci/\(escapePath(device))/mdev")
     }
 
     public static func usbDevices(node: String) -> APIRequest<[NodeUSBDevice]> {

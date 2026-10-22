@@ -23,6 +23,8 @@ public struct NodeStatus: Decodable, Sendable, Equatable {
     public var pveVersion: String?
     /// For example `7.0.14-25-pve`.
     public var kernel: String?
+    /// The node's processor architecture, `x86_64` or `aarch64`.
+    public var architecture: String?
     /// `efi` or `legacy`.
     public var bootMode: String?
     public var secureBoot: Bool
@@ -65,6 +67,7 @@ public struct NodeStatus: Decodable, Sendable, Equatable {
         let manager = container.lossyString(AnyCodingKey("pveversion"))?.split(separator: "/")
         pveVersion = manager.flatMap { $0.count > 1 ? String($0[1]) : nil }
         kernel = nested("current-kernel")?.lossyString(AnyCodingKey("release")) ?? container.lossyString(AnyCodingKey("kversion"))
+        architecture = nested("current-kernel")?.lossyString(AnyCodingKey("machine"))
         let boot = nested("boot-info")
         bootMode = boot?.lossyString(AnyCodingKey("mode"))
         secureBoot = boot?.lossyBool(AnyCodingKey("secureboot")) ?? false

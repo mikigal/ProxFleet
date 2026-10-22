@@ -572,10 +572,15 @@ struct LiveServerTests {
         restore.vmid = try await session.send(PVE.nextVMID()).value
         restore.storage = rootStorage
         restore.uniqueMACAddresses = true
+        restore.name = "restored-agent"
+        restore.cores = 1
+        restore.memoryMiB = 256
+        restore.unprivileged = true
         #expect(restore.problems.isEmpty)
         #expect(try await finish(try await session.send(PVE.restore(restore)))?.succeeded == true)
         let restored = GuestReference(node: node, vmid: restore.vmid, kind: .container)
-        #expect(try await session.send(PVE.guestConfig(restored)).name == "backup-agent")
+        let restoredConfig = try await session.send(PVE.guestConfig(restored))
+        #expect(restoredConfig.name == "restored-agent" && restoredConfig["cores"] == "1" && restoredConfig["memory"] == "256" && restoredConfig.isUnprivileged)
         var overwrite = RestoreDraft(backup: backup, source: restored)
         overwrite.storage = rootStorage
         #expect(try await finish(try await session.send(PVE.restore(overwrite)))?.succeeded == true)
@@ -583,6 +588,156 @@ struct LiveServerTests {
         #expect(try await finish(try await session.send(PVE.destroy(restored, purge: true, destroyUnreferencedDisks: true)))?.succeeded == true)
         #expect(try await finish(try await session.send(PVE.deleteBackup(node: node, volume: backup.volumeID)))?.succeeded == true)
         #expect(try await session.send(PVE.backups(node: node, storage: storage, vmid: 202)).allSatisfy { $0.volumeID != backup.volumeID })
+    }
+
+    /// Guest options found missing against the web interface: an emulated ARM VM with an imported disk and a physical
+    /// CD/DVD drive, an EFI disk in qcow2, TPM 1.2, PCI ID overrides, container device passthrough, a qcow2 full clone
+    /// and restore overrides. Uses a temporary directory storage for qcow2 images.
+    @Test(.timeLimit(.minutes(5))) func guestHardwareOptions() async throws {
+        let (session, node) = try await rootSession()
+        func finish(_ upid: String?) async throws -> TaskStatus? { try await finishTask(session, node: node, upid) }
+        func destroy(_ guest: GuestReference) async throws {
+            #expect(try await finish(try await session.send(PVE.destroy(guest, purge: true, destroyUnreferencedDisks: true)))?.succeeded == true)
+        }
+        try #require(try await !session.send(PVE.storageConfigs()).contains { $0.storage == "pflive-images" }, "left over from an earlier run")
+
+        // A small cloud image to import, kept for later runs.
+        let image = "local:import/proxfleet-cirros.qcow2"
+        if try await !session.send(PVE.storageContent(node: node, storage: "local", content: "import")).contains(where: { $0.volumeID == image }) {
+            var download = StorageFileDraft(content: .import)
+            download.url = "https://download.cirros-cloud.net/0.6.3/cirros-0.6.3-x86_64-disk.img"
+            download.fileName = "proxfleet-cirros.qcow2"
+            #expect(try await finish(try await session.send(PVE.downloadURL(node: node, storage: "local", download)))?.succeeded == true)
+        }
+        var directory = StorageConfigDraft(type: .dir)
+        directory.storage = "pflive-images"
+        directory.path = "/var/lib/vz/pflive-images"
+        directory.content = ["images"]
+        directory.nodes = [node]
+        _ = try await session.send(PVE.createStorage(directory))
+        let files = try #require(try await session.send(PVE.storages(node: node, content: "images")).first { $0.storage == "pflive-images" })
+        #expect(files.preferredDiskFormat == "qcow2")
+
+        var arm = VMCreationDraft(node: node, vmid: try await session.send(PVE.nextVMID()).value)
+        arm.name = "arm-test"
+        arm.setHostArchitecture(try #require(try await session.send(PVE.nodeStatus(node)).architecture))
+        #expect(!arm.isARM)
+        arm.setArchitecture("aarch64")
+        arm.efiStorage = files.storage
+        arm.efiFormat = files.preferredDiskFormat
+        arm.disks[0].storage = "local-lvm"
+        arm.disks[0].isImport = true
+        arm.disks[0].importSource = image
+        arm.isoVolume = GuestConfig.physicalCDROM
+        arm.memoryMiB = 512
+        arm.networks = []
+        #expect(arm.problems.isEmpty)
+        let created = try await finish(try await session.send(PVE.createVM(arm)))
+        #expect(created?.succeeded == true, "\(created?.exitStatus ?? "")")
+        let armVM = GuestReference(node: node, vmid: arm.vmid, kind: .virtualMachine)
+        var config = try await session.send(PVE.guestConfig(armVM))
+        #expect(config["arch"] == "aarch64" && config.bios == "ovmf" && config["machine"] == nil)
+        #expect(config["efidisk0"]?.hasPrefix("pflive-images:\(arm.vmid)/vm-\(arm.vmid)-disk-0.qcow2") == true)
+        #expect(config["scsi0"]?.contains("size=112M") == true && config["scsi0"]?.contains("import-from") == false)
+        #expect(config["scsi2"] == "cdrom,media=cdrom")
+        #expect(config.bootOrder == ["scsi0", "scsi2"])
+
+        // The test server has no CD/DVD drive, so the emulated VM starts with an empty one.
+        var eject = GuestConfigUpdate()
+        eject.set("scsi2", GuestConfig.cdromValue(isoVolume: nil))
+        _ = try await finish(try await session.send(PVE.updateConfig(armVM, eject)))
+        #expect(try await finish(try await session.send(PVE.powerAction(.start, on: armVM)))?.succeeded == true)
+        #expect(try await session.send(PVE.guestStatus(armVM)).powerState == .running)
+        _ = try await finish(try await session.send(PVE.powerAction(.stop, on: armVM)))
+
+        var clone = CloneDraft(source: armVM, isTemplate: false, vmid: try await session.send(PVE.nextVMID()).value)
+        clone.storage = files.storage
+        clone.format = "qcow2"
+        #expect(try await finish(try await session.send(PVE.clone(clone)))?.succeeded == true)
+        let cloned = GuestReference(node: node, vmid: clone.vmid, kind: .virtualMachine)
+        let clonedDisk = try await session.send(PVE.guestConfig(cloned))["scsi0"] ?? ""
+        #expect(clonedDisk.hasPrefix("pflive-images:\(clone.vmid)/vm-\(clone.vmid)-disk-") && clonedDisk.contains(".qcow2"))
+        try await destroy(cloned)
+
+        // A backup restored as a new VM with other settings.
+        var backup = BackupDraft(guest: armVM)
+        backup.storage = "local"
+        backup.mode = .stop
+        let before = Set(try await session.send(PVE.backups(node: node, storage: "local", vmid: arm.vmid)).map(\.volumeID))
+        #expect(try await finish(try await session.send(PVE.backupNow(backup)))?.succeeded == true)
+        let archive = try #require(try await session.send(PVE.backups(node: node, storage: "local", vmid: arm.vmid)).first { !before.contains($0.volumeID) })
+        var restore = RestoreDraft(backup: archive, source: armVM)
+        restore.overwrites = false
+        restore.vmid = try await session.send(PVE.nextVMID()).value
+        restore.storage = "local-lvm"
+        restore.name = "arm-restored"
+        restore.cores = 2
+        restore.sockets = 2
+        restore.memoryMiB = 768
+        restore.bandwidthLimit = 50
+        #expect(restore.problems.isEmpty)
+        let restoring = try await finish(try await session.send(PVE.restore(restore)))
+        #expect(restoring?.succeeded == true, "\(restoring?.exitStatus ?? "")")
+        let restored = GuestReference(node: node, vmid: restore.vmid, kind: .virtualMachine)
+        let restoredConfig = try await session.send(PVE.guestConfig(restored))
+        #expect(restoredConfig.name == "arm-restored" && restoredConfig["cores"] == "2" && restoredConfig["sockets"] == "2" && restoredConfig["memory"] == "768")
+        try await destroy(restored)
+        #expect(try await finish(try await session.send(PVE.deleteBackup(node: node, volume: archive.volumeID)))?.succeeded == true)
+        try await destroy(armVM)
+
+        // TPM 1.2 and a PCI device that shows other IDs, on a VM that never starts.
+        var x86 = VMCreationDraft(node: node, vmid: try await session.send(PVE.nextVMID()).value)
+        x86.name = "pci-test"
+        x86.machine = "q35"
+        x86.addTPM = true
+        x86.tpmStorage = "local-lvm"
+        x86.tpmVersion = "v1.2"
+        x86.disks = []
+        x86.networks = []
+        #expect(try await finish(try await session.send(PVE.createVM(x86)))?.succeeded == true)
+        let pciVM = GuestReference(node: node, vmid: x86.vmid, kind: .virtualMachine)
+        let device = try #require(try await session.send(PVE.pciDevices(node: node)).first { $0.deviceName != nil })
+        var pci = PCIDeviceDraft()
+        pci.host = device.id
+        pci.pcie = true
+        pci.vendorID = "0x8086"
+        pci.deviceID = "0x10D3"
+        pci.subVendorID = "0x1af4"
+        pci.subDeviceID = "0x1100"
+        #expect(pci.isComplete)
+        var addPCI = GuestConfigUpdate()
+        addPCI.set("hostpci0", pci.stringValue)
+        _ = try await finish(try await session.send(PVE.updateConfig(pciVM, addPCI)))
+        config = try await session.send(PVE.guestConfig(pciVM))
+        #expect(config["tpmstate0"]?.contains("version=v1.2") == true)
+        let stored = PCIDeviceDraft(try #require(config["hostpci0"]))
+        #expect(stored.vendorID == "0x8086" && stored.deviceID == "0x10d3" && stored.subVendorID == "0x1af4" && stored.subDeviceID == "0x1100")
+        #expect(try await session.send(PVE.mediatedDeviceTypes(node: node, device: device.id)).isEmpty)
+        try await destroy(pciVM)
+        _ = try await session.send(PVE.deleteStorage("pflive-images"))
+
+        // Device passthrough into container 201; while it runs, the change waits for its restart.
+        let container = GuestReference(node: node, vmid: 201, kind: .container)
+        try #require(try await session.send(PVE.guestConfig(container)).containerDevices.isEmpty, "CT 201 already has devices")
+        var passthrough = ContainerDeviceDraft()
+        passthrough.path = "/dev/net/tun"
+        passthrough.gid = 100
+        passthrough.mode = "0660"
+        passthrough.isReadOnly = true
+        #expect(passthrough.problems.isEmpty)
+        var addDevice = GuestConfigUpdate()
+        addDevice.set("dev0", passthrough.stringValue)
+        _ = try await finish(try await session.send(PVE.updateConfig(container, addDevice)))
+        let devices = try await session.send(PVE.pendingConfig(container)).filter { $0.key == "dev0" }
+        #expect(devices.first.flatMap { $0.pending ?? $0.value }.map(ContainerDeviceDraft.init) == passthrough)
+        var removeDevice = GuestConfigUpdate()
+        removeDevice.set("dev0", nil)
+        _ = try await finish(try await session.send(PVE.updateConfig(container, removeDevice)))
+        if try await session.send(PVE.pendingConfig(container)).contains(where: { $0.key == "dev0" && $0.isPendingDeletion }) {
+            // A running container gets a device right away, but drops it only when it restarts.
+            #expect(try await finish(try await session.send(PVE.powerAction(.reboot, on: container)))?.succeeded == true)
+        }
+        #expect(try await session.send(PVE.guestConfig(container)).containerDevices.isEmpty)
     }
 
     /// Status, history, services, packages, journal and tasks of the node, and a service restart.

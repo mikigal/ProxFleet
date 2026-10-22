@@ -18,6 +18,8 @@ extension DemoState {
             DemoFile(volume: "local:iso/debian-13.1.0-amd64-netinst.iso", content: "iso", size: 790_626_304, created: now.addingTimeInterval(-86_400 * 40)),
             DemoFile(volume: "local:iso/ubuntu-24.04.3-live-server-amd64.iso", content: "iso", size: 3_213_064_192, created: now.addingTimeInterval(-86_400 * 21)),
             DemoFile(volume: "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst", content: "vztmpl", size: 128_974_848, created: now.addingTimeInterval(-86_400 * 30)),
+            DemoFile(volume: "local:import/debian-13-genericcloud-amd64.qcow2", content: "import", size: 424_673_280, created: now.addingTimeInterval(-86_400 * 9)),
+            DemoFile(volume: "local:import/windows-server-2025-eval.vmdk", content: "import", size: 11_811_160_064, created: now.addingTimeInterval(-86_400 * 6)),
             DemoFile(volume: "local:snippets/hookscript.pl", content: "snippets", size: 1_204, created: now.addingTimeInterval(-86_400 * 12)),
             DemoFile(volume: "local:snippets/user-data.yaml", content: "snippets", size: 512, created: now.addingTimeInterval(-86_400 * 12)),
         ]
@@ -94,7 +96,9 @@ extension DemoState {
         return (files.filter { $0.availableAt <= now } + downloaded)
             .filter { content == nil || $0.content == content }
             .map { file in
-                let format = file.content == "iso" ? "iso" : file.content == "snippets" ? "snippet" : file.volume.hasSuffix(".zst") ? "tzst" : "txz"
+                let format = file.content == "iso" ? "iso" : file.content == "snippets" ? "snippet"
+                    : file.content == "import" ? String(file.volume.split(separator: ".").last ?? "raw")
+                    : file.volume.hasSuffix(".zst") ? "tzst" : "txz"
                 return [
                     "volid": .string(file.volume), "content": .string(file.content), "size": .int(file.size),
                     "ctime": .int(Int(file.created.timeIntervalSince1970)), "format": .string(format),

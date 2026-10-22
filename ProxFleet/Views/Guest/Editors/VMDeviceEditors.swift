@@ -170,20 +170,30 @@ private struct EFIDiskEditor: View {
     let detail: GuestDetail
     let config: GuestConfig
     @State private var storage = ""
+    @State private var format: String?
     @State private var preEnrolledKeys = true
     @State private var storages: [StorageInfo] = []
 
     var body: some View {
-        DeviceForm(detail: detail, config: config, kind: .efiDisk, key: nil, value: storage.isEmpty ? nil : GuestConfig.efiDiskValue(storage: storage, preEnrolledKeys: preEnrolledKeys), original: nil) { _ in
+        DeviceForm(detail: detail, config: config, kind: .efiDisk, key: nil, value: storage.isEmpty ? nil : GuestConfig.efiDiskValue(storage: storage, preEnrolledKeys: preEnrolledKeys, format: format), original: nil) { _ in
             Section {
                 StoragePicker(storage: $storage, storages: storages)
+                if let formats = selectedStorage?.diskFormats, formats.count > 1 {
+                    DiskFormatPicker(formats: formats, selection: $format)
+                }
                 Toggle("Pre-Enroll Keys", isOn: $preEnrolledKeys)
             } footer: {
                 Text("Stores the UEFI settings. Pre-enrolled keys turn on Secure Boot with the Microsoft keys, which Windows 11 expects.")
             }
         }
-        .task { storages = await loadImageStorages(detail, into: $storage) }
+        .onChange(of: storage) { format = selectedStorage?.preferredDiskFormat }
+        .task {
+            storages = await loadImageStorages(detail, into: $storage)
+            format = selectedStorage?.preferredDiskFormat
+        }
     }
+
+    private var selectedStorage: StorageInfo? { storages.first { $0.storage == storage } }
 }
 
 private struct TPMStateEditor: View {
@@ -316,6 +326,7 @@ private struct PCIDeviceEditor: View {
     @State private var draft: PCIDeviceDraft
     @State private var devices: [NodePCIDevice] = []
     @State private var mappings: [ResourceMapping] = []
+    @State private var mediatedTypes: [MediatedDeviceType] = []
 
     init(detail: GuestDetail, config: GuestConfig, key: String?) {
         self.detail = detail
@@ -360,6 +371,7 @@ private struct PCIDeviceEditor: View {
                     }
                     .pickerStyle(.navigationLink)
                     Toggle("All Functions", isOn: $draft.allFunctions)
+                        .disabled(!draft.mdev.isEmpty)
                 } else {
                     LabeledContent("Device", value: draft.host.isEmpty ? "—" : draft.host)
                         .locked("Only root@pam can pass host devices directly. Ask an administrator for a resource mapping instead.")
@@ -367,28 +379,132 @@ private struct PCIDeviceEditor: View {
             } footer: {
                 Text("The host needs IOMMU enabled. A device is unavailable to the host while the VM runs.")
             }
-            Section("Options") {
-                Toggle("PCI Express", isOn: $draft.pcie)
-                Toggle("ROM-Bar", isOn: $draft.romBar)
-                Toggle("Primary GPU", isOn: $draft.primaryGPU)
-                LabeledContent("Mediated Device") {
-                    TextField("None", text: $draft.mdev)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+            Section {
+                if offersMediatedDevices || !draft.mdev.isEmpty {
+                    NavigationLink {
+                        MediatedTypeList(types: mediatedTypes, selection: $draft.mdev)
+                    } label: {
+                        LabeledContent("MDev Type", value: draft.mdev.isEmpty ? String(localized: "None") : draft.mdev)
+                    }
+                    .onChange(of: draft.mdev) { if !draft.mdev.isEmpty { draft.allFunctions = false } }
                 }
+                Toggle("Primary GPU", isOn: $draft.primaryGPU)
+                Toggle("PCI Express", isOn: $draft.pcie)
+                    .disabled(!isQ35 && !draft.pcie)
+                Toggle("ROM-Bar", isOn: $draft.romBar)
+            } header: {
+                Text("Options")
+            } footer: {
+                if !isQ35 {
+                    Text("PCI Express needs the q35 machine type.")
+                }
+            }
+            Section {
+                PCIIDField(title: "Vendor ID", value: $draft.vendorID)
+                PCIIDField(title: "Device ID", value: $draft.deviceID)
+                PCIIDField(title: "Sub-Vendor ID", value: $draft.subVendorID)
+                PCIIDField(title: "Sub-Device ID", value: $draft.subDeviceID)
+                FieldError(message: draft.idProblem)
+            } header: {
+                Text("Advanced")
+            } footer: {
+                Text("IDs the guest sees instead of the device's own, e.g. 0x8086. Leave them empty to pass the device's IDs.")
             }
         }
         .task {
             if detail.isRoot { devices = await detail.load(PVE.pciDevices(node: detail.reference.node)) }
             mappings = await detail.load(PVE.resourceMappings("pci"))
         }
+        // Devices and mappings load after the editor opens, which can turn on mediated devices.
+        .task(id: "\(mediatedSource ?? "")/\(offersMediatedDevices)") {
+            mediatedTypes = []
+            guard let mediatedSource, offersMediatedDevices else { return }
+            mediatedTypes = await detail.load(PVE.mediatedDeviceTypes(node: detail.reference.node, device: mediatedSource))
+        }
+    }
+
+    private var isQ35: Bool { (config.machine ?? "").contains("q35") }
+
+    /// The host device or mapping whose mediated device types apply.
+    private var mediatedSource: String? {
+        let source = draft.usesMapping ? draft.mapping : draft.host
+        return source.isEmpty ? nil : source
+    }
+
+    /// Whether the chosen device or mapping can create mediated devices such as vGPUs.
+    private var offersMediatedDevices: Bool {
+        if draft.usesMapping { return mappings.first { $0.id == draft.mapping }?.mdev ?? false }
+        return devices.first { $0.id == draft.host }?.mdev ?? false
     }
 
     private var mappingNames: [String] {
         var names = mappings.map(\.id)
         if !draft.mapping.isEmpty, !names.contains(draft.mapping) { names.insert(draft.mapping, at: 0) }
         return names
+    }
+}
+
+/// Mediated device types with their free instances and details, to choose one or none.
+private struct MediatedTypeList: View {
+    let types: [MediatedDeviceType]
+    @Binding var selection: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            row(type: "", title: String(localized: "None"), detail: nil)
+            ForEach(types) { type in
+                row(
+                    type: type.type,
+                    title: type.name.map { "\($0) (\(type.type))" } ?? type.type,
+                    detail: [type.available.map { String(localized: "\($0) available") }, type.description?.replacingOccurrences(of: "\n", with: " · ")]
+                        .compactMap { $0 }.joined(separator: " · ")
+                )
+            }
+            if !selection.isEmpty, !types.contains(where: { $0.type == selection }) {
+                row(type: selection, title: selection, detail: nil)
+            }
+        }
+        .navigationTitle("MDev Type")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func row(type: String, title: String, detail: String?) -> some View {
+        Button {
+            selection = type
+            dismiss()
+        } label: {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(title).foregroundStyle(.primary)
+                    if let detail, !detail.isEmpty {
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if selection == type {
+                    Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A PCI ID override such as `0x8086`, empty for the device's own.
+private struct PCIIDField: View {
+    let title: LocalizedStringKey
+    @Binding var value: String
+
+    var body: some View {
+        LabeledContent(title) {
+            TextField("From Device", text: $value)
+                .multilineTextAlignment(.trailing)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.body.monospaced())
+        }
     }
 }
 

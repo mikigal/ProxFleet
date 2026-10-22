@@ -372,6 +372,8 @@ private struct RestoreView: View {
     let detail: GuestDetail
     let onRestored: (GuestReference) -> Void
     @State private var draft: RestoreDraft
+    /// Values of the backup's configuration, shown as placeholders of the overrides.
+    @State private var backupValues: [String: String] = [:]
 
     init(detail: GuestDetail, backup: BackupVolume, onRestored: @escaping (GuestReference) -> Void) {
         self.detail = detail
@@ -425,10 +427,87 @@ private struct RestoreView: View {
                     selection: $draft.storage, defaultTitle: isVM ? "From Backup Configuration" : nil
                 )
                 FieldError(message: errors["storage"])
+                LabeledContent("Bandwidth Limit") {
+                    TextField("Storage Default", value: $draft.bandwidthLimit, format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                FieldError(message: errors["bwlimit"])
                 Toggle("Unique MAC Addresses", isOn: $draft.uniqueMACAddresses)
+                if isVM, draft.backup.isOnBackupServer {
+                    Toggle("Live Restore", isOn: $draft.liveRestore)
+                }
                 Toggle("Start After Restore", isOn: $draft.startAfterRestore)
+                    .disabled(isLiveRestore)
+                if isCluster {
+                    Toggle("Add to HA", isOn: $draft.isHAManaged)
+                    FieldError(message: errors["ha-managed"])
+                }
             } footer: {
-                Text("Give a restored copy new MAC addresses when the original still runs on the same network.")
+                if isLiveRestore {
+                    Text("The VM starts right away while its disks are restored in the background. If anything goes wrong during the restore, data the VM writes meanwhile may be lost.")
+                } else {
+                    Text("Bandwidth limit in MiB/s; 0 turns off all limits. Give a restored copy new MAC addresses when the original still runs on the same network.")
+                }
+            }
+            if !isVM {
+                Section {
+                    Picker("Privilege Level", selection: $draft.unprivileged) {
+                        Text("From Backup").tag(Bool?.none)
+                        Text("Unprivileged").tag(Bool?.some(true))
+                        Text("Privileged").tag(Bool?.some(false))
+                    }
+                    FieldError(message: errors["unprivileged"])
+                }
+            }
+            Section {
+                LabeledContent(isVM ? "Name" : "Host Name") {
+                    TextField(backupValues[isVM ? "name" : "hostname"] ?? String(localized: "From Backup"), text: $draft.name)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                FieldError(message: errors[isVM ? "name" : "hostname"])
+                overrideField("Cores", value: $draft.cores, key: "cores", errors: errors)
+                if isVM {
+                    overrideField("Sockets", value: $draft.sockets, key: "sockets", errors: errors)
+                }
+                overrideField("Memory (MiB)", value: $draft.memoryMiB, key: "memory", errors: errors)
+            } header: {
+                Text("Override Settings")
+            } footer: {
+                Text("Empty fields keep the values of the backup.")
+            }
+            .task { await loadBackupValues() }
+        }
+    }
+
+    private var isLiveRestore: Bool { isVM && draft.backup.isOnBackupServer && draft.liveRestore }
+
+    /// High availability needs a cluster.
+    private var isCluster: Bool { (detail.connection.snapshot?.nodes.count ?? 0) > 1 }
+
+    @ViewBuilder
+    private func overrideField(_ title: LocalizedStringKey, value: Binding<Int?>, key: String, errors: [String: String]) -> some View {
+        LabeledContent(title) {
+            TextField(backupValues[key] ?? String(localized: "From Backup"), value: value, format: .number.grouping(.never))
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+        }
+        FieldError(message: errors[key])
+    }
+
+    private func loadBackupValues() async {
+        guard backupValues.isEmpty,
+              let text = try? await detail.connection.send(PVE.backupConfiguration(node: detail.reference.node, volume: draft.backup.volumeID))
+        else { return }
+        for line in GuestConfig.displayLines(ofBackupConfiguration: text) {
+            // Snapshot sections come after the current configuration.
+            if line.hasPrefix("[") { break }
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let key = String(line[..<colon])
+            if ["name", "hostname", "cores", "sockets", "memory"].contains(key) {
+                backupValues[key] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             }
         }
     }
