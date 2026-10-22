@@ -156,7 +156,7 @@ extension DemoState {
         }
     }
 
-    private func uptime(of info: DemoCluster.Node) -> Int {
+    func uptime(of info: DemoCluster.Node) -> Int {
         if let booted = nodeBootTimes[info.name] { return max(0, Int(Date().timeIntervalSince(booted))) }
         return 1_814_400 + Int(Date().timeIntervalSince(started))
     }

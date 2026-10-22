@@ -221,7 +221,7 @@ actor DemoState {
                 item["cpu"] = .double(Self.load(seed: node.name.unicodeScalars.reduce(0) { $0 + Int($1.value) }, elapsed: elapsed, base: 0.12, swing: 0.08))
                 item["mem"] = .int(Int(memory * gib))
                 item["disk"] = .int(Int(23 * gib))
-                item["uptime"] = .int(1_814_400 + Int(elapsed))
+                item["uptime"] = .int(uptime(of: node))
             }
             items.append(.object(item))
         }
