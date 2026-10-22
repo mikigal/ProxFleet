@@ -17,7 +17,7 @@ Early development. What works now:
 - VM and container details: usage, performance charts, IP addresses, hardware and options
 - Power actions (start, shut down, reboot, stop, reset, pause, resume, hibernate) with confirmation, hidden without the `VM.PowerMgmt` privilege
 - Task tracking: progress of started actions, recent tasks of the server, task logs
-- Consoles: a native VNC client for VMs (zoom, full screen, special keys, hardware keyboard) and a terminal for containers
+- Consoles: a native VNC client for VMs (Tight compression with a data saver, trackpad or touch mouse, Ctrl/Alt/Shift/Win and shortcuts such as Ctrl+Alt+Del, typing the clipboard, hardware keyboards as physical keys, mouse and trackpad on iPad, full screen in landscape) and a terminal for containers
 - Configuration editing: processor, memory, firmware, disks (add, grow, detach, delete), CD/DVD drives, network devices, options, boot order and notes, with pending changes shown until the next restart
 - Creating VMs (installation ISO, OS-specific defaults such as UEFI and TPM for Windows 11, disks, CPU, memory, network devices) and containers (templates, which can be downloaded from the app, root password or SSH keys, mount points, network devices and DNS), with the web interface's advanced options behind an Advanced switch
 - Snapshots (take with or without RAM, roll back, describe, delete), cloning (full or linked from templates, from a snapshot), converting to a template and deleting guests

@@ -43,7 +43,8 @@ struct GuestDetailView: View {
             }
             .onDisappear {
                 terminal?.disconnect()
-                vnc?.disconnect()
+                // The full-screen console covers this screen but keeps the session.
+                if vnc?.isInFullScreen != true { vnc?.disconnect() }
             }
             .navigationTitle(detail.name)
             .navigationSubtitle(subtitle)

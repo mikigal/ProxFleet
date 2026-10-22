@@ -8,6 +8,23 @@
 	The app still connects over HTTPS only, and accepts a certificate only when the system trusts it
 	or the user confirmed its SHA-256 fingerprint (see URLSessionTransport).
 	-->
+	<!-- iPhone screens stay portrait; the full-screen VM console unlocks landscape (see OrientationLock). -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<!-- Mice and trackpads arrive as pointer events with buttons and scrolling, which the VM console passes on. -->
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
