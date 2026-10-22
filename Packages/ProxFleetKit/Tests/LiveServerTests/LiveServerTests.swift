@@ -575,6 +575,23 @@ struct LiveServerTests {
         #expect(try await !session.send(PVE.nodeTasks(node: node, limit: 5)).isEmpty)
     }
 
+    /// A backup of VM 101 is stopped while it runs: the task fails with the interruption and leaves no backup behind.
+    @Test func stoppingATask() async throws {
+        let (session, node) = try await rootSession()
+        var draft = BackupDraft(guest: GuestReference(node: node, vmid: 101, kind: .virtualMachine))
+        draft.storage = "local"
+        draft.compression = .none
+        draft.notes = "ProxFleet stop test"
+        let upid = try await session.send(PVE.backupNow(draft))
+        try await Task.sleep(for: .seconds(2))
+        try #require(try await session.send(PVE.taskStatus(node: node, upid: upid)).isRunning, "the backup finished before it could be stopped")
+        _ = try await session.send(PVE.stopTask(node: node, upid: upid))
+        let status = try #require(try await finishTask(session, node: node, upid))
+        #expect(!status.succeeded)
+        #expect(status.exitStatus == "interrupted by signal")
+        #expect(try await !session.send(PVE.backups(node: node, storage: "local", vmid: 101)).contains { $0.notes == "ProxFleet stop test" })
+    }
+
     /// DNS, hosts and time zone are written back unchanged; a port-less bridge is created, applied and removed again.
     @Test func nodeSystemAndNetwork() async throws {
         let (session, node) = try await rootSession()

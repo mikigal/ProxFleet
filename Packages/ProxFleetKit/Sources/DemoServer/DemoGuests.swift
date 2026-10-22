@@ -60,6 +60,20 @@ extension DemoState {
             return response
         }
 
+        if parts[2] == "tasks", parts.count == 4, method == .delete {
+            guard let index = tasks.firstIndex(where: { $0.upid == parts[3] }) else { return failure(500, "no such task") }
+            if tasks[index].user != user, !privileges(for: user).contains("Sys.Modify") {
+                return failure(403, "Permission check failed (/nodes/\(node), Sys.Modify)")
+            }
+            // A stopped task ends now, fails and leaves its guest unchanged.
+            if !tasks[index].isFinished(at: Date()) {
+                tasks[index].duration = Date().timeIntervalSince(tasks[index].startedAt)
+                tasks[index].error = "interrupted by signal"
+                tasks[index].apply = nil
+                tasks[index].isApplied = true
+            }
+            return success(nil)
+        }
         if parts[2] == "tasks", parts.count == 5 {
             guard let task = tasks.first(where: { $0.upid == parts[3] }) else { return failure(500, "no such task") }
             switch parts[4] {

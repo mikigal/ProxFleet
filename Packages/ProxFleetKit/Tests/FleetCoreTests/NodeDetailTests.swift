@@ -50,6 +50,26 @@ struct NodeDetailTests {
         #expect(detail.tasks?.map(\.type).prefix(2) == ["aptupdate", "srvstop"])
     }
 
+    @Test func stoppedTaskFailsWithoutAnAlert() async throws {
+        let connection = try await connection()
+        let upid = try #require(try await connection.send(PVE.refreshPackageIndex(node: "pve1")))
+        let task = try connection.tasks.track(upid)
+        #expect(await connection.canStopTask(startedBy: task.upid.user, node: "pve1"))
+        try await connection.stopTask(node: "pve1", upid: upid)
+        #expect(await connection.tasks.result(of: task.id) == .failed("interrupted by signal"))
+        #expect(connection.tasks.unreportedFailure == nil)
+        let log = try await connection.send(PVE.taskLog(node: "pve1", upid: upid))
+        #expect(log.map(\.text) == ["TASK ERROR: interrupted by signal"])
+    }
+
+    @Test func auditorCannotStopOthersTasks() async throws {
+        let root = try await connection()
+        let upid = try #require(try await root.send(PVE.refreshPackageIndex(node: "pve1")))
+        let auditor = try await connection(username: "auditor")
+        #expect(await !auditor.canStopTask(startedBy: "root@pve", node: "pve1"))
+        await #expect(throws: ProxmoxError.self) { try await auditor.stopTask(node: "pve1", upid: upid) }
+    }
+
     @Test func rebootTakesTheNodeOffline() async throws {
         let connection = try await connection()
         let detail = NodeDetail(node: "pve2", connection: connection)

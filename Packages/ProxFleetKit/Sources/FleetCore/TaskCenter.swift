@@ -70,6 +70,13 @@ public final class TaskCenter {
         if case .failed = tasks[index].state { unreportedFailure = tasks[index] }
     }
 
+    /// The user stopped the task on purpose, so its failure is not reported.
+    func markStopped(_ id: String) {
+        guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[index].reportsFailure = false
+        if unreportedFailure?.id == id { unreportedFailure = nil }
+    }
+
     public func acknowledgeFailure() {
         unreportedFailure = nil
     }

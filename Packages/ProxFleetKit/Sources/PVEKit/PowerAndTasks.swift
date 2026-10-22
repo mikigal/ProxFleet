@@ -159,6 +159,11 @@ extension PVE {
         APIRequest(.get, "/nodes/\(node)/tasks/\(escapePath(upid))/log", parameters: ["start": .int(start), "limit": .int(limit)])
     }
 
+    /// Stops a running task. Needs `Sys.Modify` on `/nodes/{node}` unless the user started the task.
+    public static func stopTask(node: String, upid: String) -> APIRequest<Nothing> {
+        APIRequest(.delete, "/nodes/\(node)/tasks/\(escapePath(upid))")
+    }
+
     public static func clusterTasks() -> APIRequest<[ClusterTask]> {
         APIRequest(.get, "/cluster/tasks")
     }

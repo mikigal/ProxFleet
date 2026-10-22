@@ -8,6 +8,8 @@ struct TasksView: View {
     @State private var recent: [ClusterTask] = []
     @State private var error: String?
     @State private var hasLoaded = false
+    @State private var stopping: ClusterTask?
+    @State private var stopError: String?
 
     var body: some View {
         List {
@@ -29,10 +31,27 @@ struct TasksView: View {
                     NavigationLink(value: ServerRoute.task(node: task.node, upid: task.upid)) {
                         ClusterTaskRow(task: task, showsGuest: true)
                     }
+                    .swipeActions {
+                        if task.isRunning {
+                            Button("Stop", systemImage: "stop.circle") { stopping = task }
+                                .tint(.red)
+                        }
+                    }
                 }
             }
         }
         .navigationTitle("Tasks")
+        .alert("Stop this task?", isPresented: Binding(get: { stopping != nil }, set: { if !$0 { stopping = nil } }), presenting: stopping) { task in
+            Button("Cancel", role: .cancel) {}
+            Button("Stop", role: .destructive) { Task { await stop(task) } }
+        } message: { task in
+            Text("\(TaskDescription.title(type: task.type, objectID: task.objectID)) is interrupted where it is. What it already did is not undone.")
+        }
+        .alert("Cannot Stop the Task", isPresented: Binding(get: { stopError != nil }, set: { if !$0 { stopError = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(stopError ?? "")
+        }
         .overlay {
             if !hasLoaded {
                 ProgressView()
@@ -60,6 +79,15 @@ struct TasksView: View {
             self.error = error.localizedDescription
         }
         hasLoaded = true
+    }
+
+    private func stop(_ task: ClusterTask) async {
+        do {
+            try await connection.stopTask(node: task.node, upid: task.upid)
+            await load()
+        } catch {
+            stopError = error.localizedDescription
+        }
     }
 }
 

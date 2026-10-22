@@ -277,6 +277,18 @@ public final class ServerConnection: Identifiable {
         }
     }
 
+    /// Stops a running task. A task the app follows does not report the resulting failure.
+    public func stopTask(node: String, upid: String) async throws {
+        tasks.markStopped(upid)
+        _ = try await session.send(PVE.stopTask(node: node, upid: upid))
+    }
+
+    /// Whether the user may stop a task: their own tasks always, others with `Sys.Modify` on the node.
+    public func canStopTask(startedBy user: String, node: String) async -> Bool {
+        if user == profile.userID { return true }
+        return (try? await session.privileges(on: "/nodes/\(node)"))?.contains("Sys.Modify") ?? true
+    }
+
     /// The authenticated session, for features such as consoles that talk to the API directly.
     public var apiSession: ProxmoxSession { session }
 
