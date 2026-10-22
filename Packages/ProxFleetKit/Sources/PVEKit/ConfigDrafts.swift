@@ -161,15 +161,6 @@ extension GuestConfig {
         (0..<slots).map { "\(prefix)\($0)" }.first { values[$0] == nil }
     }
 
-    /// Value for a new disk: `local-lvm:32,discard=on,iothread=1`.
-    public static func newDiskValue(storage: String, sizeGiB: Int, discard: Bool, ioThread: Bool, ssdEmulation: Bool) -> String {
-        var property = PropertyString(items: [(key: nil, value: "\(storage):\(sizeGiB)")])
-        if discard { property["discard"] = "on" }
-        if ioThread { property["iothread"] = "1" }
-        if ssdEmulation { property["ssd"] = "1" }
-        return property.stringValue
-    }
-
     /// Value for a CD/DVD drive with an ISO image, or empty when `isoVolume` is nil.
     public static func cdromValue(isoVolume: String?) -> String {
         "\(isoVolume ?? "none"),media=cdrom"

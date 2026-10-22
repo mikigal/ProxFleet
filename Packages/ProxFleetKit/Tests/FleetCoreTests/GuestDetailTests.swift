@@ -29,6 +29,25 @@ struct GuestDetailTests {
         }
     }
 
+    @Test func addHardDiskWithAllOptions() async throws {
+        let detail = GuestDetail(reference: vm(101), connection: try await connection())
+        await detail.load()
+        var disk = NewVMDisk(bus: .sata, storage: "local-lvm")
+        disk.sizeGiB = 16
+        disk.format = "qcow2"
+        disk.options.cache = "writeback"
+        disk.options.includeInBackup = false
+        disk.options.limits = ["mbps_wr": "50"]
+        var update = GuestConfigUpdate()
+        update.set("sata2", disk.value)
+        try await detail.apply(update)
+        let added = try #require(detail.config?.disks.first { $0.key == "sata2" })
+        #expect(added.volume.hasPrefix("local-lvm:vm-101-disk-") && added.volume.hasSuffix(".qcow2") && added.size == "16G")
+        let options = DiskOptionsDraft(added)
+        #expect(options.cache == "writeback" && !options.includeInBackup && options.discard && options.limits == ["mbps_wr": "50"])
+        #expect(added.options["format"] == nil)
+    }
+
     @Test func loadsStatusConfigHistoryAndAddresses() async throws {
         let detail = GuestDetail(reference: vm(101), connection: try await connection())
         await detail.load()

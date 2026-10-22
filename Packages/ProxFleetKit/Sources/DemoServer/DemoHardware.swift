@@ -61,7 +61,11 @@ extension DemoState {
             allocated = "\(storage):vm-\(guest.vmid)-cloudinit"
             property["media"] = "cdrom"
         } else if let gib = Double(size) {
-            allocated = "\(storage):vm-\(guest.vmid)-disk-\(nextDiskNumber(for: guest.vmid))"
+            // The format only picks the image type; directory storages show it as the file extension.
+            let format = property["format"]
+            property["format"] = nil
+            let suffix = format.map { $0 == "raw" ? "" : ".\($0)" } ?? ""
+            allocated = "\(storage):vm-\(guest.vmid)-disk-\(nextDiskNumber(for: guest.vmid))\(suffix)"
             let isSmallStateDisk = key.hasPrefix("efidisk") || key.hasPrefix("tpmstate")
             property["size"] = isSmallStateDisk ? "4M" : "\(Int(gib))G"
         } else {

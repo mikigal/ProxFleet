@@ -294,6 +294,47 @@ struct LiveServerTests {
         #expect(try await session.send(PVE.pendingConfig(running)).allSatisfy { !$0.hasPendingChange })
     }
 
+    /// Add Hard Disk with every option of the web interface's dialog on a chosen device number, then the disk is
+    /// detached and its volume destroyed.
+    @Test func addDiskWithAllOptions() async throws {
+        let (session, node) = try await rootSession()
+        let vm = GuestReference(node: node, vmid: 101, kind: .virtualMachine)
+        func finish(_ upid: String?) async throws {
+            #expect(try await finishTask(session, node: node, upid)?.succeeded != false)
+        }
+        try #require(try await session.send(PVE.guestConfig(vm))["sata3"] == nil, "sata3 of VM 101 is in use")
+
+        var disk = NewVMDisk(bus: .sata, storage: "local-lvm")
+        disk.sizeGiB = 1
+        disk.options.cache = "writeback"
+        disk.options.asyncIO = "native"
+        disk.options.ssdEmulation = true
+        disk.options.includeInBackup = false
+        disk.options.replicate = false
+        disk.options.limits = ["mbps_rd": "100", "iops_wr": "200", "iops_wr_max": "500"]
+        var update = GuestConfigUpdate()
+        update.set("sata3", disk.value)
+        try await finish(try await session.send(PVE.updateConfig(vm, update)))
+
+        var config = try await session.send(PVE.guestConfig(vm))
+        let added = try #require(config.disks.first { $0.key == "sata3" })
+        #expect(added.volume.hasPrefix("local-lvm:vm-101-disk-") && added.size == "1G")
+        let options = DiskOptionsDraft(added)
+        #expect(options.cache == "writeback" && options.asyncIO == "native" && options.ssdEmulation && options.discard)
+        #expect(!options.includeInBackup && !options.replicate)
+        #expect(options.limits == ["mbps_rd": "100", "iops_wr": "200", "iops_wr_max": "500"])
+
+        var detach = GuestConfigUpdate()
+        detach.set("sata3", nil)
+        try await finish(try await session.send(PVE.updateConfig(vm, detach)))
+        config = try await session.send(PVE.guestConfig(vm))
+        let unused = try #require(config.disks.first { $0.isUnused && $0.volume == added.volume })
+        var destroy = GuestConfigUpdate()
+        destroy.set(unused.key, nil)
+        try await finish(try await session.send(PVE.updateConfig(vm, destroy)))
+        #expect(try await session.send(PVE.guestConfig(vm)).disks.allSatisfy { $0.volume != added.volume })
+    }
+
     /// Creates a Windows 11 VM and a container the way the creation forms do, checks them, and destroys them again.
     @Test func guestCreation() async throws {
         let (session, node) = try await rootSession()

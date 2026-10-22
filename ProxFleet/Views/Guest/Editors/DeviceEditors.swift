@@ -405,63 +405,40 @@ struct CDROMEditor: View {
     }
 }
 
-/// Creates a new disk on a storage and attaches it.
+/// Creates a new disk on a storage and attaches it, with every option of the web interface's Add Hard Disk dialog.
 struct AddDiskEditor: View {
     let detail: GuestDetail
     let config: GuestConfig
-    @State private var bus: DiskBus = .scsi
-    @State private var storage = ""
-    @State private var sizeGiB = 32
-    @State private var discard = true
-    @State private var ioThread = true
-    @State private var ssdEmulation = false
+    @State private var disk = NewVMDisk()
+    @State private var slot = 0
     @State private var storages: [StorageInfo] = []
 
     var body: some View {
         ConfigEditor(title: "Add Hard Disk", detail: detail, makeUpdate: update, footer: "New disks are available to the guest right away if it supports hot-plugging.") { errors in
-            Section {
-                Picker("Bus", selection: $bus) {
-                    ForEach(DiskBus.allCases) { Text($0.title).tag($0) }
-                }
-                Picker("Storage", selection: $storage) {
-                    ForEach(storages) { info in
-                        Text(storageLabel(info)).tag(info.storage)
-                    }
-                }
-                NumberField(title: "Size", value: $sizeGiB, range: 1...65_536, unit: "GiB")
-                if let key = nextKey { FieldError(message: errors[key]) }
-            }
-            Section("Options") {
-                Toggle("Discard", isOn: $discard)
-                if bus == .scsi || bus == .virtio {
-                    Toggle("IO Thread", isOn: $ioThread)
-                }
-                Toggle("SSD Emulation", isOn: $ssdEmulation)
-            }
+            NewDiskSections(
+                disk: $disk, key: key, error: errors[key], connection: detail.connection, node: detail.reference.node,
+                storages: storages, showsAdvanced: true, freeSlots: freeSlots, slot: $slot
+            )
         }
+        .onChange(of: disk.bus) { slot = freeSlots(disk.bus).first ?? 0 }
         .task {
             storages = await detail.load(PVE.storages(node: detail.reference.node, content: "images")).filter(\.isActive)
-            if storage.isEmpty { storage = storages.first?.storage ?? "" }
+            slot = freeSlots(disk.bus).first ?? 0
+            disk.chooseFormat(for: storages.first { $0.storage == disk.storage })
         }
     }
 
-    private var nextKey: String? { config.nextFreeKey(prefix: bus.rawValue, slots: bus.slots) }
+    private var key: String { "\(disk.bus.rawValue)\(slot)" }
 
-    private func storageLabel(_ info: StorageInfo) -> String {
-        guard let available = info.available else { return info.storage }
-        return "\(info.storage) (\(Format.bytes(available)) free)"
+    /// Device numbers of a bus no disk or drive uses yet.
+    private func freeSlots(_ bus: DiskBus) -> [Int] {
+        (0..<bus.slots).filter { config["\(bus.rawValue)\($0)"] == nil }
     }
 
     private func update() -> GuestConfigUpdate? {
-        guard let key = nextKey, !storage.isEmpty else { return nil }
+        guard !disk.storage.isEmpty, config[key] == nil, freeSlots(disk.bus).contains(slot) else { return nil }
         var update = GuestConfigUpdate()
-        update.set(key, GuestConfig.newDiskValue(
-            storage: storage,
-            sizeGiB: sizeGiB,
-            discard: discard,
-            ioThread: ioThread && (bus == .scsi || bus == .virtio),
-            ssdEmulation: ssdEmulation && bus != .virtio
-        ))
+        update.set(key, disk.value)
         return update
     }
 }

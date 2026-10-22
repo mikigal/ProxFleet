@@ -212,10 +212,9 @@ struct CreateVMView: View {
             let key = draft.disks.firstIndex { $0.id == disk.id }.map { keys[$0] } ?? ""
             NewDiskSections(
                 disk: $disk, key: key, error: errors[key], connection: connection, node: draft.node,
-                storages: diskStorages, showsAdvanced: showsAdvanced
-            ) {
-                withAnimation { draft.disks.removeAll { $0.id == disk.id } }
-            }
+                storages: diskStorages, showsAdvanced: showsAdvanced,
+                onRemove: { withAnimation { draft.disks.removeAll { $0.id == disk.id } } }
+            )
         }
         Section {
             Button("Add Disk") {
@@ -404,8 +403,8 @@ struct CreateVMView: View {
     }
 }
 
-/// One disk of the VM wizard: bus, storage, size and format, then its options.
-private struct NewDiskSections: View {
+/// One new disk: bus, storage, size and format, then its options. Used by the VM wizard and Add Hard Disk.
+struct NewDiskSections: View {
     @Binding var disk: NewVMDisk
     /// `scsi0`, `sata1`…
     let key: String
@@ -415,12 +414,34 @@ private struct NewDiskSections: View {
     /// The node's storages for disk images, with their formats.
     let storages: [StorageInfo]
     let showsAdvanced: Bool
-    let onRemove: () -> Void
+    /// Device numbers free on each bus, to choose one as the web interface's Bus/Device field does; nil hides the choice.
+    var freeSlots: ((DiskBus) -> [Int])?
+    @Binding var slot: Int
+    var onRemove: (() -> Void)?
+
+    init(disk: Binding<NewVMDisk>, key: String, error: String?, connection: ServerConnection, node: String, storages: [StorageInfo], showsAdvanced: Bool, freeSlots: ((DiskBus) -> [Int])? = nil, slot: Binding<Int> = .constant(0), onRemove: (() -> Void)? = nil) {
+        _disk = disk
+        self.key = key
+        self.error = error
+        self.connection = connection
+        self.node = node
+        self.storages = storages
+        self.showsAdvanced = showsAdvanced
+        self.freeSlots = freeSlots
+        _slot = slot
+        self.onRemove = onRemove
+    }
 
     var body: some View {
         Section {
             Picker("Bus", selection: $disk.bus) {
                 ForEach(DiskBus.allCases) { Text($0.title).tag($0) }
+            }
+            if let freeSlots {
+                Picker("Device", selection: $slot) {
+                    ForEach(freeSlots(disk.bus), id: \.self) { Text(String($0)).tag($0) }
+                }
+                .accessibilityIdentifier("disk.slot")
             }
             NodeStoragePicker(title: "Storage", connection: connection, node: node, content: "images", selection: $disk.storage)
             NumberField(title: "Size", value: $disk.sizeGiB, range: 1...65_536, unit: "GiB")
@@ -462,8 +483,10 @@ private struct NewDiskSections: View {
                     LabeledContent("Bandwidth Limits", value: disk.options.limits.values.contains { !$0.isEmpty } ? String(localized: "Set") : String(localized: "Unlimited"))
                 }
             }
-            Button("Remove Disk", role: .destructive, action: onRemove)
-                .accessibilityIdentifier("disk.remove.\(key)")
+            if let onRemove {
+                Button("Remove Disk", role: .destructive, action: onRemove)
+                    .accessibilityIdentifier("disk.remove.\(key)")
+            }
         } header: {
             Text("Options")
         }

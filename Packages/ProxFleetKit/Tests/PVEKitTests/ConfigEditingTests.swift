@@ -53,7 +53,20 @@ struct ConfigEditingTests {
         let config = GuestConfig(values: ["scsi0": "x", "scsi1": "y", "net0": "z"])
         #expect(config.nextFreeKey(prefix: "scsi", slots: 31) == "scsi2")
         #expect(config.nextFreeKey(prefix: "net", slots: 32) == "net1")
-        #expect(GuestConfig.newDiskValue(storage: "local-lvm", sizeGiB: 32, discard: true, ioThread: true, ssdEmulation: false) == "local-lvm:32,discard=on,iothread=1")
+        var disk = NewVMDisk(bus: .scsi, storage: "local-lvm")
+        #expect(disk.value == "local-lvm:32,discard=on,iothread=1")
+        // Add Hard Disk sends every option of the web interface's dialog; options a bus does not support are left out.
+        disk.bus = .sata
+        disk.sizeGiB = 8
+        disk.format = "qcow2"
+        disk.options.cache = "writeback"
+        disk.options.asyncIO = "native"
+        disk.options.includeInBackup = false
+        disk.options.replicate = false
+        disk.options.readOnly = true
+        disk.options.ssdEmulation = true
+        disk.options.limits = ["mbps_rd": "100", "iops_wr_max": "500"]
+        #expect(disk.value == "local-lvm:8,format=qcow2,cache=writeback,discard=on,ssd=1,backup=0,aio=native,replicate=0,mbps_rd=100,iops_wr_max=500")
         #expect(GuestConfig.cdromValue(isoVolume: nil) == "none,media=cdrom")
     }
 }
