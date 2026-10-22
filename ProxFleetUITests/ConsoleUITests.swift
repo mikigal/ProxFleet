@@ -31,11 +31,17 @@ final class ConsoleUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Console Closed"].exists)
         snapshot("60-console")
 
-        // Embedded, the app stays in portrait.
+        // Turning the phone opens the console full screen in landscape; turning it back closes it.
         XCUIDevice.shared.orientation = .landscapeLeft
-        XCTAssertFalse(isLaidOutInLandscape(), "the embedded console keeps the app in portrait")
-
+        XCTAssertTrue(app.buttons["Exit Full Screen"].firstMatch.waitForExistence(timeout: 5))
+        let turned = expectation(for: NSPredicate { _, _ in self.isLaidOutInLandscape() }, evaluatedWith: nil)
+        wait(for: [turned], timeout: 5)
         XCUIDevice.shared.orientation = .portrait
+        let turnedBack = expectation(for: NSPredicate { _, _ in !self.app.buttons["Exit Full Screen"].exists }, evaluatedWith: nil)
+        wait(for: [turnedBack], timeout: 5)
+        XCTAssertFalse(app.staticTexts["Console Closed"].exists)
+
+        // Opened with the button, full screen stays when the phone turns back.
         app.buttons["vnc.fullScreen"].tap()
         XCTAssertTrue(app.buttons["Exit Full Screen"].firstMatch.waitForExistence(timeout: 5))
         XCUIDevice.shared.orientation = .landscapeLeft

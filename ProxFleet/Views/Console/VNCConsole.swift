@@ -378,6 +378,8 @@ final class VNCConsoleModel {
 struct VNCConsoleView: View {
     @Bindable var model: VNCConsoleModel
     var isFullScreen = false
+    /// The full-screen console opened by turning the phone, so turning it back closes it.
+    var exitsInPortrait = false
     /// Closes the full-screen console, which UIKit presents.
     var onExitFullScreen: (() -> Void)?
     @State private var isKeyboardActive = false
@@ -405,15 +407,7 @@ struct VNCConsoleView: View {
                 if isFullScreen {
                     onExitFullScreen?()
                 } else {
-                    isKeyboardActive = false
-                    let model = model
-                    model.isInFullScreen = true
-                    FullScreenConsole.present { close in
-                        VNCConsoleView(model: model, isFullScreen: true) {
-                            model.isInFullScreen = false
-                            close()
-                        }
-                    }
+                    enterFullScreen(byTurning: false)
                 }
             }
         }
@@ -427,6 +421,16 @@ struct VNCConsoleView: View {
         }
         .onChange(of: mouseMode) { model.mouseMode = mouseMode }
         .onChange(of: quality) { model.qualitySetting = quality }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            // The app's screens stay portrait, so turning the phone opens the console full screen instead,
+            // and turning it back closes it again when that is how it opened.
+            let orientation = UIDevice.current.orientation
+            if isFullScreen {
+                if exitsInPortrait && orientation == .portrait { onExitFullScreen?() }
+            } else if orientation.isLandscape && !model.isInFullScreen && UIDevice.current.userInterfaceIdiom == .phone {
+                enterFullScreen(byTurning: true)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidConnect)) { _ in hasHardwareKeyboard = true }
         .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidDisconnect)) { _ in hasHardwareKeyboard = GCKeyboard.coalesced != nil }
         .sheet(isPresented: $showsGestures) {
@@ -434,6 +438,18 @@ struct VNCConsoleView: View {
                 VNCGesturesHelp(mode: mouseMode)
             }
             .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func enterFullScreen(byTurning: Bool) {
+        isKeyboardActive = false
+        let model = model
+        model.isInFullScreen = true
+        FullScreenConsole.present { close in
+            VNCConsoleView(model: model, isFullScreen: true, exitsInPortrait: byTurning) {
+                model.isInFullScreen = false
+                close()
+            }
         }
     }
 
