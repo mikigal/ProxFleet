@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 748" width="1600" height="748">
+  <title>Features: servers and clusters, native vnc console, hardware editing, create and clone guests, backups and snapshots, storage and iso downloads, node management, firewall and permissions</title>
+  <defs>
+    <clipPath id="card"><rect width="1600" height="748" rx="44"/></clipPath>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1b21"/>
+      <stop offset="1" stop-color="#09090b"/>
+    </linearGradient>
+    <radialGradient id="violet" cx="180" cy="80" r="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c4dff" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#7c4dff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blue" cx="1460" cy="120" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f6bff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#2f6bff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="amber" cx="1180" cy="508.64000000000004" r="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9a3c" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#ff9a3c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="titleGlow" cx="800" cy="140" r="340" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8a1f" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#ff8a1f" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="800" cy="718.0799999999999" r="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E57000" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#E57000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.08"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-30%" y="-60%" width="160%" height="240%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFA640"/>
+      <stop offset="1" stop-color="#E35D00"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#card)">
+    <rect width="1600" height="748" fill="url(#background)"/><rect width="1600" height="748" fill="url(#violet)"/><rect width="1600" height="748" fill="url(#blue)"/><rect width="1600" height="748" fill="url(#amber)"/><rect width="1600" height="748" fill="url(#titleGlow)"/><rect width="1600" height="748" fill="url(#glow)"/>
+    <path d="M64 58L176 34M64 58L140 140M176 34L290 96M176 34L140 140M290 96L402 40M290 96L452 128M402 40L452 128M1148 52L1262 104M1148 52L1320 150M1262 104L1320 150M1376 36L1468 118M1376 36L1540 58M1376 36L1320 150M1468 118L1540 58" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="1.5"/>
+    <circle cx="64" cy="58" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="176" cy="34" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="290" cy="96" r="14" fill="#ff8a1f" fill-opacity="0.16"/><circle cx="290" cy="96" r="5" fill="#ff9f40"/><circle cx="140" cy="140" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="402" cy="40" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="452" cy="128" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1148" cy="52" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1262" cy="104" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1376" cy="36" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1468" cy="118" r="14" fill="#ff8a1f" fill-opacity="0.16"/><circle cx="1468" cy="118" r="5" fill="#ff9f40"/><circle cx="1540" cy="58" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1320" cy="150" r="3.5" fill="#fff" fill-opacity="0.28"/>
+    <text x="800.0" y="124" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="58" font-weight="800" letter-spacing="-1.5" fill="#fff">Features</text>
+    <g filter="url(#cardShadow)">
+      <rect x="72" y="172" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="72" y="172" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="72.75" y="172.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(108 208)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></g>
+    </g>
+    <text x="108" y="334" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Servers and</text>
+    <text x="108" y="374" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">clusters</text>
+    <g filter="url(#cardShadow)">
+      <rect x="444" y="172" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="444" y="172" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="444.75" y="172.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(480 208)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 10l3 2.5L7 15M12.5 15H17"/></g>
+    </g>
+    <text x="480" y="334" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Native VNC</text>
+    <text x="480" y="374" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">console</text>
+    <g filter="url(#cardShadow)">
+      <rect x="816" y="172" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="816" y="172" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="816.75" y="172.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(852 208)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></g>
+    </g>
+    <text x="852" y="334" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Hardware</text>
+    <text x="852" y="374" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">editing</text>
+    <g filter="url(#cardShadow)">
+      <rect x="1188" y="172" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="1188" y="172" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="1188.75" y="172.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(1224 208)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M12 8v8M8 12h8"/></g>
+    </g>
+    <text x="1224" y="334" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Create and</text>
+    <text x="1224" y="374" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">clone guests</text>
+    <g filter="url(#cardShadow)">
+      <rect x="72" y="440" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="72" y="440" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="72.75" y="440.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(108 476)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v4.5H8"/><path d="M12 7.5V12l3 2"/></g>
+    </g>
+    <text x="108" y="602" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Backups and</text>
+    <text x="108" y="642" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">snapshots</text>
+    <g filter="url(#cardShadow)">
+      <rect x="444" y="440" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="444" y="440" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="444.75" y="440.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(480 476)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></g>
+    </g>
+    <text x="480" y="602" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Storage and</text>
+    <text x="480" y="642" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">ISO downloads</text>
+    <g filter="url(#cardShadow)">
+      <rect x="816" y="440" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="816" y="440" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="816.75" y="440.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(852 476)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></g>
+    </g>
+    <text x="852" y="602" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Node</text>
+    <text x="852" y="642" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">management</text>
+    <g filter="url(#cardShadow)">
+      <rect x="1188" y="440" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="1188" y="440" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="1188.75" y="440.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(1224 476)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/></g>
+    </g>
+    <text x="1224" y="602" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Firewall and</text>
+    <text x="1224" y="642" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">permissions</text>
+  </g>
+  <rect x="1" y="1" width="1598" height="746" rx="43" fill="none" stroke="#fff" stroke-opacity="0.08" stroke-width="2"/>
+</svg>

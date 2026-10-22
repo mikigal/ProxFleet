@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 604" width="1600" height="604">
+  <title>Why ProxFleet: truly native: Built with SwiftUI from the ground up, not a web page squeezed onto a phone.; full control: Hardware, storage, backups, firewall, users and a native VNC console, all on the go.; open and private: No analytics, no tracking, no servers of our own. Your credentials stay on device.</title>
+  <defs>
+    <clipPath id="card"><rect width="1600" height="604" rx="44"/></clipPath>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1b21"/>
+      <stop offset="1" stop-color="#09090b"/>
+    </linearGradient>
+    <radialGradient id="violet" cx="180" cy="80" r="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c4dff" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#7c4dff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blue" cx="1460" cy="120" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f6bff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#2f6bff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="amber" cx="1180" cy="410.72" r="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9a3c" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#ff9a3c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="titleGlow" cx="800" cy="140" r="340" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8a1f" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#ff8a1f" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="800" cy="579.84" r="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E57000" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#E57000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.08"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-30%" y="-60%" width="160%" height="240%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFA640"/>
+      <stop offset="1" stop-color="#E35D00"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#card)">
+    <rect width="1600" height="604" fill="url(#background)"/><rect width="1600" height="604" fill="url(#violet)"/><rect width="1600" height="604" fill="url(#blue)"/><rect width="1600" height="604" fill="url(#amber)"/><rect width="1600" height="604" fill="url(#titleGlow)"/><rect width="1600" height="604" fill="url(#glow)"/>
+    <path d="M64 58L176 34M64 58L140 140M176 34L290 96M176 34L140 140M290 96L402 40M290 96L452 128M402 40L452 128M1148 52L1262 104M1148 52L1320 150M1262 104L1320 150M1376 36L1468 118M1376 36L1540 58M1376 36L1320 150M1468 118L1540 58" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="1.5"/>
+    <circle cx="64" cy="58" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="176" cy="34" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="290" cy="96" r="14" fill="#ff8a1f" fill-opacity="0.16"/><circle cx="290" cy="96" r="5" fill="#ff9f40"/><circle cx="140" cy="140" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="402" cy="40" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="452" cy="128" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1148" cy="52" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1262" cy="104" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1376" cy="36" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1468" cy="118" r="14" fill="#ff8a1f" fill-opacity="0.16"/><circle cx="1468" cy="118" r="5" fill="#ff9f40"/><circle cx="1540" cy="58" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1320" cy="150" r="3.5" fill="#fff" fill-opacity="0.28"/>
+    <text x="800.0" y="124" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="58" font-weight="800" letter-spacing="-1.5" fill="#fff">Why ProxFleet</text>
+    <g filter="url(#cardShadow)">
+      <rect x="72" y="172" width="464" height="360" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="72" y="172" width="464" height="360" rx="30" fill="url(#cardSheen)"/>
+    <rect x="72.75" y="172.75" width="462.5" height="358.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(256.0 216)">
+      <rect width="96" height="96" rx="24.0" fill="url(#tile)"/>
+      <g transform="translate(18.24 18.24) scale(2.4800)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 5.5h3M10 18.5h4"/></g>
+    </g>
+    <text x="304.0" y="370" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="-0.5" fill="#fff">Truly native</text>
+    <text x="304.0" y="420" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">Built with SwiftUI from the</text>
+    <text x="304.0" y="454" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">ground up, not a web page</text>
+    <text x="304.0" y="488" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">squeezed onto a phone.</text>
+    <g filter="url(#cardShadow)">
+      <rect x="568" y="172" width="464" height="360" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="568" y="172" width="464" height="360" rx="30" fill="url(#cardSheen)"/>
+    <rect x="568.75" y="172.75" width="462.5" height="358.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(752.0 216)">
+      <rect width="96" height="96" rx="24.0" fill="url(#tile)"/>
+      <g transform="translate(18.24 18.24) scale(2.4800)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></g>
+    </g>
+    <text x="800.0" y="370" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="-0.5" fill="#fff">Full control</text>
+    <text x="800.0" y="420" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">Hardware, storage, backups,</text>
+    <text x="800.0" y="454" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">firewall, users and a native</text>
+    <text x="800.0" y="488" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">VNC console, all on the go.</text>
+    <g filter="url(#cardShadow)">
+      <rect x="1064" y="172" width="464" height="360" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="1064" y="172" width="464" height="360" rx="30" fill="url(#cardSheen)"/>
+    <rect x="1064.75" y="172.75" width="462.5" height="358.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(1248.0 216)">
+      <rect width="96" height="96" rx="24.0" fill="url(#tile)"/>
+      <g transform="translate(18.24 18.24) scale(2.4800)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5M12 14.5v2.5"/></g>
+    </g>
+    <text x="1296.0" y="370" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="-0.5" fill="#fff">Open and private</text>
+    <text x="1296.0" y="420" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">No analytics, no tracking,</text>
+    <text x="1296.0" y="454" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">no servers of our own. Your</text>
+    <text x="1296.0" y="488" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">credentials stay on device.</text>
+  </g>
+  <rect x="1" y="1" width="1598" height="602" rx="43" fill="none" stroke="#fff" stroke-opacity="0.08" stroke-width="2"/>
+</svg>
