@@ -96,6 +96,13 @@ public final class Fleet {
         persist()
     }
 
+    /// Forgets every saved server and its secrets, as when the app lock's PIN is forgotten.
+    public func removeAllServers() {
+        for profile in profiles {
+            remove(profile.id)
+        }
+    }
+
     public func move(fromOffsets source: IndexSet, toOffset destination: Int) {
         let moving = source.sorted().map { profiles[$0] }
         var remaining = profiles.enumerated().filter { !source.contains($0.offset) }.map(\.element)

@@ -5,7 +5,7 @@ import ProxmoxCore
 /// Launch arguments and environment used by UI tests, screenshots and development.
 ///
 /// - `-demo`: add the demo cluster and open it.
-/// - `-inMemory`: do not read or write saved servers.
+/// - `-inMemory`: do not read or write saved servers or the app lock.
 /// - DEBUG builds only: `PROXFLEET_DEBUG_ADDRESS`, `PROXFLEET_DEBUG_USER`, `PROXFLEET_DEBUG_REALM`,
 ///   `PROXFLEET_DEBUG_PASSWORD` and optionally `PROXFLEET_DEBUG_FINGERPRINT` add a test server and open it.
 ///   See `scripts/run-simulator.sh`.

@@ -36,6 +36,7 @@ Early development. What works now:
 - Users & Permissions: users (create, edit, disable, expiry, password), API tokens with the secret shown once, groups, custom roles, and permissions on paths for users, groups and tokens, two-factor authentication (authenticator apps with a QR code, recovery keys, unlocking) and realms (LDAP, Active Directory, OpenID Connect, sync)
 - Notifications (sendmail, SMTP, Gotify and webhook targets with test sending, matchers by severity, field and time) and datacenter options (keyboard layout, guest ID range, MAC prefix, migration and replication, bandwidth limits, tags and their colors, HA policy, scheduler, rebalancing and fencing, WebAuthn and U2F, location, proxy, notes)
 - Firewall for the datacenter, nodes and guests: turn it on and off, rules (direction, action, macros, protocols, ports, ICMP types, addresses with aliases and IP sets, interface, log level), reordering, security groups, aliases, IP sets with excluded entries, all options, and the firewall log of nodes and guests
+- Optional app lock with a 4- or 6-digit PIN and Face ID or Touch ID, locking right away or after 1, 5 or 15 minutes in the background
 - Demo mode with a built-in sample cluster, including working demo consoles
 
 Next up: ACME, HA and migration between cluster nodes.

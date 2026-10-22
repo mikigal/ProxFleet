@@ -35,6 +35,7 @@ INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
 INFOPLIST_KEY_UILaunchScreen_Generation = YES
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+INFOPLIST_KEY_NSFaceIDUsageDescription = $(APP_DISPLAY_NAME) can unlock with Face ID instead of its PIN.
 INFOPLIST_KEY_NSLocalNetworkUsageDescription = $(APP_DISPLAY_NAME) connects to Proxmox servers on your local network.
 
 #include? "Signing.local.xcconfig"

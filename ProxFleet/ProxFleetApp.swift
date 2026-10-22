@@ -6,19 +6,31 @@ import UIKit
 struct ProxFleetApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var fleet: Fleet
+    @State private var appLock: AppLock
+    @Environment(\.scenePhase) private var scenePhase
     private let initialSelection: UUID?
 
     init() {
         let launch = LaunchOptions(arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment)
         let fleet = Fleet(environment: launch.inMemory ? .inMemory() : .live())
         _fleet = State(initialValue: fleet)
+        _appLock = State(initialValue: AppLock(store: launch.inMemory ? InMemoryAppLockStore() : KeychainAppLockStore()))
         initialSelection = launch.apply(to: fleet)
     }
 
     var body: some Scene {
         WindowGroup {
             RootView(initialSelection: initialSelection)
+                .appLockCover()
                 .environment(fleet)
+                .environment(appLock)
+        }
+        .onChange(of: scenePhase) { old, new in
+            if new == .background {
+                appLock.didEnterBackground()
+            } else if old == .background {
+                appLock.willEnterForeground()
+            }
         }
     }
 }

@@ -37,4 +37,5 @@ struct RootView: View {
     let demo = fleet.addDemoServer()
     return RootView(initialSelection: demo.id)
         .environment(fleet)
+        .environment(AppLock(store: InMemoryAppLockStore()))
 }

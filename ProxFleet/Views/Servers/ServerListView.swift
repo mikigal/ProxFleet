@@ -8,6 +8,7 @@ struct ServerListView: View {
     @State private var pendingDeletion: ServerProfile?
     @State private var renaming: ServerProfile?
     @State private var newName = ""
+    @State private var showsSettings = false
 
     var body: some View {
         List(selection: $selection) {
@@ -35,6 +36,12 @@ struct ServerListView: View {
         }
         .navigationTitle("Servers")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Settings", systemImage: "gearshape") {
+                    showsSettings = true
+                }
+                .accessibilityIdentifier("settings")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Add Server", systemImage: "plus") {
                     onboarding = fleet.makeOnboarding()
@@ -49,6 +56,9 @@ struct ServerListView: View {
                     onTryDemo: { selection = fleet.addDemoServer().id }
                 )
             }
+        }
+        .sheet(isPresented: $showsSettings) {
+            SettingsView()
         }
         .sheet(item: $onboarding) { onboarding in
             AddServerFlow(onboarding: onboarding) { profile in
