@@ -211,7 +211,9 @@ final class NodeUITests: XCTestCase {
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["tab.more"].tap()
-        app.buttons["more.certificates"].tap()
+        let certificates = app.buttons["more.certificates"]
+        for _ in 0..<6 where !(certificates.exists && certificates.isHittable) { app.swipeUp() }
+        certificates.tap()
         XCTAssertTrue(app.buttons["certificate.pve-ssl.pem"].waitForExistence(timeout: 10))
         snapshot("62-node-certificates")
         app.buttons["certificates.upload"].tap()
