@@ -2,14 +2,15 @@ import FleetCore
 import PVEKit
 import SwiftUI
 
-/// The web interface's Bulk Start, Bulk Shutdown and Bulk Suspend dialogs: choose guests of a node, or of every node,
-/// and run the action for all of them in one task.
+/// The web interface's Bulk Start, Bulk Shutdown, Bulk Suspend and Bulk Migrate dialogs: choose guests of a node, or
+/// of every node, and run the action for all of them in one task.
 struct NodeBulkActionView: View {
     let action: NodeBulkAction
     /// nil for the datacenter's bulk actions.
     let node: String?
     private let run: (NodeBulkActionDraft) async throws(ConfigUpdateError) -> Void
     private let guests: [GuestSummary]
+    private let targets: [String]
     @State private var draft: NodeBulkActionDraft
     @State private var timeoutText = ""
     @State private var isStarting = false
@@ -28,14 +29,26 @@ struct NodeBulkActionView: View {
         self.run = run
         let guests = connection.snapshot.map { action.eligibleGuests(on: node, in: $0) } ?? []
         self.guests = guests
-        _draft = State(initialValue: NodeBulkActionDraft(action: action, vmids: Set(guests.map(\.vmid))))
+        let targets = connection.snapshot?.nodes.filter { $0.isOnline && $0.name != node }.map(\.name) ?? []
+        self.targets = targets
+        var draft = NodeBulkActionDraft(action: action, vmids: Set(guests.map(\.vmid)))
+        draft.target = targets.first ?? ""
+        _draft = State(initialValue: draft)
     }
+
+    /// The guests to choose from: for migration, those not on the target already, which Proxmox would skip.
+    private var shownGuests: [GuestSummary] {
+        action == .migrate ? guests.filter { $0.node != draft.target } : guests
+    }
+
+    private var chosenIDs: Set<Int> { draft.vmids.intersection(shownGuests.map(\.vmid)) }
 
     private var title: LocalizedStringKey {
         switch action {
         case .start: "Bulk Start"
         case .shutdown: "Bulk Shutdown"
         case .hibernate: "Bulk Hibernate"
+        case .migrate: "Bulk Migrate"
         }
     }
 
@@ -44,16 +57,29 @@ struct NodeBulkActionView: View {
         case .start: "Start"
         case .shutdown: "Shut Down"
         case .hibernate: "Hibernate"
+        case .migrate: "Migrate"
         }
     }
 
     var body: some View {
         Form {
-            if guests.isEmpty {
+            if action == .migrate, !targets.isEmpty {
+                Section {
+                    Picker("Target", selection: $draft.target) {
+                        ForEach(targets, id: \.self) { Text($0).tag($0) }
+                    }
+                    .accessibilityIdentifier("bulk.target")
+                    Toggle("Allow Local Disk Migration", isOn: $draft.withLocalDisks)
+                        .accessibilityIdentifier("bulk.localDisks")
+                } footer: {
+                    Text("Disks on local storage are copied to the target. Without it, VMs with local disks fail to migrate.")
+                }
+            }
+            if shownGuests.isEmpty || (action == .migrate && targets.isEmpty) {
                 ContentUnavailableView(emptyTitle, systemImage: "square.stack.3d.up.slash")
             } else {
                 Section {
-                    ForEach(guests) { guest in
+                    ForEach(shownGuests) { guest in
                         Button {
                             if draft.vmids.contains(guest.vmid) { draft.vmids.remove(guest.vmid) } else { draft.vmids.insert(guest.vmid) }
                         } label: {
@@ -82,8 +108,8 @@ struct NodeBulkActionView: View {
                     HStack {
                         Text("Guests")
                         Spacer()
-                        Button(draft.vmids.count == guests.count ? "Select None" : "Select All") {
-                            draft.vmids = draft.vmids.count == guests.count ? [] : Set(guests.map(\.vmid))
+                        Button(chosenIDs.count == shownGuests.count ? "Select None" : "Select All") {
+                            draft.vmids = chosenIDs.count == shownGuests.count ? [] : Set(shownGuests.map(\.vmid))
                         }
                         .font(.footnote)
                         .textCase(nil)
@@ -93,7 +119,10 @@ struct NodeBulkActionView: View {
                 }
                 Section {
                     Picker("Parallel Jobs", selection: $draft.maxWorkers) {
-                        Text("Default").tag(Int?.none)
+                        // Migrating always needs a number, as in the web interface.
+                        if action != .migrate {
+                            Text("Default").tag(Int?.none)
+                        }
                         ForEach([1, 2, 4, 8, 16], id: \.self) { Text(String($0)).tag(Int?.some($0)) }
                     }
                     if action == .shutdown {
@@ -101,9 +130,14 @@ struct NodeBulkActionView: View {
                         Toggle("Force Stop After Timeout", isOn: $draft.forceStop)
                     }
                 } footer: {
-                    Text(action == .shutdown
-                        ? "Guests that have their own shutdown timeout use it instead. Without Force Stop, guests still running after the timeout are left running."
-                        : "Without a number, the datacenter's maximum workers setting applies.")
+                    switch action {
+                    case .shutdown:
+                        Text("Guests that have their own shutdown timeout use it instead. Without Force Stop, guests still running after the timeout are left running.")
+                    case .migrate:
+                        Text("Migrations at the same time. Each one copies memory and local disks over the network.")
+                    default:
+                        Text("Without a number, the datacenter's maximum workers setting applies.")
+                    }
                 }
             }
             ErrorSection(message: errorMessage)
@@ -117,7 +151,7 @@ struct NodeBulkActionView: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 ProgressButton(confirmTitle, isWorking: isStarting) { Task { await run() } }
-                    .disabled(draft.vmids.isEmpty)
+                    .disabled(chosenIDs.isEmpty || (action == .migrate && draft.target.isEmpty))
                     .accessibilityIdentifier("bulk.confirm")
             }
         }
@@ -128,6 +162,7 @@ struct NodeBulkActionView: View {
         case .start: "No Stopped Guests"
         case .shutdown: "No Running Guests"
         case .hibernate: "No Running VMs"
+        case .migrate: targets.isEmpty ? "No Other Node Online" : "No Guests to Migrate"
         }
     }
 
@@ -136,6 +171,10 @@ struct NodeBulkActionView: View {
         case .start: String(localized: "Guests start in their start order, also those not set to start at boot.")
         case .shutdown: String(localized: "Guests shut down in reverse start order.")
         case .hibernate: String(localized: "VMs save their memory to disk and stop; starting them resumes where they left off. Containers cannot be hibernated.")
+        case .migrate:
+            shownGuests.contains { chosenIDs.contains($0.vmid) && $0.kind == .container && $0.state == .running }
+                ? String(localized: "Running VMs move live. Running containers are migrated in restart mode: they shut down, move and start again.")
+                : String(localized: "Running VMs move live, stopped guests offline.")
         }
     }
 
@@ -150,6 +189,7 @@ struct NodeBulkActionView: View {
         } else {
             draft.timeout = nil
         }
+        draft.vmids = chosenIDs
         isStarting = true
         defer { isStarting = false }
         do {

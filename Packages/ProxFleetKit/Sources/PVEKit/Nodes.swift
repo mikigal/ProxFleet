@@ -213,12 +213,14 @@ extension PVE {
     }
 }
 
-/// The web interface's node Bulk Actions: start, shut down or hibernate several guests of a node in one task.
+/// The web interface's node Bulk Actions: start, shut down, hibernate or migrate several guests of a node in one task.
 public enum NodeBulkAction: String, Sendable, CaseIterable, Identifiable {
     case start
     case shutdown
     /// Suspends VMs to disk; containers cannot be hibernated.
     case hibernate
+    /// Moves guests to another node of the cluster: running VMs live, running containers by restarting them.
+    case migrate
 
     public var id: String { rawValue }
 
@@ -227,6 +229,7 @@ public enum NodeBulkAction: String, Sendable, CaseIterable, Identifiable {
         case .start: "startall"
         case .shutdown: "stopall"
         case .hibernate: "suspendall"
+        case .migrate: "migrateall"
         }
     }
 
@@ -235,20 +238,22 @@ public enum NodeBulkAction: String, Sendable, CaseIterable, Identifiable {
         case .start: "start"
         case .shutdown: "shutdown"
         case .hibernate: "suspend"
+        case .migrate: "migrate"
         }
     }
 
-    /// Guests the action applies to: stopped ones to start, running ones to shut down, running VMs to hibernate.
-    /// Without a node, those of every online node.
+    /// Guests the action applies to: stopped ones to start, running ones to shut down, running VMs to hibernate,
+    /// all of them, templates too, to migrate. Without a node, those of every online node.
     public func eligibleGuests(on node: String?, in snapshot: ClusterSnapshot) -> [GuestSummary] {
         let online = Set(snapshot.nodes.filter(\.isOnline).map(\.name))
         return snapshot.guests
-            .filter { guest in (node.map { guest.node == $0 } ?? online.contains(guest.node)) && !guest.isTemplate }
+            .filter { guest in (node.map { guest.node == $0 } ?? online.contains(guest.node)) && (self == .migrate || !guest.isTemplate) }
             .filter { guest in
                 switch self {
                 case .start: guest.state == .stopped
                 case .shutdown: guest.state == .running || guest.state == .paused
                 case .hibernate: guest.state == .running && guest.kind == .virtualMachine
+                case .migrate: true
                 }
             }
             .sorted { $0.vmid < $1.vmid }
@@ -265,10 +270,16 @@ public struct NodeBulkActionDraft: Sendable, Equatable {
     public var timeout: Int?
     /// Shutdown only: stop guests that did not shut down within the timeout.
     public var forceStop = true
+    /// Migration only: the node the guests move to.
+    public var target = ""
+    /// Migration only: copy disks on local storage to the target; without it, VMs with local disks fail.
+    public var withLocalDisks = true
 
     public init(action: NodeBulkAction, vmids: Set<Int>) {
         self.action = action
         self.vmids = vmids
+        // Migrating needs a number of parallel jobs unless the datacenter sets one; the web interface starts at 1.
+        if action == .migrate { maxWorkers = 1 }
     }
 
     public var parameters: APIParameters {
@@ -283,6 +294,9 @@ public struct NodeBulkActionDraft: Sendable, Equatable {
             if !forceStop { parameters["force-stop"] = false }
         case .hibernate:
             break
+        case .migrate:
+            parameters["target"] = .string(target)
+            if withLocalDisks { parameters["with-local-disks"] = true }
         }
         return parameters
     }
@@ -307,6 +321,11 @@ extension PVE {
             if !draft.forceStop { parameters["force-stop"] = false }
         case .hibernate:
             parameters["to-disk"] = true
+        case .migrate:
+            parameters["target"] = .string(draft.target)
+            // Like the web interface: running VMs move live and running containers restart on the target.
+            parameters["online"] = true
+            if draft.withLocalDisks { parameters["with-local-disks"] = true }
         }
         return APIRequest(.post, "/cluster/bulk-action/guest/\(draft.action.clusterEndpoint)", parameters: parameters)
     }

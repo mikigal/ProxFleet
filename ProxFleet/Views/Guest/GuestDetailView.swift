@@ -17,6 +17,7 @@ struct GuestDetailView: View {
     @State private var isKeyboardVisible = false
     @State private var showsClone = false
     @State private var showsDelete = false
+    @State private var showsMigrate = false
     /// Set by the clone sheet; opened once the sheet is gone, as pushing while it closes is unreliable.
     @State private var newClone: GuestReference?
     @State private var openedClone: GuestReference?
@@ -80,6 +81,11 @@ struct GuestDetailView: View {
                     CloneView(detail: detail) { newClone = $0 }
                 }
                 .serverDestinations(detail.connection)
+            }
+            .sheet(isPresented: $showsMigrate) {
+                NavigationStack {
+                    MigrateView(detail: detail)
+                }
             }
             .sheet(isPresented: $showsDelete, onDismiss: {
                 if wasDeleted { dismiss() }
@@ -171,7 +177,7 @@ struct GuestDetailView: View {
                 networkSection
             }
         case .more:
-            GuestMoreList(detail: detail, onClone: { showsClone = true }, onDelete: { showsDelete = true })
+            GuestMoreList(detail: detail, onClone: { showsClone = true }, onMigrate: { showsMigrate = true }, onDelete: { showsDelete = true })
         }
     }
 
@@ -421,6 +427,7 @@ nonisolated enum GuestTab: String, DetailTab {
 private struct GuestMoreList: View {
     let detail: GuestDetail
     let onClone: () -> Void
+    let onMigrate: () -> Void
     let onDelete: () -> Void
     @State private var confirmsTemplate = false
     @State private var isConverting = false
@@ -428,6 +435,7 @@ private struct GuestMoreList: View {
 
     private var kindName: String { detail.reference.kind == .virtualMachine ? String(localized: "VM") : String(localized: "CT") }
     private var isStopped: Bool { detail.powerState == .stopped }
+    private var isMigrating: Bool { detail.runningTask?.upid.type.hasSuffix("migrate") == true }
 
     var body: some View {
         List {
@@ -492,6 +500,15 @@ private struct GuestMoreList: View {
                 .foregroundStyle(.primary)
                 .disabled(!detail.can("VM.Clone"))
                 .accessibilityIdentifier("more.clone")
+                // Standalone nodes have nowhere to migrate to.
+                if (detail.connection.snapshot?.nodes.count ?? 0) > 1 {
+                    Button(action: onMigrate) {
+                        MoreRow(title: "Migrate", systemImage: "arrow.left.arrow.right", color: .purple, hint: isMigrating ? String(localized: "Migrating…") : nil)
+                    }
+                    .foregroundStyle(.primary)
+                    .disabled(!detail.can("VM.Migrate") || detail.runningTask != nil)
+                    .accessibilityIdentifier("more.migrate")
+                }
                 if !detail.isTemplate {
                     Button {
                         confirmsTemplate = true

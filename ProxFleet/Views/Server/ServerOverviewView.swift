@@ -181,6 +181,10 @@ struct ServerOverviewView: View {
                             .accessibilityIdentifier("bulk.shutdown")
                         Button("Bulk Hibernate", systemImage: "moon.zzz") { bulkAction = .hibernate }
                             .accessibilityIdentifier("bulk.hibernate")
+                        if (connection.snapshot?.nodes.count ?? 0) > 1 {
+                            Button("Bulk Migrate", systemImage: "arrow.left.arrow.right") { bulkAction = .migrate }
+                                .accessibilityIdentifier("bulk.migrate")
+                        }
                     }
                     Button("Cluster Log", systemImage: "doc.text.magnifyingglass") { showsLog = true }
                         .accessibilityIdentifier("cluster.log")

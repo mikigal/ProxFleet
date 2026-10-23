@@ -49,7 +49,7 @@ FEATURES = [
     ("servers", "Servers and", "clusters"),
     ("console", "Native VNC", "console"),
     ("chip", "Hardware", "editing"),
-    ("create", "Create and", "clone guests"),
+    ("create", "Create, clone", "and migrate"),
     ("backup", "Backups and", "snapshots"),
     ("storage", "Storage and", "ISO downloads"),
     ("sliders", "Node", "management"),
@@ -57,7 +57,6 @@ FEATURES = [
 ]
 
 ROADMAP = [
-    ("migrate", "Migration", "Move virtual machines and", "containers between nodes"),
     ("sync", "High availability", "HA resources and rules,", "plus storage replication"),
     ("archive", "Backup Server", "Datastores, sync jobs and", "file-level restore"),
 ]

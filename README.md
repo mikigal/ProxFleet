@@ -26,12 +26,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/readme/features.svg" width="100%" alt="Features: servers and clusters, native VNC console, hardware editing, create and clone guests, backups and snapshots, storage and ISO downloads, node management, firewall and permissions">
+  <img src="docs/readme/features.svg" width="100%" alt="Features: servers and clusters, native VNC console, hardware editing, create, clone and migrate guests, backups and snapshots, storage and ISO downloads, node management, firewall and permissions">
 </p>
 
 <a name="coming-next"></a>
 <p align="center">
-  <img src="docs/readme/roadmap.svg" width="100%" alt="Coming soon: migration of virtual machines and containers between nodes, high availability and storage replication, and Proxmox Backup Server with datastores, sync jobs and file-level restore">
+  <img src="docs/readme/roadmap.svg" width="100%" alt="Coming soon: high availability and storage replication, and Proxmox Backup Server with datastores, sync jobs and file-level restore">
 </p>
 
 ## Contributing

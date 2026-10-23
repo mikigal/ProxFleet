@@ -36,6 +36,8 @@ extension DemoState {
             return success(.array(tasks.reversed().map(clusterTaskJSON)))
         case (.get, 2) where parts == ["cluster", "log"]:
             return success(.array(clusterLog(max: Int(parameters["max"] ?? "") ?? 50)))
+        case (.post, 4) where parts == ["cluster", "bulk-action", "guest", "migrate"]:
+            return clusterBulkMigrate(parameters: parameters, user: user)
         case (.post, 4) where parts[0] == "cluster" && parts[1] == "bulk-action" && parts[2] == "guest":
             return clusterBulkAction(parts[3], parameters: parameters, user: user)
         case (.get, 2) where parts == ["access", "permissions"]:
@@ -96,6 +98,10 @@ extension DemoState {
             return success(Self.mediatedDeviceTypes(of: path[2]))
         case (.post, let path) where path.count == 1 && ["startall", "stopall", "suspendall"].contains(path[0]):
             return bulkAction(path[0], node: node, parameters: parameters, user: user)
+        case (.post, ["migrateall"]):
+            return migrateAll(node: node, parameters: parameters, user: user)
+        case (.get, ["capabilities", "qemu", "migration"]):
+            return success(["has-dbus-vmstate": 1])
         case (.get, ["capabilities", "qemu", "cpu"]):
             let models = parameters["arch"] == "aarch64"
                 ? ["host", "max", "cortex-a53", "cortex-a57", "cortex-a72", "neoverse-n1"]
@@ -113,8 +119,13 @@ extension DemoState {
             return failure(595, "Connection refused: node '\(node)' seems to be offline")
         }
         let guest = cluster.guests[index]
+        // Like Proxmox, a guest is only found on its own node, e.g. after it migrated.
+        guard guest.node == node else { return failure(500, "Configuration file 'nodes/\(node)/\(parts[2])/\(parts[3]).conf' does not exist") }
         let rest = Array(parts.dropFirst(4))
         if let response = handleLifecycle(method, rest: rest, guest: guest, parameters: parameters, user: user) {
+            return response
+        }
+        if let response = handleMigration(method, rest: rest, guest: guest, parameters: parameters, user: user) {
             return response
         }
 
@@ -373,7 +384,9 @@ extension DemoState {
             data["ostype"] = guest.name.contains("win") ? "win11" : "l26"
             data["scsihw"] = "virtio-scsi-single"
             data["scsi0"] = .string("local-lvm:vm-\(guest.vmid)-disk-0,iothread=1,size=\(guest.diskGiB)G")
-            data["ide2"] = "local:iso/debian-13.1.0-amd64-netinst.iso,media=cdrom,size=754M"
+            // Installed VMs have the installer ejected. The developer VM still has one in, which keeps it from
+            // migrating, as a local CD/DVD does in Proxmox.
+            data["ide2"] = guest.name == "ubuntu-dev" ? "local:iso/ubuntu-24.04.3-live-server-amd64.iso,media=cdrom,size=3G" : "none,media=cdrom"
             data["net0"] = .string("virtio=\(mac(for: guest)),bridge=vmbr0,firewall=1")
             data["boot"] = "order=scsi0;ide2;net0"
             data["agent"] = "1"

@@ -104,7 +104,12 @@ final class LifecycleUITests: XCTestCase {
         app.launch()
         openGuest(100)
         app.buttons["tab.more"].tap()
-        app.buttons["more.delete"].tap()
+        // On a cluster the Migrate row pushes Delete below the tab bar.
+        let deleteRow = app.buttons["more.delete"]
+        for _ in 0..<3 where !(deleteRow.exists && deleteRow.isHittable) {
+            app.swipeUp()
+        }
+        deleteRow.tap()
         XCTAssertTrue(app.staticTexts["Stop the guest before deleting it."].waitForExistence(timeout: 5))
         app.textFields["delete.confirmation"].tap()
         app.textFields["delete.confirmation"].typeText("100")
@@ -185,6 +190,67 @@ final class LifecycleUITests: XCTestCase {
     }
 
     /// Opens a guest from the server's list, scrolling to it if needed.
+    @MainActor
+    func testMigrateRunningVM() {
+        app.launch()
+        // home-assistant runs on pve1 with its disk on local-lvm; pve3 is offline, so pve2 is the only target.
+        openGuest(100)
+        app.buttons["tab.more"].tap()
+        // A sheet opened right after the guest screen appears can close by itself (Clone too), so wait a moment.
+        sleep(2)
+        app.buttons["more.migrate"].tap()
+        XCTAssertTrue(app.staticTexts["Migrate VM 100"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element(containing: "Online").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(containing: "Migration with local disk might take long: local-lvm:vm-100-disk-0 (32 GB)").exists)
+        XCTAssertTrue(app.switches["migrate.conntrack"].exists)
+        snapshot("42-migrate")
+        app.buttons["migrate.confirm"].tap()
+        // The guest screen follows the VM to its new node once the task finished.
+        XCTAssertTrue(element(containing: "VM 100 · pve2").waitForExistence(timeout: 20))
+    }
+
+    @MainActor
+    func testLocalISOBlocksMigration() {
+        app.launch()
+        openGuest(103)
+        app.buttons["tab.more"].tap()
+        sleep(2)
+        app.buttons["more.migrate"].tap()
+        let note = app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'local CD/DVD'")).firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["migrate.confirm"].isEnabled)
+    }
+
+    @MainActor
+    func testBulkMigrateFromTheDatacenter() {
+        app.launch()
+        XCTAssertTrue(app.buttons["guest.100"].waitForExistence(timeout: 10))
+        app.buttons["More"].tap()
+        // Menu items show by their title.
+        app.buttons["Bulk Migrate"].tap()
+        XCTAssertTrue(app.staticTexts["Bulk Migrate"].waitForExistence(timeout: 5))
+        // Guests already on the target are left out: pve1 is chosen, so its guests are not listed.
+        XCTAssertTrue(app.buttons["bulk.guest.103"].exists)
+        XCTAssertFalse(app.buttons["bulk.guest.100"].exists)
+        app.buttons["Select None"].tap()
+        app.buttons["bulk.guest.201"].tap()
+        app.buttons["bulk.confirm"].tap()
+        XCTAssertTrue(app.buttons["guest.100"].waitForExistence(timeout: 5))
+        // Restart mode: the container shuts down, moves and starts on pve1.
+        let moved = element(containing: "CT 201 · pve1")
+        for _ in 0..<6 {
+            openGuest(201)
+            if moved.waitForExistence(timeout: 2) { break }
+            app.navigationBars.buttons.firstMatch.tap()
+            sleep(2)
+        }
+        XCTAssertTrue(moved.exists)
+    }
+
+    private func element(containing text: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+    }
+
     private func openGuest(_ vmid: Int) {
         XCTAssertTrue(app.buttons["guest.100"].waitForExistence(timeout: 10))
         let row = app.buttons["guest.\(vmid)"]

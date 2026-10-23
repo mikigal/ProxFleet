@@ -7,7 +7,8 @@ import PVEKit
 @MainActor
 @Observable
 public final class GuestDetail {
-    public let reference: GuestReference
+    /// Follows the guest when it moves to another node.
+    public private(set) var reference: GuestReference
     public let connection: ServerConnection
 
     public private(set) var status: GuestStatus?
@@ -105,8 +106,20 @@ public final class GuestDetail {
             loadError = nil
         } catch is CancellationError {
         } catch {
+            // The guest may have moved to another node, by a migration from elsewhere or by HA.
+            if await followMove() { return }
             loadError = error.localizedDescription
         }
+    }
+
+    /// Switches to the node the cluster now lists the guest on, if it moved, and reloads. Returns whether it did.
+    @discardableResult
+    private func followMove() async -> Bool {
+        await connection.refresh()
+        guard let node = summary?.node, node != reference.node else { return false }
+        reference = GuestReference(node: node, vmid: reference.vmid, kind: reference.kind)
+        await load()
+        return true
     }
 
     private func loadConfig() async {
@@ -318,6 +331,35 @@ public final class GuestDetail {
 
     public func dismissActionError() {
         actionError = nil
+    }
+
+    // MARK: - Migration
+
+    /// Loads what stands in the way of moving the guest to the target, and whether the target can take the
+    /// conntrack state of a running VM.
+    public func migrationPreconditions(target: String) async throws -> (MigrationPreconditions, targetSupportsConntrackState: Bool) {
+        let session = connection.session
+        async let preconditions = session.send(PVE.migrationPreconditions(reference, target: target))
+        // Nodes without the endpoint count as lacking support, as in the web interface.
+        let capabilities = reference.kind == .virtualMachine ? try? await session.send(PVE.qemuMigrationCapabilities(node: target)) : nil
+        return (try await preconditions, capabilities?.supportsConntrackState ?? false)
+    }
+
+    /// Starts moving the guest to another node. The task center follows the task, which can take long with local
+    /// disks; once it succeeds, this detail switches to the target node.
+    @discardableResult
+    public func migrate(_ draft: MigrationDraft) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        let task: TaskCenter.TrackedTask
+        do {
+            task = try connection.tasks.track(try await connection.session.send(PVE.migrate(draft)))
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+        Task {
+            guard await connection.tasks.result(of: task.id) == .succeeded else { return }
+            await followMove()
+        }
+        return task
     }
 }
 

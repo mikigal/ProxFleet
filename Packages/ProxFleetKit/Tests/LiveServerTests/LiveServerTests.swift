@@ -1057,9 +1057,9 @@ struct LiveServerTests {
         try await session.send(PVE.disks(node: node)).filter { !$0.isPartition && $0.isUnused }.sorted { $0.path < $1.path }
     }
 
-    private func finishTask(_ session: ProxmoxSession, node: String, _ upid: String?) async throws -> TaskStatus? {
+    private func finishTask(_ session: ProxmoxSession, node: String, _ upid: String?, timeout: TimeInterval = 30) async throws -> TaskStatus? {
         guard let upid else { return nil }
-        for _ in 0..<60 {
+        for _ in 0..<Int(timeout * 2) {
             let status = try await session.send(PVE.taskStatus(node: node, upid: upid))
             if !status.isRunning { return status }
             try await Task.sleep(for: .milliseconds(500))
@@ -2626,6 +2626,70 @@ struct LiveServerTests {
         let version = try #require(try await session.send(PVE.packageVersions(node: node)).first { $0.package == "pve-manager" }?.version)
         let changelog = try await session.send(PVE.packageChangelog(node: node, package: "pve-manager", version: version))
         #expect(changelog.hasPrefix("pve-manager (\(version))"))
+    }
+
+    /// Needs a cluster with two more nodes that have local-lvm. VM 100's local ISO blocks it; CT 202 moves offline
+    /// and comes back with the node's Migrate All; VM 102 moves live with its local disk and CT 201 in restart mode,
+    /// and both come back with the datacenter's bulk migration.
+    @Test(.timeLimit(.minutes(6))) func migration() async throws {
+        let (session, node) = try await rootSession()
+        let snapshot = try await session.fetchClusterSnapshot()
+        let others = snapshot.nodes.filter { $0.isOnline && $0.name != node }.map(\.name).sorted()
+        try #require(others.count >= 2, "migration needs a cluster with two more online nodes")
+        let guests = Dictionary(uniqueKeysWithValues: snapshot.guests.map { ($0.vmid, $0) })
+        try #require([100, 102, 201, 202].allSatisfy { guests[$0]?.node == node }, "VMs 100 and 102 and CTs 201 and 202 should be on \(node)")
+        try #require(guests[102]?.state == .running && guests[201]?.state == .running && guests[202]?.state == .stopped, "VM 102 and CT 201 should run, CT 202 be stopped")
+        func location(_ vmid: Int) async throws -> String? { try await session.fetchClusterSnapshot().guests.first { $0.vmid == vmid }?.node }
+        func draft(_ guest: GuestReference, to target: String) async throws -> MigrationDraft {
+            var draft = MigrationDraft(guest: guest, target: target)
+            draft.preconditions = try await session.send(PVE.migrationPreconditions(guest, target: target))
+            if guest.kind == .virtualMachine {
+                draft.targetSupportsConntrackState = try await session.send(PVE.qemuMigrationCapabilities(node: target)).supportsConntrackState
+            }
+            return draft
+        }
+
+        let iso = try await draft(GuestReference(node: node, vmid: 100, kind: .virtualMachine), to: others[0])
+        #expect(!iso.canMigrate && iso.notes.contains { $0.severity == .error && $0.text.contains("local CD/DVD") })
+
+        // Offline, then back with Migrate All of the other node.
+        let stopped = try await draft(GuestReference(node: node, vmid: 202, kind: .container), to: others[1])
+        #expect(stopped.mode == .offline && stopped.canMigrate && stopped.parameters.formEncoded == "target=\(others[1])")
+        let offline = try await session.send(PVE.migrate(stopped))
+        #expect(UPID(offline)?.type == "vzmigrate")
+        #expect(try await finishTask(session, node: node, offline, timeout: 120)?.succeeded == true)
+        #expect(try await location(202) == others[1])
+        var all = NodeBulkActionDraft(action: .migrate, vmids: [202])
+        all.target = node
+        let migrateAll = try await session.send(PVE.bulkAction(node: others[1], all))
+        #expect(UPID(migrateAll)?.type == "migrateall")
+        #expect(try await finishTask(session, node: others[1], migrateAll, timeout: 120)?.succeeded == true)
+        #expect(try await location(202) == node)
+
+        // Live with the local disk and the conntrack state, and a container in restart mode.
+        let running = try await draft(GuestReference(node: node, vmid: 102, kind: .virtualMachine), to: others[0])
+        #expect(running.mode == .online && running.showsTargetStorage && running.canMigrate)
+        #expect(running.parameters["with-local-disks"] == .bool(true) && running.parameters["with-conntrack-state"] == .bool(true))
+        let live = try await session.send(PVE.migrate(running))
+        #expect(UPID(live)?.type == "qmigrate")
+        let restart = try await session.send(PVE.migrate(try await draft(GuestReference(node: node, vmid: 201, kind: .container), to: others[0])))
+        let liveStatus = try await finishTask(session, node: node, live, timeout: 240)
+        #expect(liveStatus?.succeeded == true, "\(liveStatus?.exitStatus ?? "timed out")")
+        #expect(try await finishTask(session, node: node, restart, timeout: 120)?.succeeded == true)
+        #expect(try await location(102) == others[0])
+        #expect(try await location(201) == others[0])
+        #expect(try await session.send(PVE.guestStatus(GuestReference(node: others[0], vmid: 201, kind: .container))).powerState == .running)
+
+        var back = NodeBulkActionDraft(action: .migrate, vmids: [102, 201])
+        back.target = node
+        back.maxWorkers = 2
+        let bulk = try await session.send(PVE.clusterBulkAction(back))
+        #expect(UPID(bulk)?.type == "bulk-migrate")
+        let bulkStatus = try await finishTask(session, node: try #require(UPID(bulk)?.node), bulk, timeout: 240)
+        #expect(bulkStatus?.succeeded == true, "\(bulkStatus?.exitStatus ?? "timed out")")
+        #expect(try await location(102) == node)
+        #expect(try await location(201) == node)
+        #expect(try await session.send(PVE.guestStatus(GuestReference(node: node, vmid: 102, kind: .virtualMachine))).powerState == .running)
     }
 
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))

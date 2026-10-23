@@ -576,6 +576,14 @@ private struct NodeMoreList: View {
                         Label("Bulk Hibernate…", systemImage: "moon.circle")
                     }
                     .accessibilityIdentifier("node.bulk.hibernate")
+                    if (detail.connection.snapshot?.nodes.count ?? 0) > 1 {
+                        Button {
+                            bulkAction = .migrate
+                        } label: {
+                            Label("Bulk Migrate…", systemImage: "arrow.left.arrow.right.circle")
+                        }
+                        .accessibilityIdentifier("node.bulk.migrate")
+                    }
                 } header: {
                     Text("Guests")
                 }
