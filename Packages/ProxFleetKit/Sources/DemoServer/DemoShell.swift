@@ -46,6 +46,23 @@ struct DemoShell {
         ].joined(separator: "\r\n")
     }
 
+    /// What `pveceph install` prints in demo mode, where nothing is installed.
+    static func cephInstallTranscript() -> String {
+        [
+            "update available package list",
+            "start installation",
+            "Reading package lists... Done",
+            "The following NEW packages will be installed:",
+            "  ceph ceph-base ceph-mds ceph-mgr ceph-mon ceph-osd ceph-volume",
+            "Setting up ceph (20.2.4-pve5) ...",
+            "",
+            "installed Ceph 20.2 Tentacle successfully!",
+            "",
+            "\u{1B}[1mThis is a ProxFleet demo: nothing was installed.\u{1B}[0m",
+            "",
+        ].joined(separator: "\r\n")
+    }
+
     /// What the console shows before any input.
     func greeting() -> String {
         switch mode {

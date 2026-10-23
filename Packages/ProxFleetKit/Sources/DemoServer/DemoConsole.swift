@@ -101,7 +101,8 @@ private actor DemoTerminalSession {
     func run() async {
         do {
             _ = try await socket.outgoing.pop() // user:ticket
-            let preamble = command == "upgrade" ? DemoShell.upgradeTranscript(DemoState.availableUpdates.map(\.package)) : ""
+            let preamble = command == "upgrade" ? DemoShell.upgradeTranscript(DemoState.availableUpdates.map(\.package))
+                : command == "ceph_install" ? DemoShell.cephInstallTranscript() : ""
             await socket.incoming.push(.data(Data(("OK" + preamble + shell.greeting()).utf8)))
             while true {
                 let frame = String(decoding: try await socket.outgoing.pop().bytes, as: UTF8.self)

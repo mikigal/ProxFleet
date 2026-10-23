@@ -266,6 +266,39 @@ final class DatacenterResourcesUITests: XCTestCase {
         snapshot("87-ha-rules")
     }
 
+    @MainActor
+    func testCeph() {
+        app.launch()
+        open("datacenter.ceph")
+        // pve3 is down, so a monitor and two OSDs are too.
+        XCTAssertTrue(app.descendants(matching: .any)["ceph.check.MON_DOWN"].waitForExistence(timeout: 10))
+        XCTAssertTrue(element(containing: "4 up, 6 in of 6").exists)
+        snapshot("88-ceph")
+
+        let osds = app.buttons["ceph.osds"]
+        for _ in 0..<4 where !(osds.exists && osds.isHittable) { app.swipeUp() }
+        osds.tap()
+        XCTAssertTrue(app.buttons["ceph.osd.4"].waitForExistence(timeout: 5))
+        app.buttons["ceph.flags"].tap()
+        let noout = app.switches["ceph.flag.noout"]
+        XCTAssertTrue(noout.waitForExistence(timeout: 5))
+        noout.switches.firstMatch.tap()
+        app.buttons["save"].tap()
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(element(containing: "noout").waitForExistence(timeout: 10))
+        app.navigationBars.buttons.firstMatch.tap()
+
+        let pools = app.buttons["ceph.pools"]
+        for _ in 0..<4 where !(pools.exists && pools.isHittable) { app.swipeUp() }
+        pools.tap()
+        XCTAssertTrue(app.buttons["ceph.pool.vm-pool"].waitForExistence(timeout: 5))
+        app.buttons["ceph.pool.add"].tap()
+        type("db-pool", into: app.textFields["ceph.pool.name"])
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["ceph.pool.db-pool"].waitForExistence(timeout: 10))
+        snapshot("89-ceph-pools")
+    }
+
     private func element(containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }

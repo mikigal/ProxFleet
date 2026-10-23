@@ -2841,6 +2841,77 @@ struct LiveServerTests {
         #expect(try await finishTask(session, node: location, destroy)?.succeeded == true)
     }
 
+    /// Needs Ceph on a three-node cluster with three monitors, OSDs on every node and a CephFS with an active
+    /// metadata server. A manager comes and goes on another node, a pool is created as storage, edited and
+    /// destroyed, noout is set and cleared, and an OSD goes out and in.
+    @Test func ceph() async throws {
+        let (session, node) = try await rootSession()
+        let status = try await session.send(PVE.cephStatus(node: node))
+        try #require(status.monitors.count >= 3 && status.osdCount >= 3, "Ceph needs three monitors and OSDs")
+        #expect(status.quorum.count == status.monitors.count && status.osdsUp == status.osdCount && status.activeManager != nil)
+        #expect(try await session.send(PVE.cephServices(.monitor, node: node)).allSatisfy { $0.isRunning && $0.inQuorum == true })
+        let tree = try await session.send(PVE.cephOSDs(node: node))
+        #expect(tree.osds.count == status.osdCount && Set(tree.osds.map(\.host)).count >= 3)
+        func waitTask(_ upid: String, on host: String) async throws {
+            let finished = try await finishTask(session, node: host, upid, timeout: 120)
+            #expect(finished?.succeeded == true, "\(finished?.exitStatus ?? "timed out")")
+        }
+
+        // A manager on a node without one.
+        let managers = try await session.send(PVE.cephServices(.manager, node: node))
+        let host = try #require(try await session.fetchClusterSnapshot().nodes.map(\.name).sorted().first { name in !managers.contains { $0.host == name } }, "every node has a manager")
+        try await waitTask(try await session.send(PVE.createCephService(.manager, node: host)), on: host)
+        #expect(try await session.send(PVE.cephServices(.manager, node: node)).contains { $0.name == host })
+        try await waitTask(try await session.send(PVE.destroyCephService(.manager, node: host, id: host)), on: host)
+        #expect(try await !session.send(PVE.cephServices(.manager, node: node)).contains { $0.name == host })
+
+        var pool = CephPoolDraft()
+        pool.name = "pflive"
+        pool.size = 2
+        pool.placementGroups = "16"
+        try await waitTask(try await session.send(PVE.createCephPool(node: node, pool)), on: node)
+        let created = try #require(try await session.send(PVE.cephPoolList(node: node)).first { $0.name == "pflive" })
+        #expect(created.size == 2 && created.applications == ["rbd"] && created.placementGroups == 16)
+        #expect(try await session.send(PVE.storageConfigs()).contains { $0.id == "pflive" && $0.type == "rbd" })
+        var edit = CephPoolDraft(created)
+        edit.autoscaleMode = "warn"
+        edit.targetSizeRatio = "0.1"
+        // Pool changes run as a task.
+        let update = try await session.send(PVE.updateCephPool(node: node, name: "pflive", edit.changes(from: CephPoolDraft(created))))
+        if let update { try await waitTask(update, on: node) }
+        let edited = try #require(try await session.send(PVE.cephPoolList(node: node)).first { $0.name == "pflive" })
+        #expect(edited.autoscaleMode == "warn" && edited.targetSizeRatio == 0.1)
+        try await waitTask(try await session.send(PVE.destroyCephPool(node: node, name: "pflive", removeStorages: true)), on: node)
+        #expect(try await !session.send(PVE.cephPoolList(node: node)).contains { $0.name == "pflive" })
+        #expect(try await !session.send(PVE.storageConfigs()).contains { $0.id == "pflive" })
+
+        try await waitTask(try await session.send(PVE.setCephFlags(["noout": true])), on: node)
+        #expect(try await session.send(PVE.cephFlags()).first { $0.name == "noout" }?.isSet == true)
+        #expect(try await session.send(PVE.cephStatus(node: node)).checks.contains { $0.code == "OSDMAP_FLAGS" })
+        try await waitTask(try await session.send(PVE.setCephFlags(["noout": false])), on: node)
+        #expect(try await session.send(PVE.cephFlags()).first { $0.name == "noout" }?.isSet == false)
+
+        let osd = try #require(tree.osds.last)
+        _ = try await session.send(PVE.setCephOSD(node: osd.host, id: osd.id, in: false))
+        #expect(try await session.send(PVE.cephOSDs(node: node)).osds.first { $0.id == osd.id }?.isIn == false)
+        _ = try await session.send(PVE.setCephOSD(node: osd.host, id: osd.id, in: true))
+        #expect(try await session.send(PVE.cephOSDs(node: node)).osds.first { $0.id == osd.id }?.isIn == true)
+        _ = try await session.send(PVE.scrubCephOSD(node: osd.host, id: osd.id, deep: false))
+        _ = try await session.send(PVE.cephSafety(node: osd.host, service: "osd", id: String(osd.id), action: "stop"))
+
+        // A CephFS stays on the cluster: removing one needs its metadata servers stopped, and systemd refuses quick
+        // restarts of them, so the test does not create and remove one each run.
+        let fileSystem = try #require(try await session.send(PVE.cephFileSystems(node: node)).first, "Ceph needs a CephFS")
+        #expect(fileSystem.metadataPool == "\(fileSystem.name)_metadata" && fileSystem.dataPools == ["\(fileSystem.name)_data"])
+        #expect(try await session.send(PVE.cephServices(.metadataServer, node: node)).contains { $0.state == "up:active" && $0.fileSystem == fileSystem.name })
+
+        #expect(try await session.send(PVE.cephConfigFile(node: node)).contains("public_network"))
+        #expect(try await !session.send(PVE.cephConfigDatabase(node: node)).isEmpty)
+        #expect(try await session.send(PVE.cephCrushMap(node: node)).contains("replicated_rule"))
+        #expect(try await !session.send(PVE.cephLog(node: node)).isEmpty)
+        #expect(try await session.send(PVE.cephReleases(node: node)).contains { $0.isDefault && $0.isAvailable })
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()

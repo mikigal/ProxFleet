@@ -25,7 +25,7 @@ extension DemoState {
         let parts = path.split(separator: "/").map(String.init)
         let handlers: [(HTTPMethod, [String], [String: String], String) -> HTTPResponse?] = [
             handleCreation, handleStorageConfig, handleBackupJobs, handlePools, handleFirewall, handleSDN, handleMappings, handleAccess,
-            handleTwoFactorAndRealms, handleRealmSyncJobs, handleNotifications, handleMetricServers, handleReplication, handleHA,
+            handleTwoFactorAndRealms, handleRealmSyncJobs, handleNotifications, handleMetricServers, handleReplication, handleHA, handleCeph,
         ]
         for handler in handlers {
             if let response = handler(method, parts, parameters, user) { return response }
@@ -48,6 +48,7 @@ extension DemoState {
         }
 
         if parts.count == 3, parts[0] == "nodes", method == .post, parts[2] == "termproxy" {
+            if parameters["cmd"] == "ceph_install" { noteCephInstall(on: parts[1]) }
             return startConsole(.init(kind: .terminal, hostname: parts[1], osName: "Proxmox VE \(cluster.version)", isContainer: false, command: parameters["cmd"]), user: user)
         }
         guard parts.count >= 3, parts[0] == "nodes" else { return nil }

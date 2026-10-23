@@ -25,14 +25,16 @@ final class TerminalConsoleModel: NSObject {
     @ObservationIgnored private let session: ProxmoxSession
     /// Node shells: a command the server runs instead of a login shell, such as `upgrade`.
     @ObservationIgnored private let command: String?
+    @ObservationIgnored private let commandOptions: [String]
     @ObservationIgnored private var connection: TerminalConnection?
     @ObservationIgnored private var reader: Task<Void, Never>?
     @ObservationIgnored private var receivedBytes = 0
 
-    init(target: ConsoleTarget, session: ProxmoxSession, command: String? = nil) {
+    init(target: ConsoleTarget, session: ProxmoxSession, command: String? = nil, commandOptions: [String] = []) {
         self.target = target
         self.session = session
         self.command = command
+        self.commandOptions = commandOptions
         terminalView = TerminalView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
         super.init()
         terminalView.terminalDelegate = self
@@ -49,7 +51,7 @@ final class TerminalConsoleModel: NSObject {
         receivedBytes = 0
         isWaitingForOutput = true
         do {
-            let connection = try await TerminalConnection.open(target, session: session, command: command)
+            let connection = try await TerminalConnection.open(target, session: session, command: command, commandOptions: commandOptions)
             self.connection = connection
             state = .connected
             let terminal = terminalView.getTerminal()

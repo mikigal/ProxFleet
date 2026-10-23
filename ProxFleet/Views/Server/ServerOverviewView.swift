@@ -77,6 +77,14 @@ struct ServerOverviewView: View {
                             MoreRow(title: "High Availability", systemImage: "shield.lefthalf.filled", color: .green)
                         }
                         .accessibilityIdentifier("datacenter.ha")
+                        if let local = (snapshot.nodes.first(where: \.isLocal) ?? snapshot.nodes.first(where: \.isOnline))?.name {
+                            NavigationLink {
+                                CephView(connection: connection, node: local)
+                            } label: {
+                                MoreRow(title: "Ceph", systemImage: "circle.hexagongrid", color: .red)
+                            }
+                            .accessibilityIdentifier("datacenter.ceph")
+                        }
                     }
                     NavigationLink {
                         PoolsView(connection: connection)

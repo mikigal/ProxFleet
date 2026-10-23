@@ -74,6 +74,7 @@ actor DemoState {
     var haRules: [DemoHARule]
     /// The resource mode while HA is disarmed; nil while armed.
     var haDisarmed: String?
+    var ceph: DemoCeph
     var pools = DemoPool.sample
     var sdn = DemoSDN.sample
     /// External metric servers with their settings as the API names them, `type` included.
@@ -104,6 +105,7 @@ actor DemoState {
         replicationJobs = Self.sampleReplicationJobs(for: cluster, now: started)
         haResources = Self.sampleHAResources(for: cluster)
         haRules = Self.sampleHARules(for: cluster)
+        ceph = DemoCeph.sample(for: cluster)
         firewall = DemoFirewall.sample(for: cluster)
         mappings = Self.sampleMappings(for: cluster)
     }

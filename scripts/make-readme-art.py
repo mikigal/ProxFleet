@@ -52,13 +52,12 @@ FEATURES = [
     ("chip", "Hardware", "editing"),
     ("create", "Create, clone", "and migrate"),
     ("backup", "Backups and", "snapshots"),
-    ("storage", "Storage and", "ISO downloads"),
+    ("storage", "Storage, Ceph", "and ISOs"),
     ("sliders", "Node", "management"),
     ("shield", "Firewall and", "permissions"),
 ]
 
 ROADMAP = [
-    ("ceph", "Ceph", "Monitors, OSDs, pools", "and CephFS"),
     ("archive", "Backup Server", "Datastores, sync jobs and", "file-level restore"),
 ]
 

@@ -548,6 +548,12 @@ private struct NodeMoreList: View {
                     MoreRow(title: "Certificates", systemImage: "checkmark.seal", color: .green)
                 }
                 .accessibilityIdentifier("more.certificates")
+                NavigationLink {
+                    CephView(connection: detail.connection, node: detail.node)
+                } label: {
+                    MoreRow(title: "Ceph", systemImage: "circle.hexagongrid", color: .red)
+                }
+                .accessibilityIdentifier("more.ceph")
                 if (detail.connection.snapshot?.nodes.count ?? 0) > 1 {
                     NavigationLink {
                         ReplicationJobsView(connection: detail.connection, scope: .node(detail.node))

@@ -50,9 +50,12 @@ public final class TerminalConnection: Sendable {
     /// Opens a terminal to a container, a VM's serial port or a node shell.
     /// - Parameter command: Node shells only: a command the server runs instead of a login shell, such as
     ///   `upgrade` for `apt-get dist-upgrade`, as the web interface's Upgrade button does.
-    public static func open(_ target: ConsoleTarget, session: ProxmoxSession, command: String? = nil) async throws -> TerminalConnection {
+    /// - Parameter commandOptions: Arguments of the command, like `ceph_install`'s release and repository.
+    public static func open(_ target: ConsoleTarget, session: ProxmoxSession, command: String? = nil, commandOptions: [String] = []) async throws -> TerminalConnection {
         var parameters = APIParameters()
         if let command { parameters["cmd"] = .string(command) }
+        // Proxmox expects the arguments as NUL-terminated strings, joined.
+        if !commandOptions.isEmpty { parameters["cmd-opts"] = .string(commandOptions.joined(separator: "\0")) }
         if case .serial(_, let port) = target { parameters["serial"] = .string(port) }
         let (proxy, socket) = try await session.openConsoleSocket(target, endpoint: "termproxy", parameters: parameters)
         try await socket.send(.text("\(proxy.user):\(proxy.ticket)\n"))
