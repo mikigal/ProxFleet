@@ -196,8 +196,6 @@ final class LifecycleUITests: XCTestCase {
         // home-assistant runs on pve1 with its disk on local-lvm; pve3 is offline, so pve2 is the only target.
         openGuest(100)
         app.buttons["tab.more"].tap()
-        // A sheet opened right after the guest screen appears can close by itself (Clone too), so wait a moment.
-        sleep(2)
         app.buttons["more.migrate"].tap()
         XCTAssertTrue(app.staticTexts["Migrate VM 100"].waitForExistence(timeout: 5))
         XCTAssertTrue(element(containing: "Online").waitForExistence(timeout: 5))
@@ -214,7 +212,6 @@ final class LifecycleUITests: XCTestCase {
         app.launch()
         openGuest(103)
         app.buttons["tab.more"].tap()
-        sleep(2)
         app.buttons["more.migrate"].tap()
         let note = app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'local CD/DVD'")).firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 5))
