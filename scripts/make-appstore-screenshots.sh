@@ -3,9 +3,11 @@
 # (2064 x 2752, the 13" size): a headline over an iPhone or iPad showing a capture from docs/appstore/raw, tilted in 3D
 # or seen straight on. The layout lives in scripts/appstore/frame.html, which lays the iPhone out at 1320 x 2868; that
 # render is scaled down to 1206 x 2622 (the two differ in shape by under 0.1%).
+# It also builds the wide art from scripts/appstore/banner.html: docs/appstore/header.png (3840 x 1646) and
+# docs/appstore/search-result.png (3840 x 2560).
 #
-#   scripts/make-appstore-screenshots.sh           # both devices
-#   scripts/make-appstore-screenshots.sh ipad      # one device
+#   scripts/make-appstore-screenshots.sh           # everything
+#   scripts/make-appstore-screenshots.sh ipad      # one set: iphone, ipad or banners
 #
 # Needs Google Chrome (set CHROME to use another path). The captures come from the iPhone 17 and iPad Pro 13-inch (M5)
 # Simulators in demo mode and dark appearance, relaunched in US English so numbers and times read like the headlines.
@@ -48,6 +50,9 @@ encode() { python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+# Renders the page at <url> into <out> at <width> x <height>; see capture.py.
+render() { python3 -I "$ROOT/scripts/appstore/capture.py" "$CHROME" "$@"; }
+
 for device name style title accent in "${SCREENSHOTS[@]}"; do
   [[ -n "$ONLY" && "$device" != "$ONLY" ]] && continue
   # The size of the page, then the size of the screenshot.
@@ -58,11 +63,23 @@ for device name style title accent in "${SCREENSHOTS[@]}"; do
   mkdir -p "$ROOT/docs/appstore/$device"
   query="device=$device&style=$style&title=$(encode "$title")&accent=$(encode "$accent")"
   url="file://$ROOT/scripts/appstore/frame.html?screen=$(encode "../../docs/appstore/raw/$device/$name.png")&$query"
-  # The page is shorter than the window by Chrome's hidden toolbar, so render taller and keep the top.
-  # Keep the GPU and real-time waiting: software rendering or virtual time leaves tiles of the 3D device blank.
-  "$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=1 --window-size=$width,$((height + 232)) \
-    --timeout=3000 --screenshot="$tmp/$device-$name.png" "$url" >/dev/null 2>&1
-  swift "$ROOT/scripts/appstore/crop.swift" "$tmp/$device-$name.png" "$ROOT/docs/appstore/$device/$name.png" \
-    $width $height $size
+  render "$url" $width $height "$tmp/$device-$name.png"
+  if [[ "$width $height" == "$size" ]]; then
+    mv "$tmp/$device-$name.png" "$ROOT/docs/appstore/$device/$name.png"
+  else
+    swift "$ROOT/scripts/appstore/crop.swift" "$tmp/$device-$name.png" "$ROOT/docs/appstore/$device/$name.png" \
+      $width $height $size
+  fi
   echo "docs/appstore/$device/$name.png"
+done
+
+# Layout in banner.html, file name, width and height.
+BANNERS=(
+  header "header"        3840 1646
+  search "search-result" 3840 2560
+)
+[[ -n "$ONLY" && "$ONLY" != banners ]] && exit 0
+for layout name width height in "${BANNERS[@]}"; do
+  render "file://$ROOT/scripts/appstore/banner.html?layout=$layout" $width $height "$ROOT/docs/appstore/$name.png"
+  echo "docs/appstore/$name.png"
 done

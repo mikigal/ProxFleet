@@ -1,0 +1,121 @@
+<!doctype html>
+<!--
+  The App Store's wide art, rendered by scripts/make-appstore-screenshots.sh, which passes layout:
+    header  3840 x 1646: an iPad lying on its side with the whole cluster, an iPhone in front with a VM, and glass
+            cards around them like notifications
+    search  3840 x 2560, the search result: the app icon and headline on the left, the same devices on the right.
+            It is shown small, so it has few things on it and large type.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="art.css">
+<style>
+  :root { --w: 3840px; --h: 1646px; }
+  :root.search { --h: 2560px; }
+  html, body { width: var(--w); height: var(--h); overflow: hidden; }
+  /* The screenshots' background and glows, spread over the wide canvas: violet top left, blue top right, orange
+     behind the devices, amber at the bottom. */
+  html { background:
+    radial-gradient(closest-side, rgba(124,77,255,.30), rgba(124,77,255,0)) -700px -900px / 2600px 2600px no-repeat,
+    radial-gradient(closest-side, rgba(47,107,255,.22), rgba(47,107,255,0)) 2500px -1000px / 2400px 2400px no-repeat,
+    radial-gradient(closest-side, rgba(229,112,0,.42), rgba(229,112,0,.12) 55%, rgba(229,112,0,0)) 600px -500px / 2900px 2900px no-repeat,
+    radial-gradient(closest-side, rgba(255,154,60,.16), rgba(255,154,60,0)) 2600px 700px / 1600px 1600px no-repeat,
+    linear-gradient(160deg, #1d1d24 0%, #0c0c0f 55%, #08080a 100%) 0 0 / var(--w) var(--h) no-repeat #08080a; }
+  :root.search { background:
+    radial-gradient(closest-side, rgba(124,77,255,.30), rgba(124,77,255,0)) -900px -900px / 2800px 2800px no-repeat,
+    radial-gradient(closest-side, rgba(47,107,255,.22), rgba(47,107,255,0)) 2400px -1100px / 2600px 2600px no-repeat,
+    radial-gradient(closest-side, rgba(229,112,0,.42), rgba(229,112,0,.12) 55%, rgba(229,112,0,0)) 1500px -100px / 3200px 3200px no-repeat,
+    radial-gradient(closest-side, rgba(255,154,60,.16), rgba(255,154,60,0)) -300px 1500px / 1800px 1800px no-repeat,
+    linear-gradient(160deg, #1d1d24 0%, #0c0c0f 55%, #08080a 100%) 0 0 / var(--w) var(--h) no-repeat #08080a; }
+
+  .canvas { position: relative; width: var(--w); height: var(--h); overflow: hidden; }
+  svg.network { position: absolute; inset: 0; }
+  .stage { position: absolute; inset: 0; perspective: 6000px; }
+
+  /* Frosted cards like the ones floating in the README banner. */
+  .card { position: absolute; display: flex; align-items: center; gap: 44px; width: 760px; padding: 44px 52px;
+    border-radius: 60px; background: rgba(31,31,36,.72); border: 2px solid rgba(255,255,255,.16);
+    box-shadow: 0 40px 90px rgba(0,0,0,.55), inset 0 2px 0 rgba(255,255,255,.08);
+    -webkit-backdrop-filter: blur(40px) saturate(1.4); backdrop-filter: blur(40px) saturate(1.4); }
+  .card .icon { flex: none; display: grid; place-items: center; width: 132px; height: 132px; border-radius: 50%; }
+  .card svg { width: 72px; height: 72px; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .card .title { color: #fff; font-size: 58px; font-weight: 700; letter-spacing: -0.5px; }
+  .card .subtitle { color: #a1a1a6; font-size: 46px; font-weight: 500; margin-top: 6px; }
+
+  .brand { position: absolute; left: 300px; top: 420px; display: flex; align-items: center; gap: 56px; }
+  .brand img { width: 300px; height: 300px; border-radius: 67px; box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 3px rgba(255,255,255,.12); }
+  .brand span { color: #fff; font-size: 150px; font-weight: 800; letter-spacing: -4px; }
+  .headline { position: absolute; left: 290px; top: 920px; color: #fff; font-size: 236px; font-weight: 800;
+    letter-spacing: -7px; line-height: 1.02; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <svg class="network" id="network"></svg>
+  <div class="stage" id="stage"></div>
+</div>
+<script src="art.js"></script>
+<script>
+  const layout = new URLSearchParams(location.search).get("layout") === "search" ? "search" : "header";
+  document.documentElement.classList.add(layout);
+  const canvas = document.querySelector(".canvas");
+  const stage = document.getElementById("stage");
+  const width = canvas.offsetWidth, height = canvas.offsetHeight;
+  const capture = (name) => `../../docs/appstore/raw/${name}.png`;
+
+  // Places a device with its center at (x, y), turned in 3D.
+  const place = (device, x, y, transform) => {
+    device.style.left = `${x - device.offsetWidth / 2}px`;
+    device.style.top = `${y - device.offsetHeight / 2}px`;
+    tiltDevice(device, transform);
+  };
+
+  // 24x24 glyphs drawn with round strokes, from the README art.
+  const glyphs = {
+    servers: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/>',
+    check: '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.3l2.4 2.4 4.6-4.9"/>',
+    power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+  };
+  const addCard = (x, y, color, glyph, title, subtitle) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.left = `${x}px`;
+    card.style.top = `${y}px`;
+    card.innerHTML = `
+      <div class="icon" style="background:${color}2e"><svg viewBox="0 0 24 24" style="stroke:${color}">${glyphs[glyph]}</svg></div>
+      <div><div class="title">${title}</div><div class="subtitle">${subtitle}</div></div>`;
+    canvas.append(card);
+  };
+
+  // Both devices face the same way, the iPhone a little in front of the iPad.
+  const ipad = createDevice(stage, { kind: "ipad", screen: capture("ipad/landscape-cluster"), landscape: true,
+    screenWidth: layout === "header" ? 1620 : 1500, rim: 8, bezel: 58 });
+  const iphone = createDevice(stage, { kind: "iphone", screen: capture("iphone/2-guest"),
+    screenWidth: layout === "header" ? 560 : 600, rim: 6, bezel: 12 });
+
+  if (layout === "header") {
+    place(ipad, 1760, 830, "rotateX(5deg) rotateY(-16deg) rotateZ(1deg)");
+    place(iphone, 2780, 900, "translateZ(120px) rotateX(5deg) rotateY(-16deg) rotateZ(1deg)");
+    addCard(250, 300, "#30d158", "servers", "Cluster homelab", "3 nodes · Quorate");
+    addCard(470, 1080, "#4da3ff", "power", "home-assistant", "Started on pve1");
+    addCard(2960, 420, "#ff9f0a", "check", "Backup finished", "VM 101 · just now");
+  } else {
+    place(ipad, 2900, 1060, "rotateX(4deg) rotateY(-20deg) rotateZ(1deg)");
+    place(iphone, 2400, 1560, "translateZ(140px) rotateX(4deg) rotateY(-20deg) rotateZ(1deg)");
+    canvas.insertAdjacentHTML("beforeend", `
+      <div class="brand"><img src="../../ProxFleet/Assets.xcassets/AppIcon.appiconset/AppIcon.png"><span>ProxFleet</span></div>
+      <div class="headline">Your entire<br>Proxmox fleet.<br><span class="accent">In your pocket.</span></div>`);
+  }
+
+  // Faint network of nodes in the corners the devices and cards leave free.
+  const points = layout === "header"
+    ? [[120, 820], [300, 700], [210, 1000], [90, 1240], [330, 1420], [3380, 1080], [3560, 960], [3720, 1180],
+       [3480, 1320], [3700, 1450], [3300, 1500]]
+    : [[160, 2000], [420, 1900], [300, 2200], [620, 2320], [110, 2420], [860, 2120], [2700, 120], [2920, 260],
+       [3140, 110], [3380, 230], [3600, 90], [3740, 300]];
+  const lit = layout === "header" ? new Set([1, 7]) : new Set([3, 8]);
+  drawNetwork(document.getElementById("network"), width, height, points, lit);
+</script>
+</body>
+</html>
