@@ -69,6 +69,7 @@ actor DemoState {
     /// The datacenter's storage definitions.
     var storageConfigs: [DemoStorageConfig]
     var backupJobs: [DemoBackupJob]
+    var replicationJobs: [DemoReplicationJob]
     var pools = DemoPool.sample
     var sdn = DemoSDN.sample
     /// External metric servers with their settings as the API names them, `type` included.
@@ -96,6 +97,7 @@ actor DemoState {
         files = Self.sampleFiles(now: started)
         storageConfigs = DemoStorageConfig.defaults(for: cluster)
         backupJobs = Self.sampleBackupJobs(for: cluster)
+        replicationJobs = Self.sampleReplicationJobs(for: cluster, now: started)
         firewall = DemoFirewall.sample(for: cluster)
         mappings = Self.sampleMappings(for: cluster)
     }

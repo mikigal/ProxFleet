@@ -29,7 +29,8 @@ private struct LiveServer {
     subscript(key: String) -> String? { values[key].flatMap { $0.isEmpty ? nil : $0 } }
 }
 
-@Suite(.enabled(if: LiveServer.current != nil, "Set PROXFLEET_TEST_SERVER_ENV to run against a real server"), .serialized, .timeLimit(.minutes(1)))
+// The suite's limit caps every test, as Swift Testing applies the shorter limit; migration and replication need minutes.
+@Suite(.enabled(if: LiveServer.current != nil, "Set PROXFLEET_TEST_SERVER_ENV to run against a real server"), .serialized, .timeLimit(.minutes(6)))
 struct LiveServerTests {
     private let server = LiveServer.current!
 
@@ -2690,6 +2691,75 @@ struct LiveServerTests {
         #expect(try await location(102) == node)
         #expect(try await location(201) == node)
         #expect(try await session.send(PVE.guestStatus(GuestReference(node: node, vmid: 102, kind: .virtualMachine))).powerState == .running)
+    }
+
+    /// Needs a cluster whose nodes share a ZFS storage named `tank`. A VM with its disk there gets a job to another
+    /// node, runs it now (Proxmox starts it within a minute), is edited, and the job removes itself and the copy.
+    @Test(.timeLimit(.minutes(5))) func replication() async throws {
+        let (session, node) = try await rootSession()
+        let snapshot = try await session.fetchClusterSnapshot()
+        let target = try #require(snapshot.nodes.filter { $0.isOnline && $0.name != node }.map(\.name).sorted().first, "replication needs a cluster")
+        try #require(snapshot.storages.contains { $0.name == "tank" }, "replication needs a ZFS storage named tank on every node")
+        try #require(!snapshot.guests.contains { $0.vmid == 230 }, "left over from an earlier run")
+        let vm = GuestReference(node: node, vmid: 230, kind: .virtualMachine)
+        let create = try await session.send(APIRequest<String>(.post, "/nodes/\(node)/qemu", parameters: ["vmid": 230, "name": "pflive-replication", "memory": 128, "scsi0": "tank:1"]))
+        #expect(try await finishTask(session, node: node, create)?.succeeded == true)
+        defer {
+            Task {
+                _ = try? await session.send(PVE.deleteReplicationJob("230-0"))
+                _ = try? await session.send(PVE.destroy(vm, purge: true, destroyUnreferencedDisks: true))
+            }
+        }
+
+        // Disks on local-lvm cannot be replicated.
+        do {
+            _ = try await session.send(PVE.createReplicationJob(ReplicationJobDraft(guest: 100, target: target), id: "100-0"))
+            Issue.record("expected a refusal")
+        } catch ProxmoxError.api(_, let message, _) {
+            #expect(message?.contains("missing replicate feature") == true)
+        }
+
+        var draft = ReplicationJobDraft(guest: 230, target: target)
+        draft.comment = "ProxFleet live test"
+        draft.schedule = "*/30"
+        let id = ReplicationJobDraft.nextID(for: 230, existing: try await session.send(PVE.replicationJobs()))
+        #expect(id == "230-0")
+        _ = try await session.send(PVE.createReplicationJob(draft, id: id))
+        let created = try #require(try await session.send(PVE.replicationStatus(node: node, guest: 230)).first)
+        #expect(created.target == target && created.schedule == "*/30" && created.comment == "ProxFleet live test" && created.lastSync == nil && created.isPending())
+
+        _ = try await session.send(PVE.runReplicationNow(node: node, id: id))
+        var synced: ReplicationJob?
+        for _ in 0..<60 {
+            try await Task.sleep(for: .seconds(2))
+            let job = try #require(try await session.send(PVE.replicationStatus(node: node, guest: 230)).first)
+            if job.lastSync != nil, !job.isRunning { synced = job; break }
+        }
+        let job = try #require(synced, "the job did not run within two minutes")
+        #expect(job.error == nil && job.failCount == 0 && job.duration != nil)
+        let log = try await session.send(PVE.replicationLog(node: node, id: id)).map(\.text)
+        #expect(log.contains { $0.contains("full sync 'tank:vm-230-disk-0'") } && log.last?.hasSuffix("end replication job") == true)
+
+        var edit = ReplicationJobDraft(job)
+        edit.rate = "25"
+        edit.comment = ""
+        edit.isEnabled = false
+        _ = try await session.send(PVE.updateReplicationJob(id, edit.changes(from: ReplicationJobDraft(job))))
+        let edited = try await session.send(PVE.replicationJob(id))
+        #expect(edited.rate == 25 && edited.comment == nil && !edited.isEnabled && edited.digest != nil)
+
+        // Removal waits for the next run, which also deletes the copy on the target.
+        _ = try await session.send(PVE.deleteReplicationJob(id))
+        #expect(try await session.send(PVE.replicationJob(id)).removal == "full")
+        _ = try await session.send(PVE.runReplicationNow(node: node, id: id))
+        var removed = false
+        for _ in 0..<60 where !removed {
+            try await Task.sleep(for: .seconds(2))
+            removed = try await !session.send(PVE.replicationJobs()).contains { $0.id == id }
+        }
+        #expect(removed)
+        let destroy = try await session.send(PVE.destroy(vm, purge: true, destroyUnreferencedDisks: true))
+        #expect(try await finishTask(session, node: node, destroy)?.succeeded == true)
     }
 
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))

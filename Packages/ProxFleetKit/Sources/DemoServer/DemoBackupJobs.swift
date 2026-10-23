@@ -161,7 +161,13 @@ extension DemoState {
             weekdays = set
         }
         let pieces = time.split(separator: ":")
-        guard pieces.count == 2, let minute = Int(pieces[1]), (0..<60).contains(minute) else { return nil }
+        // A time without hours, like replication's `*/15`, repeats every hour.
+        if pieces.count == 1 {
+            guard time.hasPrefix("*/"), let step = Int(time.dropFirst(2)), (1..<60).contains(step) else { return nil }
+            return nextRuns(of: (parts + ["*/1:" + stride(from: 0, to: 60, by: step).map { String(format: "%02d", $0) }.joined(separator: ",")]).joined(separator: " "), count: count, from: start)
+        }
+        let minutes = pieces[1].split(separator: ",").compactMap { Int($0) }
+        guard pieces.count == 2, !minutes.isEmpty, minutes.allSatisfy({ (0..<60).contains($0) }) else { return nil }
         var hours: Set<Int>
         if pieces[0].hasPrefix("*/"), let step = Int(pieces[0].dropFirst(2)), step > 0 {
             hours = Set(stride(from: 0, to: 24, by: step))
@@ -178,8 +184,10 @@ extension DemoState {
             guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
             let parts = calendar.dateComponents([.weekday, .day], from: day)
             guard weekdays.contains(parts.weekday ?? 0), monthDays.contains(parts.day ?? 0) else { continue }
-            for hour in hours.sorted() where runs.count < count {
-                if let run = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day), run > start { runs.append(run) }
+            for hour in hours.sorted() {
+                for minute in minutes.sorted() where runs.count < count {
+                    if let run = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day), run > start { runs.append(run) }
+                }
             }
         }
         return runs.isEmpty ? nil : runs

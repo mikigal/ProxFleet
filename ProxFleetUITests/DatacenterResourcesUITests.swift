@@ -187,6 +187,48 @@ final class DatacenterResourcesUITests: XCTestCase {
     }
 
     /// Opens the Add menu, again if a closing sheet swallowed the tap, and picks an item.
+    @MainActor
+    func testReplicationJobs() {
+        app.launch()
+        open("datacenter.replication")
+        let truenas = app.buttons["replication.101-0"]
+        XCTAssertTrue(truenas.waitForExistence(timeout: 10))
+        // pve3 is offline, so docker-host's job fails.
+        XCTAssertTrue(element(containing: "exit code 255").exists)
+        snapshot("85-replication")
+
+        // Run Now: the job syncs, and the editor follows its state until it is done.
+        truenas.tap()
+        let run = app.buttons["replication.run"]
+        for _ in 0..<4 where !(run.exists && run.isHittable) { app.swipeUp() }
+        run.tap()
+        let syncing = element(containing: "Syncing")
+        XCTAssertTrue(syncing.waitForExistence(timeout: 5))
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: syncing)
+        waitForExpectations(timeout: 15)
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // A job for pihole to pve2, then removed: it goes away on its last run.
+        app.buttons["replication.add"].tap()
+        let guest = app.buttons["replication.guest"]
+        XCTAssertTrue(guest.waitForExistence(timeout: 5))
+        guest.tap()
+        app.buttons["200 · pihole"].tap()
+        app.buttons["save"].tap()
+        let added = app.buttons["replication.200-1"]
+        XCTAssertTrue(added.waitForExistence(timeout: 10))
+        added.swipeLeft()
+        app.buttons["Remove"].firstMatch.tap()
+        app.buttons["replication.remove.confirm"].firstMatch.tap()
+        XCTAssertTrue(element(containing: "Removal scheduled").waitForExistence(timeout: 5))
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: added)
+        waitForExpectations(timeout: 15)
+    }
+
+    private func element(containing text: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+    }
+
     private func openAddMenu(showing item: XCUIElement, menu: String = "sdn.add") {
         for _ in 0..<5 where !item.exists {
             app.buttons[menu].tap()

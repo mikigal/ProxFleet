@@ -494,6 +494,14 @@ private struct GuestMoreList: View {
                     MoreRow(title: "Backups", systemImage: "archivebox", color: .brown, hint: nil)
                 }
                 .accessibilityIdentifier("more.backups")
+                if (detail.connection.snapshot?.nodes.count ?? 0) > 1 {
+                    NavigationLink {
+                        ReplicationJobsView(connection: detail.connection, scope: .guest(detail.reference))
+                    } label: {
+                        MoreRow(title: "Replication", systemImage: "arrow.triangle.2.circlepath", color: .cyan, hint: nil)
+                    }
+                    .accessibilityIdentifier("more.replication")
+                }
                 Button(action: onClone) {
                     MoreRow(title: "Clone", systemImage: "plus.square.on.square", color: .teal, hint: nil)
                 }

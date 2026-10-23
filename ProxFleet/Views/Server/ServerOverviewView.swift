@@ -64,6 +64,14 @@ struct ServerOverviewView: View {
                         MoreRow(title: "Backup Jobs", systemImage: "calendar.badge.clock", color: .teal)
                     }
                     .accessibilityIdentifier("datacenter.backupjobs")
+                    if snapshot.nodes.count > 1 {
+                        NavigationLink {
+                            ReplicationJobsView(connection: connection, scope: .datacenter)
+                        } label: {
+                            MoreRow(title: "Replication", systemImage: "arrow.triangle.2.circlepath", color: .cyan)
+                        }
+                        .accessibilityIdentifier("datacenter.replication")
+                    }
                     NavigationLink {
                         PoolsView(connection: connection)
                     } label: {

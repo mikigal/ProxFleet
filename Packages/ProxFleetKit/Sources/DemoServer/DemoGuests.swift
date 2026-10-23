@@ -25,7 +25,7 @@ extension DemoState {
         let parts = path.split(separator: "/").map(String.init)
         let handlers: [(HTTPMethod, [String], [String: String], String) -> HTTPResponse?] = [
             handleCreation, handleStorageConfig, handleBackupJobs, handlePools, handleFirewall, handleSDN, handleMappings, handleAccess,
-            handleTwoFactorAndRealms, handleRealmSyncJobs, handleNotifications, handleMetricServers,
+            handleTwoFactorAndRealms, handleRealmSyncJobs, handleNotifications, handleMetricServers, handleReplication,
         ]
         for handler in handlers {
             if let response = handler(method, parts, parameters, user) { return response }

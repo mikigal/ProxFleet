@@ -548,6 +548,14 @@ private struct NodeMoreList: View {
                     MoreRow(title: "Certificates", systemImage: "checkmark.seal", color: .green)
                 }
                 .accessibilityIdentifier("more.certificates")
+                if (detail.connection.snapshot?.nodes.count ?? 0) > 1 {
+                    NavigationLink {
+                        ReplicationJobsView(connection: detail.connection, scope: .node(detail.node))
+                    } label: {
+                        MoreRow(title: "Replication", systemImage: "arrow.triangle.2.circlepath", color: .cyan)
+                    }
+                    .accessibilityIdentifier("more.replication")
+                }
                 NavigationLink {
                     NodeSettingLoader(detail: detail, value: detail.options, load: { await detail.loadOptions() }) { NodeOptionsEditor(detail: detail, options: $0) }
                 } label: {
