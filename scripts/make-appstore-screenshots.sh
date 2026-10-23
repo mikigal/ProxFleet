@@ -36,6 +36,9 @@ SCREENSHOTS=(
   iphone "5-create"   "flat" "Spin up VMs|and containers." "From the couch."
   iphone "6-backups"  "flat" "Backups on|autopilot."       "Set it. Forget it."
   iphone "7-more"     "flat" "Not just|start and stop."    "Fine-tune anything."
+  iphone "8-migrate"  "flat" "Live-migrate|between nodes." "Right from your phone."
+  iphone "9-ha"       "flat" "A node went down?"           "HA has your back."
+  iphone "10-ceph"    "flat" "Ceph health|at a glance."    "Spot trouble fast."
   ipad   "1-cluster"  "3d"   "Your entire|Proxmox fleet."  "In your hands."
   ipad   "2-guest"    "flat" "Every VM.|Every container."  "One tap away."
   ipad   "3-hardware" "flat" "Edit hardware|on the fly."   "No laptop needed."
@@ -43,6 +46,9 @@ SCREENSHOTS=(
   ipad   "5-create"   "flat" "Spin up VMs|and containers." "From the couch."
   ipad   "6-backups"  "flat" "Backups on|autopilot."       "Set it. Forget it."
   ipad   "7-more"     "flat" "Not just|start and stop."    "Fine-tune anything."
+  ipad   "8-migrate"  "flat" "Live-migrate|between nodes." "Right from your iPad."
+  ipad   "9-ha"       "flat" "A node went down?"           "HA has your back."
+  ipad   "10-ceph"    "flat" "Ceph health|at a glance."    "Spot trouble fast."
 )
 
 encode() { python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1"; }
