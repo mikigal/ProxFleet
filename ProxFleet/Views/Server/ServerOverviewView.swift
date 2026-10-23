@@ -71,6 +71,12 @@ struct ServerOverviewView: View {
                             MoreRow(title: "Replication", systemImage: "arrow.triangle.2.circlepath", color: .cyan)
                         }
                         .accessibilityIdentifier("datacenter.replication")
+                        NavigationLink {
+                            HAView(connection: connection)
+                        } label: {
+                            MoreRow(title: "High Availability", systemImage: "shield.lefthalf.filled", color: .green)
+                        }
+                        .accessibilityIdentifier("datacenter.ha")
                     }
                     NavigationLink {
                         PoolsView(connection: connection)

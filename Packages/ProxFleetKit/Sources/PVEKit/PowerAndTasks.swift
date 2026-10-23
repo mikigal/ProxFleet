@@ -127,7 +127,7 @@ public enum TaskDescription {
         let name = names[type] ?? type
         guard let objectID, !objectID.isEmpty else { return name }
         // Backups (`vzdump`) cover VMs and containers alike, so the web interface writes "VM/CT".
-        let prefix = type == "vzdump" ? "VM/CT " : type.hasPrefix("qm") ? "VM " : type.hasPrefix("vz") || type.hasPrefix("pct") ? "CT " : ""
+        let prefix = type == "vzdump" ? "VM/CT " : type.hasPrefix("qm") ? "VM " : type.hasPrefix("vz") || type.hasPrefix("pct") ? "CT " : type.hasPrefix("ha") ? "HA " : ""
         return "\(prefix)\(objectID) – \(name)"
     }
 
@@ -144,7 +144,7 @@ public enum TaskDescription {
         "termproxy": "Console", "spiceproxy": "SPICE Console", "aptupdate": "Update Package Database",
         "imgcopy": "Copy Image", "imgdel": "Delete Volume", "download": "Download", "startall": "Bulk Start", "stopall": "Bulk Shutdown", "suspendall": "Bulk Hibernate",
         "migrateall": "Bulk Migrate", "bulk-start": "Bulk Start", "bulk-shutdown": "Bulk Shutdown", "bulk-suspend": "Bulk Suspend", "bulk-migrate": "Bulk Migrate", "reloadnetworkall": "Apply SDN",
-        "srvreload": "Reload Service", "srvrestart": "Restart Service", "srvstart": "Start Service", "srvstop": "Stop Service",
+        "hamigrate": "Migrate", "hastart": "Start", "hastop": "Stop", "hashutdown": "Shutdown", "srvreload": "Reload Service", "srvrestart": "Restart Service", "srvstart": "Start Service", "srvstop": "Stop Service",
         "diskinit": "Initialize Disk with GPT", "wipedisk": "Wipe Disk", "zfscreate": "Create ZFS Pool", "zfsremove": "Remove ZFS Pool",
         "lvmcreate": "Create LVM Volume Group", "lvmremove": "Remove LVM Volume Group", "lvmthincreate": "Create LVM Thin Pool",
         "lvmthinremove": "Remove LVM Thin Pool", "dircreate": "Create Directory", "dirremove": "Remove Directory",

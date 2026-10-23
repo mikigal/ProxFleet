@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 516" width="1600" height="516">
-  <title>Coming soon: high availability, backup server</title>
+  <title>Coming soon: ceph, backup server</title>
   <defs>
     <clipPath id="card"><rect width="1600" height="516" rx="44"/></clipPath>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
@@ -46,13 +46,13 @@
     <rect x="72.75" y="172.75" width="710.5" height="270.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.2" stroke-dasharray="10 9" stroke-width="1.5"/>
     <g transform="translate(108 208)">
       <rect x="1.5" y="1.5" width="73" height="73" rx="18" fill="#E57000" fill-opacity="0.1" stroke="#F28A2E" stroke-width="3"/>
-      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#F28A2E" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-13.7 5.7M4 12a8 8 0 0 1 13.7-5.7"/><path d="M17.7 2.5v3.8h-3.8M6.3 21.5v-3.8h3.8"/></g>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#F28A2E" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6" r="3"/><circle cx="5.5" cy="17.5" r="3"/><circle cx="18.5" cy="17.5" r="3"/><path d="M10.4 8.6l-3.3 6.2M13.6 8.6l3.3 6.2M8.5 17.5h7"/></g>
     </g>
     <rect x="644" y="226.0" width="104" height="40" rx="20.0" fill="#E57000" fill-opacity="0.16" stroke="#F28A2E" stroke-opacity="0.6" stroke-width="2"/>
     <text x="696.0" y="254.0" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="800" letter-spacing="2.5" fill="#FFA640">SOON</text>
-    <text x="108" y="336" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff" fill-opacity="0.92">High availability</text>
-    <text x="108" y="376" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">HA resources and rules,</text>
-    <text x="108" y="408" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">plus storage replication</text>
+    <text x="108" y="336" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff" fill-opacity="0.92">Ceph</text>
+    <text x="108" y="376" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">Monitors, OSDs, pools</text>
+    <text x="108" y="408" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#a1a1a6">and CephFS</text>
     <g filter="url(#cardShadow)">
       <rect x="816" y="172" width="712" height="272" rx="30" fill="#1f1f24" fill-opacity="0.5"/>
     </g>

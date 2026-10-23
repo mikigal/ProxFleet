@@ -435,6 +435,12 @@ private struct GuestMoreList: View {
 
     private var kindName: String { detail.reference.kind == .virtualMachine ? String(localized: "VM") : String(localized: "CT") }
     private var isStopped: Bool { detail.powerState == .stopped }
+    /// The guest's HA state from the cluster's resource list, like `started`; unmanaged guests show nothing.
+    private var haHint: String? {
+        guard let state = detail.summary?.haState, !state.isEmpty, state != "unmanaged" else { return String(localized: "Not managed") }
+        return state
+    }
+
     private var isMigrating: Bool { detail.runningTask?.upid.type.hasSuffix("migrate") == true }
 
     var body: some View {
@@ -501,6 +507,12 @@ private struct GuestMoreList: View {
                         MoreRow(title: "Replication", systemImage: "arrow.triangle.2.circlepath", color: .cyan, hint: nil)
                     }
                     .accessibilityIdentifier("more.replication")
+                    NavigationLink {
+                        GuestHAView(connection: detail.connection, reference: detail.reference)
+                    } label: {
+                        MoreRow(title: "High Availability", systemImage: "shield.lefthalf.filled", color: .green, hint: haHint)
+                    }
+                    .accessibilityIdentifier("more.ha")
                 }
                 Button(action: onClone) {
                     MoreRow(title: "Clone", systemImage: "plus.square.on.square", color: .teal, hint: nil)

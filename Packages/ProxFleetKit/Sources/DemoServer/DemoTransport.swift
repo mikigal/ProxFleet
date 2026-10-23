@@ -70,6 +70,10 @@ actor DemoState {
     var storageConfigs: [DemoStorageConfig]
     var backupJobs: [DemoBackupJob]
     var replicationJobs: [DemoReplicationJob]
+    var haResources: [DemoHAResource]
+    var haRules: [DemoHARule]
+    /// The resource mode while HA is disarmed; nil while armed.
+    var haDisarmed: String?
     var pools = DemoPool.sample
     var sdn = DemoSDN.sample
     /// External metric servers with their settings as the API names them, `type` included.
@@ -98,6 +102,8 @@ actor DemoState {
         storageConfigs = DemoStorageConfig.defaults(for: cluster)
         backupJobs = Self.sampleBackupJobs(for: cluster)
         replicationJobs = Self.sampleReplicationJobs(for: cluster, now: started)
+        haResources = Self.sampleHAResources(for: cluster)
+        haRules = Self.sampleHARules(for: cluster)
         firewall = DemoFirewall.sample(for: cluster)
         mappings = Self.sampleMappings(for: cluster)
     }
@@ -253,6 +259,7 @@ actor DemoState {
             ]
             if !guest.tags.isEmpty { item["tags"] = .string(guest.tags.joined(separator: ";")) }
             if let pool = pool(of: guest.vmid) { item["pool"] = .string(pool) }
+            if let state = haState(of: guest.vmid) { item["hastate"] = .string(state) }
             items.append(.object(item))
         }
 

@@ -2762,6 +2762,85 @@ struct LiveServerTests {
         #expect(try await finishTask(session, node: node, destroy)?.succeeded == true)
     }
 
+    /// Needs a three-node cluster with the ZFS storage `tank`. A VM with its disk there joins HA, which starts it; a
+    /// strict node affinity rule blocks one node; HA relocates it to another node; HA is disarmed and armed again.
+    @Test func highAvailability() async throws {
+        let (session, node) = try await rootSession()
+        let snapshot = try await session.fetchClusterSnapshot()
+        let others = snapshot.nodes.filter { $0.isOnline && $0.name != node }.map(\.name).sorted()
+        try #require(others.count >= 2, "HA needs a cluster with two more online nodes")
+        try #require(snapshot.storages.contains { $0.name == "tank" }, "HA needs a ZFS storage named tank on every node")
+        try #require(!snapshot.guests.contains { $0.vmid == 232 }, "left over from an earlier run")
+        try #require(try await session.send(PVE.haResources()).isEmpty, "the cluster already has HA resources")
+        let create = try await session.send(APIRequest<String>(.post, "/nodes/\(node)/qemu", parameters: ["vmid": 232, "name": "pflive-ha", "memory": 128, "scsi0": "tank:1"]))
+        #expect(try await finishTask(session, node: node, create)?.succeeded == true)
+        func service() async throws -> HAStatusEntry? { try await session.send(PVE.haStatus()).first { $0.sid == "vm:232" } }
+        func wait(_ what: String, seconds: Int = 90, until condition: () async throws -> Bool) async throws {
+            for _ in 0..<seconds / 2 {
+                if try await condition() { return }
+                try await Task.sleep(for: .seconds(2))
+            }
+            Issue.record("timed out waiting for \(what)")
+        }
+
+        var draft = HAResourceDraft(guest: 232, kind: .virtualMachine)
+        draft.comment = "ProxFleet live test"
+        draft.maxRestart = "2"
+        _ = try await session.send(PVE.createHAResource(draft))
+        let resource = try #require(try await session.send(PVE.haResources()).first { $0.sid == "vm:232" })
+        #expect(resource.maxRestart == 2 && resource.comment == "ProxFleet live test" && resource.state == "started")
+        // The CRM starts the guest within a few seconds.
+        try await wait("HA to start the VM") { try await service()?.state == "started" }
+        try await wait("the VM to run") { try await session.send(PVE.guestStatus(GuestReference(node: node, vmid: 232, kind: .virtualMachine))).powerState == .running }
+        let status = try await session.send(PVE.haStatus())
+        #expect(status.contains { $0.kind == .master } && status.first { $0.kind == .fencing }?.armedState == "armed")
+        #expect(status.first { $0.id == "lrm:\(node)" }?.status.contains("active") == true)
+
+        var rule = HARuleDraft(kind: .nodeAffinity)
+        rule.resources = ["vm:232"]
+        // Without priorities: with them, HA only moves the VM to the available nodes with the highest one.
+        rule.nodes = [node: nil, others[0]: nil]
+        rule.isStrict = true
+        rule.comment = "ProxFleet live test"
+        let ruleID = HARuleDraft.newID()
+        _ = try await session.send(PVE.createHARule(rule, id: ruleID))
+        let saved = try #require(try await session.send(PVE.haRules()).first { $0.id == ruleID })
+        #expect(saved.isStrict && saved.nodes.map(\.name) == [node, others[0]].sorted() && saved.errors.isEmpty)
+        let blocked = try await session.send(PVE.moveHAResource("vm:232", to: others[1], relocate: true))
+        #expect(blocked.blockingResources.first?.cause == "node-affinity")
+
+        // Relocation stops the VM, copies its disk and starts it there.
+        let moved = try await session.send(PVE.moveHAResource("vm:232", to: others[0], relocate: true))
+        #expect(moved.blockingResources.isEmpty)
+        try await wait("HA to relocate the VM", seconds: 180) {
+            let entry = try await service()
+            return entry?.node == others[0] && entry?.state == "started"
+        }
+
+        var edit = HARuleDraft(saved)
+        edit.isEnabled = false
+        _ = try await session.send(PVE.updateHARule(ruleID, kind: .nodeAffinity, edit.changes(from: HARuleDraft(saved))))
+        #expect(try await session.send(PVE.haRules()).first { $0.id == ruleID }?.isEnabled == false)
+
+        _ = try await session.send(PVE.disarmHA(resourceMode: "freeze"))
+        try await wait("HA to disarm") { try await session.send(PVE.haStatus()).first { $0.kind == .fencing }?.armedState == "disarmed" }
+        _ = try await session.send(PVE.armHA())
+        try await wait("HA to arm") { try await session.send(PVE.haStatus()).first { $0.kind == .fencing }?.armedState == "armed" }
+
+        // Removing the resource with purge also deletes the rule it was the only resource of.
+        var stop = HAResourceDraft(try #require(try await session.send(PVE.haResources()).first { $0.sid == "vm:232" }))
+        let running = stop
+        stop.state = "stopped"
+        _ = try await session.send(PVE.updateHAResource("vm:232", stop.changes(from: running)))
+        try await wait("HA to stop the VM") { try await service()?.state == "stopped" }
+        _ = try await session.send(PVE.deleteHAResource("vm:232"))
+        #expect(try await session.send(PVE.haRules()).contains { $0.id == ruleID } == false)
+        let location = try #require(try await session.fetchClusterSnapshot().guests.first { $0.vmid == 232 }?.node)
+        let vm = GuestReference(node: location, vmid: 232, kind: .virtualMachine)
+        let destroy = try await session.send(PVE.destroy(vm, purge: true, destroyUnreferencedDisks: true))
+        #expect(try await finishTask(session, node: location, destroy)?.succeeded == true)
+    }
+
     @Test(.enabled(if: LiveServer.current?["TFA_TOTP_SECRET"] != nil))
     func totpSecondFactor() async throws {
         let session = try await trustedSession()

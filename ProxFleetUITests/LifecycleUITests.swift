@@ -82,7 +82,9 @@ final class LifecycleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["template.clone"].waitForExistence(timeout: 5))
 
         app.buttons["tab.more"].tap()
-        XCTAssertTrue(deleteRow.waitForExistence(timeout: 5))
+        // On a cluster the Migrate, Replication and HA rows push Delete below the tab bar.
+        XCTAssertTrue(app.buttons["more.options"].waitForExistence(timeout: 5))
+        for _ in 0..<3 where !(deleteRow.exists && deleteRow.isHittable) { app.swipeUp() }
         deleteRow.tap()
         let delete = app.buttons["delete.confirm"]
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
@@ -104,7 +106,7 @@ final class LifecycleUITests: XCTestCase {
         app.launch()
         openGuest(100)
         app.buttons["tab.more"].tap()
-        // On a cluster the Migrate row pushes Delete below the tab bar.
+        // On a cluster the Migrate, Replication and HA rows push Delete below the tab bar.
         let deleteRow = app.buttons["more.delete"]
         for _ in 0..<3 where !(deleteRow.exists && deleteRow.isHittable) {
             app.swipeUp()

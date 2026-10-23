@@ -225,6 +225,47 @@ final class DatacenterResourcesUITests: XCTestCase {
         waitForExpectations(timeout: 15)
     }
 
+    @MainActor
+    func testHighAvailability() {
+        app.launch()
+        open("datacenter.ha")
+        let truenas = app.buttons["ha.resource.vm:101"]
+        XCTAssertTrue(truenas.waitForExistence(timeout: 10))
+        XCTAssertTrue(element(containing: "Armed").exists)
+        snapshot("86-ha")
+
+        // HA moves TrueNAS to pve2; its rule only prefers pve1.
+        truenas.tap()
+        let move = app.buttons["ha.move"]
+        for _ in 0..<4 where !(move.exists && move.isHittable) { app.swipeUp() }
+        move.tap()
+        app.buttons["ha.move.confirm"].tap()
+        XCTAssertTrue(element(containing: "pve2").waitForExistence(timeout: 10))
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // ubuntu-dev joins HA.
+        app.buttons["ha.add"].tap()
+        let guest = app.buttons["ha.guest"]
+        XCTAssertTrue(guest.waitForExistence(timeout: 5))
+        guest.tap()
+        app.buttons["103 · ubuntu-dev"].tap()
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["ha.resource.vm:103"].waitForExistence(timeout: 10))
+
+        // A rule keeps TrueNAS and ubuntu-dev on the same node.
+        let rules = app.buttons["ha.rules"]
+        for _ in 0..<4 where !(rules.exists && rules.isHittable) { app.swipeUp() }
+        rules.tap()
+        XCTAssertTrue(app.buttons["ha.rule.ha-rule-nas-on-big"].waitForExistence(timeout: 5))
+        app.buttons["ha.rule.add"].tap()
+        app.buttons["Resource Affinity Rule"].tap()
+        app.buttons["ha.rule.resource.vm:101"].tap()
+        app.buttons["ha.rule.resource.vm:103"].tap()
+        app.buttons["save"].tap()
+        XCTAssertTrue(element(containing: "truenas, ubuntu-dev").waitForExistence(timeout: 10))
+        snapshot("87-ha-rules")
+    }
+
     private func element(containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
