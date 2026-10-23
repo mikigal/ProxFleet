@@ -2,7 +2,10 @@
 <!--
   The App Store's wide art, rendered by scripts/make-appstore-screenshots.sh, which passes layout:
     header  3840 x 1646: the headline on the left; on the right a large iPhone with the whole cluster in front of an
-            iPad with a VM, and glass cards beside them like notifications
+            iPad with a VM, and glass cards beside them like notifications. On an iPhone the App Store shows only
+            the middle of it, about x 311 to 3516 (2:1), with its back and share buttons over the top corners of
+            that (x 440 to 820 and 3000 to 3380, y below 400), so everything that matters stays within x 480 to 3360
+            and out of those corners; the rest is background for wider screens.
     search  3840 x 2560, the search result: the app icon and headline on the left, an iPad lying on its side with the
             cluster and an iPhone with a VM on the right. It is shown small, so it has few things on it and large type.
 -->
@@ -34,21 +37,21 @@
   .stage { position: absolute; inset: 0; perspective: 6000px; }
 
   /* Frosted cards like the ones floating in the README banner. */
-  .card { position: absolute; display: flex; align-items: center; gap: 44px; width: 760px; padding: 44px 52px;
-    border-radius: 60px; background: rgba(31,31,36,.72); border: 2px solid rgba(255,255,255,.16);
+  .card { position: absolute; display: flex; align-items: center; gap: 36px; width: 640px; padding: 38px 44px;
+    border-radius: 52px; background: rgba(31,31,36,.72); border: 2px solid rgba(255,255,255,.16);
     box-shadow: 0 40px 90px rgba(0,0,0,.55), inset 0 2px 0 rgba(255,255,255,.08);
     -webkit-backdrop-filter: blur(40px) saturate(1.4); backdrop-filter: blur(40px) saturate(1.4); }
-  .card .icon { flex: none; display: grid; place-items: center; width: 132px; height: 132px; border-radius: 50%; }
-  .card svg { width: 72px; height: 72px; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .card .title { color: #fff; font-size: 58px; font-weight: 700; letter-spacing: -0.5px; }
-  .card .subtitle { color: #a1a1a6; font-size: 46px; font-weight: 500; margin-top: 6px; }
+  .card .icon { flex: none; display: grid; place-items: center; width: 112px; height: 112px; border-radius: 50%; }
+  .card svg { width: 62px; height: 62px; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .card .title { color: #fff; font-size: 50px; font-weight: 700; letter-spacing: -0.5px; }
+  .card .subtitle { color: #a1a1a6; font-size: 40px; font-weight: 500; margin-top: 4px; }
 
   .brand { position: absolute; left: 300px; top: 420px; display: flex; align-items: center; gap: 56px; }
   .brand img { width: 300px; height: 300px; border-radius: 67px; box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 3px rgba(255,255,255,.12); }
   .brand span { color: #fff; font-size: 150px; font-weight: 800; letter-spacing: -4px; }
   .headline { position: absolute; left: 290px; top: 920px; color: #fff; font-size: 236px; font-weight: 800;
     letter-spacing: -7px; line-height: 1.02; white-space: nowrap; }
-  :root.header .headline { left: 280px; top: 50%; transform: translateY(-50%); font-size: 224px; letter-spacing: -6.5px; }
+  :root.header .headline { left: 520px; top: 50%; transform: translateY(-50%); font-size: 200px; letter-spacing: -6px; }
 </style>
 </head>
 <body>
@@ -93,12 +96,12 @@
   // Both devices face the headline, the iPhone in front of the iPad.
   if (layout === "header") {
     // The iPhone leads: large, with the cluster, and the upright iPad behind it smaller, with a VM's hardware.
-    const ipad = createDevice(stage, { kind: "ipad", screen: capture("ipad/3-hardware"), screenWidth: 840, rim: 6, bezel: 34 });
+    const ipad = createDevice(stage, { kind: "ipad", screen: capture("ipad/3-hardware"), screenWidth: 800, rim: 6, bezel: 32 });
     const iphone = createDevice(stage, { kind: "iphone", screen: capture("iphone/1-cluster"), screenWidth: 620, rim: 7, bezel: 13 });
-    place(ipad, 3120, 800, "rotateX(5deg) rotateY(-18deg) rotateZ(2deg)");
-    place(iphone, 2370, 830, "translateZ(160px) rotateX(5deg) rotateY(-18deg) rotateZ(2deg)");
-    addCard(2990, 130, "#ff9f0a", "check", "Backup finished", "VM 101 · just now");
-    addCard(2880, 1250, "#4da3ff", "power", "home-assistant", "Started on pve1");
+    place(ipad, 2960, 820, "rotateX(5deg) rotateY(-18deg) rotateZ(2deg)");
+    place(iphone, 2270, 830, "translateZ(160px) rotateX(5deg) rotateY(-18deg) rotateZ(2deg)");
+    addCard(2680, 470, "#ff9f0a", "check", "Backup finished", "VM 101 · just now");
+    addCard(2640, 1200, "#4da3ff", "power", "home-assistant", "Started on pve1");
     canvas.insertAdjacentHTML("beforeend", headline);
   } else {
     const ipad = createDevice(stage, { kind: "ipad", screen: capture("ipad/landscape-cluster"), landscape: true,
@@ -113,10 +116,11 @@
 
   // Faint network of nodes in the corners the devices, cards and headline leave free.
   const points = layout === "header"
-    ? [[110, 170], [330, 80], [540, 230], [260, 340], [140, 1330], [380, 1440], [230, 1580], [640, 1530], [880, 1410]]
+    ? [[110, 170], [330, 80], [540, 230], [260, 340], [140, 1330], [380, 1440], [230, 1580], [640, 1530], [880, 1410],
+       [3500, 560], [3720, 420], [3640, 760], [3460, 980], [3760, 1100], [3560, 1300]]
     : [[160, 2000], [420, 1900], [300, 2200], [620, 2320], [110, 2420], [860, 2120], [2700, 120], [2920, 260],
        [3140, 110], [3380, 230], [3600, 90], [3740, 300]];
-  const lit = layout === "header" ? new Set([2, 7]) : new Set([3, 8]);
+  const lit = layout === "header" ? new Set([2, 7, 11]) : new Set([3, 8]);
   drawNetwork(document.getElementById("network"), width, height, points, lit);
 </script>
 </body>
