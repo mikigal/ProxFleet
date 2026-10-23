@@ -48,6 +48,11 @@ struct LiveServerTests {
         return ProxmoxSession(address: server.address, transport: transport)
     }
 
+    /// The node at the address from the env file, which has the seeded guests and the spare disks, also in a cluster.
+    private func connectedNode(_ session: ProxmoxSession) async throws -> String {
+        try #require(try await session.fetchClusterSnapshot().nodes.first(where: \.isLocal)?.name)
+    }
+
     @Test func selfSignedCertificateIsRejectedUntilPinned() async throws {
         let session = ProxmoxSession(address: server.address, transport: URLSessionTransport())
         await #expect(throws: ProxmoxError.self) {
@@ -88,7 +93,7 @@ struct LiveServerTests {
     @Test func apiErrorsCarryMessagesAndFieldErrors() async throws {
         let session = try await trustedSession()
         _ = try await session.login(username: try #require(server["USER"]), password: try #require(server["PASSWORD"]), realm: server["REALM"])
-        let node = try #require(try await session.fetchClusterSnapshot().nodes.first?.name)
+        let node = try await connectedNode(session)
 
         do {
             _ = try await session.send(APIRequest<Nothing>(.get, "/nodes/\(node)/qemu/99999/status/current"))
@@ -111,7 +116,7 @@ struct LiveServerTests {
     @Test func powerActionTasks() async throws {
         let session = try await trustedSession()
         _ = try await session.login(username: try #require(server["USER"]), password: try #require(server["PASSWORD"]), realm: server["REALM"])
-        let node = try #require(try await session.fetchClusterSnapshot().nodes.first?.name)
+        let node = try await connectedNode(session)
         let vm = GuestReference(node: node, vmid: 102, kind: .virtualMachine)
         try #require(try await session.send(PVE.guestStatus(vm)).powerState == .running)
 
@@ -144,7 +149,7 @@ struct LiveServerTests {
     private func rootSession() async throws -> (ProxmoxSession, String) {
         let session = try await trustedSession()
         _ = try await session.login(username: try #require(server["USER"]), password: try #require(server["PASSWORD"]), realm: server["REALM"])
-        let node = try #require(try await session.fetchClusterSnapshot().nodes.first?.name)
+        let node = try await connectedNode(session)
         return (session, node)
     }
 
@@ -1471,8 +1476,9 @@ struct LiveServerTests {
 
         let snapshot = try await session.fetchClusterSnapshot()
         let runs = changed.runNowRequests(in: snapshot)
-        #expect(runs.map(\.node) == [node])
-        let upid = try await session.send(runs[0].request)
+        // A job for all guests runs on every online node of a cluster; only this node's run is started.
+        #expect(runs.map(\.node) == snapshot.nodes.filter(\.isOnline).map(\.name))
+        let upid = try await session.send(try #require(runs.first { $0.node == node }).request)
         #expect(try await finishTask(session, node: node, upid)?.succeeded == true)
         let backups = try await session.send(PVE.backups(node: node, storage: "local", vmid: 202))
         let made = try #require(backups.first { $0.notes == "backup-agent live" })
@@ -1796,7 +1802,7 @@ struct LiveServerTests {
             transport.pin(certificate.sha256Fingerprint)
         }
         _ = try await session.login(username: try #require(server["USER"]), password: try #require(server["PASSWORD"]), realm: server["REALM"])
-        let node = try #require(try await session.fetchClusterSnapshot().nodes.first?.name)
+        let node = try await connectedNode(session)
         let before = try await session.send(PVE.certificates(node: node))
         try #require(!before.contains { $0.isCustom }, "the test server already has a custom certificate")
         let original = try #require(before.first { $0.fileName == "pve-ssl.pem" }?.fingerprint)
@@ -2613,7 +2619,8 @@ struct LiveServerTests {
         #expect(try await session.send(PVE.guestStatus(vm)).powerState == .running)
 
         let log = try await session.send(PVE.clusterLog(max: 100))
-        #expect(log.contains { $0.upid == start && $0.message.hasPrefix("starting task") } && log.allSatisfy { $0.node == node })
+        // In a cluster the log also has entries of the other nodes.
+        #expect(log.contains { $0.upid == start && $0.message.hasPrefix("starting task") && $0.node == node })
         let report = try await session.send(PVE.systemReport(node: node))
         #expect(report.contains("==== general system info ====") && report.contains(node))
         let version = try #require(try await session.send(PVE.packageVersions(node: node)).first { $0.package == "pve-manager" }?.version)
