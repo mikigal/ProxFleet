@@ -314,8 +314,13 @@ public struct DiskStorageDraft: Equatable, Sendable {
     public var fileSystem = "ext4"
     /// Sizes of the chosen disks, by path, so a mirror or RAIDZ of different sizes is caught before `zpool` refuses it.
     public var deviceSizes: [String: Int64] = [:]
+    /// dRAID: data devices per redundancy group, and distributed spares.
+    public var draidData = ""
+    public var draidSpares = ""
 
-    public static let raidLevels = ["single", "mirror", "raid10", "raidz", "raidz2", "raidz3"]
+    public static let raidLevels = ["single", "mirror", "raid10", "raidz", "raidz2", "raidz3", "draid", "draid2", "draid3"]
+
+    public var isDRAID: Bool { raidLevel.hasPrefix("draid") }
     public static let compressions = ["on", "off", "lz4", "zstd", "gzip", "lzjb", "zle"]
 
     public init(kind: DiskStorageKind) {
@@ -330,6 +335,9 @@ public struct DiskStorageDraft: Equatable, Sendable {
         case "raidz": 3
         case "raidz2": 4
         case "raidz3": 5
+        case "draid": 3
+        case "draid2": 4
+        case "draid3": 5
         default: 1
         }
     }
@@ -352,6 +360,17 @@ public struct DiskStorageDraft: Equatable, Sendable {
         } else if kind == .zfs, raidLevel != "single", Set(devices.compactMap { deviceSizes[$0] }).count > 1 {
             problems[key] = String(localized: "\(raidLevel) needs disks of the same size.")
         }
+        if kind == .zfs, isDRAID {
+            let data = Int(draidData.trimmingCharacters(in: .whitespaces))
+            let spares = Int(draidSpares.trimmingCharacters(in: .whitespaces))
+            if !(data.map { $0 >= 1 } ?? false) { problems["draid-data"] = String(localized: "Enter at least 1.") }
+            if !(spares.map { $0 >= 0 } ?? false) { problems["draid-spares"] = String(localized: "Enter 0 or more.") }
+            // Like Proxmox: parity, the data devices and the spares, at least.
+            let needed = Self.minimumDisks(for: raidLevel) - 2 + (data ?? 0) + (spares ?? 0)
+            if let data, let spares, data >= 1, spares >= 0, devices.count < needed, problems[key] == nil {
+                problems[key] = String(localized: "This dRAID layout needs at least \(needed) disks.")
+            }
+        }
         return problems
     }
 
@@ -360,6 +379,12 @@ public struct DiskStorageDraft: Equatable, Sendable {
         if kind.takesSeveralDisks {
             parameters["devices"] = .string(devices.joined(separator: ","))
             parameters["raidlevel"] = .string(devices.count == 1 ? "single" : raidLevel)
+            if isDRAID, devices.count > 1 {
+                var config = PropertyString(items: [])
+                config["data"] = draidData.trimmingCharacters(in: .whitespaces)
+                config["spares"] = draidSpares.trimmingCharacters(in: .whitespaces)
+                parameters["draid-config"] = .string(config.stringValue)
+            }
             parameters["compression"] = .string(compression)
             parameters["ashift"] = .int(ashift)
         } else {

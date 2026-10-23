@@ -64,8 +64,9 @@ final class NodeUITests: XCTestCase {
         openNode("pve2")
         app.buttons["tab.more"].tap()
         // The power section sits below the System section, partly under the floating tab bar.
-        app.swipeUp()
-        app.buttons["node.reboot"].tap()
+        let reboot = app.buttons["node.reboot"]
+        for _ in 0..<4 where !(reboot.exists && reboot.isHittable) { app.swipeUp() }
+        reboot.tap()
         let confirm = app.alerts.buttons["node.power.confirm"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
@@ -271,6 +272,40 @@ final class NodeUITests: XCTestCase {
         XCTAssertTrue(custom.label.contains("In Use"))
         custom.tap()
         XCTAssertTrue(app.staticTexts["SHA-256 Fingerprint"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testSDNStatusAndDRAIDForm() {
+        app.launch()
+        openNode("pve1")
+        app.buttons["tab.more"].tap()
+        let sdn = app.buttons["more.sdnstatus"]
+        for _ in 0..<4 where !(sdn.exists && sdn.isHittable) { app.swipeUp() }
+        sdn.tap()
+        let local = app.buttons["sdnstatus.zone.localnetwork"]
+        XCTAssertTrue(local.waitForExistence(timeout: 10))
+        local.tap()
+        // home-assistant runs on pve1 with its first network device on vmbr0.
+        XCTAssertTrue(app.descendants(matching: .any)["sdnstatus.port.tap100i0"].waitForExistence(timeout: 10))
+        snapshot("61-node-sdn-bridges")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["sdnstatus.zone.lab"].tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'labnet'")).firstMatch.waitForExistence(timeout: 10))
+        app.navigationBars.buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
+
+        let disks = app.buttons["more.disks"]
+        for _ in 0..<4 where !(disks.exists && disks.isHittable) { app.swipeDown() }
+        disks.tap()
+        app.buttons["disks.add"].tap()
+        app.buttons["Create ZFS Pool"].firstMatch.tap()
+        XCTAssertTrue(app.textFields["storage.name"].waitForExistence(timeout: 5))
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'RAID Level'")).firstMatch.tap()
+        app.buttons["draid2"].tap()
+        let data = app.textFields["draid.data"]
+        XCTAssertTrue(data.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["draid.spares"].exists)
+        snapshot("62-node-create-draid")
     }
 
     private func openNode(_ name: String) {

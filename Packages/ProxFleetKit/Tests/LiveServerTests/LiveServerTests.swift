@@ -1068,6 +1068,32 @@ struct LiveServerTests {
         return nil
     }
 
+    /// A dRAID pool with a distributed spare, on three unused disks of the same size of any node; it passes without
+    /// checking anything when no node has them. Disks of different sizes are refused by zpool.
+    @Test(.timeLimit(.minutes(2))) func draidPool() async throws {
+        let (session, _) = try await rootSession()
+        let nodes = try await session.fetchClusterSnapshot().nodes.filter(\.isOnline).map(\.name).sorted()
+        var found: (node: String, disks: [NodeDisk])?
+        for node in nodes where found == nil {
+            let bySize = Dictionary(grouping: try await spareDisks(session, node: node), by: \.size)
+            if let disks = bySize.values.first(where: { $0.count >= 3 }) { found = (node, Array(disks.prefix(3))) }
+        }
+        guard let (node, disks) = found else { return }
+        var pool = DiskStorageDraft(kind: .zfs)
+        pool.name = "pfdraid"
+        pool.raidLevel = "draid"
+        pool.devices = disks.map(\.path)
+        pool.draidData = "1"
+        pool.draidSpares = "1"
+        pool.addStorage = false
+        #expect(pool.problems.isEmpty)
+        let created = try await finishTask(session, node: node, try await session.send(PVE.createDiskStorage(node: node, pool)), timeout: 60)
+        #expect(created?.succeeded == true, "\(created?.exitStatus ?? "timed out")")
+        #expect(try await session.send(PVE.zfsPools(node: node)).contains { $0.name == "pfdraid" })
+        let removal = PVE.deleteDiskStorage(node: node, kind: .zfs, name: "pfdraid", cleanupConfig: true, wipeDisks: true)
+        #expect(try await finishTask(session, node: node, try await session.send(removal), timeout: 60)?.succeeded == true)
+    }
+
     /// GPT, wipe, refusals for the system disk, and a ZFS pool added as storage and removed with its disk wiped.
     @Test(.timeLimit(.minutes(2))) func zfsPoolOnSpareDisks() async throws {
         let (session, node) = try await rootSession()
@@ -2464,6 +2490,20 @@ struct LiveServerTests {
             #expect(config.output.contains(line), "\(line) missing in \(config.output)")
         }
         #expect(try await session.send(PVE.sdnFabrics()).fabrics.first { $0.id == "pffab" }?["hello_interval"] == "5")
+
+        // The node's view of it, as the resource tree shows it.
+        let networks = try await session.send(PVE.sdnNodeNetworks()).filter { $0.kind != nil && $0.node == node }
+        #expect(networks.contains { $0.isLocalNetwork } && networks.contains { $0.name == "pfevz" && $0.zoneType == "evpn" })
+        #expect(networks.contains { $0.name == "pffab" && $0.kind == .fabric && $0.fabricProtocol == "openfabric" })
+        #expect(try await session.send(PVE.sdnZoneContent(node: node, zone: "pfevz")).contains { $0.vnet == "pfevnet" })
+        #expect(try await session.send(PVE.sdnZoneBridges(node: node, zone: "pfevz")).contains { $0.name == "pfevnet" })
+        #expect(try await session.send(PVE.sdnZoneBridges(node: node, zone: "localnetwork")).contains { bridge in bridge.ports.contains { $0.vmid != nil } })
+        // A lone node has no BGP peers, so the VRFs and the fabric's neighbors may be empty, but the requests work.
+        _ = try await session.send(PVE.sdnIPVRF(node: node, zone: "pfevz"))
+        _ = try await session.send(PVE.sdnMACVRF(node: node, vnet: "pfevnet"))
+        _ = try await session.send(PVE.sdnFabricRoutes(node: node, fabric: "pffab"))
+        _ = try await session.send(PVE.sdnFabricNeighbors(node: node, fabric: "pffab"))
+        #expect(try await session.send(PVE.sdnFabricInterfaces(node: node, fabric: "pffab")).contains { $0.name == "vmbr94" })
 
         // Removed in dependency order and applied.
         _ = try await session.send(PVE.removeSDNFabricNode(fabric: "pffab", node: node))

@@ -549,6 +549,12 @@ private struct NodeMoreList: View {
                 }
                 .accessibilityIdentifier("more.certificates")
                 NavigationLink {
+                    NodeSDNView(connection: detail.connection, node: detail.node)
+                } label: {
+                    MoreRow(title: "SDN", systemImage: "point.3.connected.trianglepath.dotted", color: .green)
+                }
+                .accessibilityIdentifier("more.sdnstatus")
+                NavigationLink {
                     CephView(connection: detail.connection, node: detail.node)
                 } label: {
                     MoreRow(title: "Ceph", systemImage: "circle.hexagongrid", color: .red)

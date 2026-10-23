@@ -265,6 +265,10 @@ actor DemoState {
             items.append(.object(item))
         }
 
+        for node in cluster.nodes where node.isOnline {
+            items += sdnNetworkResources(node: node.name)
+        }
+
         for node in cluster.nodes {
             for config in storageConfigs where config.isAvailable(on: node.name) {
                 let usage = config.usageGiB

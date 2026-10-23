@@ -174,14 +174,23 @@ extension DemoState {
         switch kind {
         case "zfs":
             let level = parameters["raidlevel"] ?? "single"
-            let minimum = ["mirror": 2, "raid10": 4, "raidz": 3, "raidz2": 4, "raidz3": 5][level] ?? 1
+            let minimum = ["mirror": 2, "raid10": 4, "raidz": 3, "raidz2": 4, "raidz3": 5, "draid": 3, "draid2": 4, "draid3": 5][level] ?? 1
             guard devices.count >= minimum else { return failure(500, "\(level) needs at least \(minimum) disks") }
+            let draid = PropertyString(parsing: parameters["draid-config"] ?? "")
+            let data = Int(draid["data"] ?? "") ?? 0
+            let spares = Int(draid["spares"] ?? "") ?? 0
+            if level.hasPrefix("draid"), devices.count < minimum - 2 + data + spares {
+                return failure(500, "At least \(minimum - 2 + data + spares) disks needed for current dRAID config")
+            }
             if level != "single", Set(indices.map { layout.disks[$0].sizeGiB }).count > 1 {
                 let paths = devices.map { "/dev/disk/by-id/ata-\($0.replacingOccurrences(of: "/dev/", with: ""))" }.joined(separator: " ")
                 return startTask(node: node, type: "zfscreate", objectID: name, user: user, duration: 1,
                                  error: "command '/sbin/zpool create -o 'ashift=12' \(name) \(level) \(paths)' failed: exit code 1")
             }
-            let usable = ["mirror": 1, "raid10": devices.count / 2, "raidz": devices.count - 1, "raidz2": devices.count - 2, "raidz3": devices.count - 3][level] ?? devices.count
+            let parity = level.hasPrefix("draid") ? (Int(level.dropFirst(5)) ?? 1) : 0
+            let draidUsable = data > 0 ? (devices.count - spares) * data / (data + parity) : devices.count - spares - parity
+            let usable = ["mirror": 1, "raid10": devices.count / 2, "raidz": devices.count - 1, "raidz2": devices.count - 2, "raidz3": devices.count - 3][level]
+                ?? (level.hasPrefix("draid") ? draidUsable : devices.count)
             layout.pools.append(.init(name: name, raidLevel: level, devices: devices, sizeGiB: size * usable, usedGiB: 0.01))
             for index in indices {
                 // Proxmox reports the disk as partitioned; its partitions are ZFS and ZFS reserved.

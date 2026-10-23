@@ -603,6 +603,18 @@ private struct CreateDiskStorageView: View {
                     }
                     Stepper("ashift \(draft.ashift)", value: $draft.ashift, in: 9...16)
                 }
+                if draft.isDRAID {
+                    Section {
+                        LabeledTextField(title: "Data Devices", prompt: "Required", text: $draft.draidData, keyboard: .numberPad, identifier: "draid.data")
+                        FieldError(message: errors["draid-data"])
+                        LabeledTextField(title: "Spares", prompt: "Required", text: $draft.draidSpares, keyboard: .numberPad, identifier: "draid.spares")
+                        FieldError(message: errors["draid-spares"])
+                    } header: {
+                        Text("dRAID")
+                    } footer: {
+                        Text("dRAID spreads data, parity and spare space over all disks, so a failed disk is rebuilt from all of them at once. Data devices count per redundancy group; spares are distributed spare capacity.")
+                    }
+                }
             }
             if draft.kind == .directory {
                 Section {
