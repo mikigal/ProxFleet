@@ -281,3 +281,96 @@ private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, Se
         progress(totalBytesSent, totalBytesExpectedToSend)
     }
 }
+
+extension URLSessionTransport: FileDownloadTransport {
+    /// Writes the body to a file in `directory` as it arrives, so large files are never held in memory.
+    /// Certificate checks go through the session's trust delegate as usual.
+    public func download(_ request: HTTPRequest, into directory: URL, progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws -> HTTPDownload {
+        var urlRequest = URLRequest(url: request.url)
+        urlRequest.httpMethod = request.method.rawValue
+        urlRequest.httpShouldHandleCookies = false
+        for (name, value) in request.headers {
+            urlRequest.setValue(value, forHTTPHeaderField: name)
+        }
+        let host = request.url.host ?? ""
+        let delegate = DownloadDelegate(directory: directory, progress: progress)
+        let task = session.downloadTask(with: urlRequest)
+        task.delegate = delegate
+        do {
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    delegate.begin(continuation)
+                    task.resume()
+                }
+            } onCancel: {
+                task.cancel()
+            }
+        } catch let error as URLError {
+            if let rejected = trust.takeRejection(for: host) {
+                throw ProxmoxError.untrustedCertificate(rejected)
+            }
+            if error.code == .cancelled, Task.isCancelled {
+                throw CancellationError()
+            }
+            throw ProxmoxError.transport(Self.describe(error))
+        }
+    }
+}
+
+/// Follows one download task: reports progress, moves the finished file out of the system's temporary location before
+/// it is removed, and resumes the waiting caller once. Authentication challenges fall through to the session's delegate.
+private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendable {
+    private struct State {
+        var continuation: CheckedContinuation<HTTPDownload, any Error>?
+        var result: Result<HTTPDownload, any Error>?
+    }
+
+    private let directory: URL
+    private let progress: @Sendable (Int64, Int64?) -> Void
+    private let state = Mutex(State())
+
+    init(directory: URL, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
+        self.directory = directory
+        self.progress = progress
+    }
+
+    func begin(_ continuation: CheckedContinuation<HTTPDownload, any Error>) {
+        state.withLock { $0.continuation = continuation }
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        progress(totalBytesWritten, totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil)
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        let result: Result<HTTPDownload, any Error>
+        if let http = downloadTask.response as? HTTPURLResponse {
+            let file = directory.appending(path: "download-\(UUID().uuidString)")
+            do {
+                try FileManager.default.moveItem(at: location, to: file)
+                var headers: [String: String] = [:]
+                for (key, value) in http.allHeaderFields {
+                    headers[String(describing: key)] = String(describing: value)
+                }
+                result = .success(HTTPDownload(statusCode: http.statusCode, headers: headers, file: file))
+            } catch {
+                result = .failure(ProxmoxError.transport("The downloaded file could not be saved."))
+            }
+        } else {
+            result = .failure(ProxmoxError.invalidResponse("not an HTTP response"))
+        }
+        state.withLock { $0.result = result }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        let (continuation, result) = state.withLock { state in
+            defer { state.continuation = nil }
+            return (state.continuation, state.result)
+        }
+        if let error {
+            continuation?.resume(throwing: error)
+        } else {
+            continuation?.resume(with: result ?? .failure(ProxmoxError.invalidResponse("the download ended without a file")))
+        }
+    }
+}

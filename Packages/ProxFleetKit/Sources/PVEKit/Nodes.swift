@@ -61,8 +61,10 @@ public struct NodeStatus: Decodable, Sendable, Equatable {
         memoryTotal = bytes("memory", "total")
         swapUsed = bytes("swap", "used")
         swapTotal = bytes("swap", "total")
-        rootUsed = bytes("rootfs", "used")
-        rootTotal = bytes("rootfs", "total")
+        // Proxmox Backup Server calls it `root`.
+        let root = nested("rootfs") == nil ? "root" : "rootfs"
+        rootUsed = bytes(root, "used")
+        rootTotal = bytes(root, "total")
         uptime = TimeInterval(container.lossyInt(AnyCodingKey("uptime")) ?? 0)
         let manager = container.lossyString(AnyCodingKey("pveversion"))?.split(separator: "/")
         pveVersion = manager.flatMap { $0.count > 1 ? String($0[1]) : nil }
