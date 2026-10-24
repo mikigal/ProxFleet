@@ -98,8 +98,10 @@ final class DatacenterSettingsUITests: XCTestCase {
     private func open(_ identifier: String) {
         let entry = app.buttons[identifier]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
-        app.buttons["tab.more"].tap()
-        for _ in 0..<12 where !entry.isHittable { app.swipeUp() }
+        let more = app.buttons["tab.more"]
+        more.tap()
+        // The floating tab bar covers the rows below its top edge.
+        for _ in 0..<12 where !entry.isHittable || entry.frame.maxY > more.frame.minY { app.swipeUp() }
         entry.tap()
     }
 
