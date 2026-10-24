@@ -27,6 +27,14 @@ struct HardwareDraftTests {
         #expect(Set(draft.changes(from: original).deletions) == ["sockets", "cpu", "cpulimit"])
     }
 
+    @Test func turningNUMAOffDeletesIt() {
+        let original = CPUDraft(GuestConfig(values: ["numa": "1"]), isVM: true)
+        var draft = original
+        draft.numa = false
+        let update = draft.changes(from: original)
+        #expect(update.values.isEmpty && update.deletions == ["numa"])
+    }
+
     @Test func containerCoresAreOptional() {
         let original = CPUDraft(GuestConfig(values: [:]), isVM: false)
         #expect(original.cores == 0)

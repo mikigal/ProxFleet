@@ -52,16 +52,18 @@ public struct CPUDraft: OptionsDraft, Sendable {
             "cpulimit": limit > 0 ? Self.number(limit) : nil,
             "cpuunits": units.trimmed.isEmpty ? nil : units.trimmed,
         ]
+        // updateValue keeps nil values, which mark settings to delete; assigning nil would drop the key.
+        func set(_ key: String, _ value: String?) { values.updateValue(value, forKey: key) }
         guard isVM else {
-            values["cores"] = cores > 0 ? String(cores) : nil
+            set("cores", cores > 0 ? String(cores) : nil)
             return values
         }
-        values["sockets"] = sockets == 1 ? nil : String(sockets)
-        values["cores"] = cores == 1 ? nil : String(cores)
-        values["vcpus"] = vcpus > 0 ? String(vcpus) : nil
-        values["affinity"] = affinity.trimmed.isEmpty ? nil : affinity.trimmed
-        values["numa"] = numa ? "1" : nil
-        values["cpu"] = cpuValue
+        set("sockets", sockets == 1 ? nil : String(sockets))
+        set("cores", cores == 1 ? nil : String(cores))
+        set("vcpus", vcpus > 0 ? String(vcpus) : nil)
+        set("affinity", affinity.trimmed.isEmpty ? nil : affinity.trimmed)
+        set("numa", numa ? "1" : nil)
+        set("cpu", cpuValue)
         return values
     }
 

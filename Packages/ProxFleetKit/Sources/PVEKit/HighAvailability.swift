@@ -282,11 +282,13 @@ public struct HARuleDraft: Sendable, Equatable {
             "disable": isEnabled ? nil : "1",
             "affinity": affinity,
         ]
+        // updateValue keeps nil values, which mark settings to delete; assigning nil would drop the key.
+        func set(_ key: String, _ value: String?) { values.updateValue(value, forKey: key) }
         if kind == .nodeAffinity {
-            values["nodes"] = nodes.sorted { $0.key < $1.key }.map { name, priority in priority.map { "\(name):\($0)" } ?? name }.joined(separator: ",")
-            values["strict"] = isStrict ? "1" : nil
+            set("nodes", nodes.sorted { $0.key < $1.key }.map { name, priority in priority.map { "\(name):\($0)" } ?? name }.joined(separator: ","))
+            set("strict", isStrict ? "1" : nil)
             // Positive is the default for node affinity; resource affinity needs it spelled out.
-            if affinity == "positive" { values["affinity"] = nil }
+            if affinity == "positive" { set("affinity", nil) }
         }
         return values
     }
