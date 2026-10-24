@@ -48,6 +48,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for building from source, running the tes
 > [!IMPORTANT]
 > Found a security issue? Please don't open a public issue. Report it privately through [GitHub's private vulnerability reporting](../../security/advisories/new) instead.
 
+## Privacy
+
+ProxFleet collects no data. It talks only to the servers you add, and your passwords stay in the iOS Keychain on your device. See the [privacy policy](PRIVACY.md).
+
 ## License
 
 ProxFleet is free software, licensed under the [GNU General Public License v3.0 or later](LICENSE).
