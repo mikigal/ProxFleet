@@ -117,6 +117,83 @@ final class BackupServerUITests: XCTestCase {
     }
 
     @MainActor
+    func testJobsAndRemotes() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        app.buttons["tab.jobs"].tap()
+        let verify = app.buttons["job.verify.weekly-verify"]
+        XCTAssertTrue(verify.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["job.sync.offsite-copy"].exists)
+        XCTAssertTrue(app.buttons["job.sync.cloud-push"].exists)
+        snapshot("pbs-jobs")
+
+        // Run Now from the editor; the log of the new run opens from there. (The verification job is already running
+        // when the demo starts, so it cannot be started again.)
+        app.buttons["job.prune.default-main-e0c4a2f1-3b8d"].tap()
+        let run = app.buttons["job.run"]
+        for _ in 0..<6 where !run.exists || !run.isHittable { app.swipeUp() }
+        run.tap()
+        let log = app.buttons["job.log"]
+        XCTAssertTrue(log.waitForExistence(timeout: 10))
+        // The run takes a few seconds in the demo; Run Now is enabled again when it ended.
+        XCTAssertTrue(run.waitForEnabled(timeout: 15))
+        snapshot("pbs-prune-job")
+        log.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'TASK OK'")).firstMatch.waitForExistence(timeout: 10))
+        app.navigationBars.buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // A new pull job: a too short ID is caught before sending, then the job is added with a filter.
+        app.buttons["job.add"].tap()
+        app.buttons["job.add.pull"].tap()
+        let id = app.textFields["syncjob.id"]
+        XCTAssertTrue(id.waitForExistence(timeout: 5))
+        id.tap()
+        id.typeText("x")
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Use 3 to 32'")).firstMatch.waitForExistence(timeout: 5))
+        // Selects the short ID and types over it; a tap would put the cursor before the right-aligned text.
+        id.doubleTap()
+        id.typeText("x-ui-pull\n")
+        XCTAssertEqual(id.value as? String, "x-ui-pull")
+        let addFilter = app.buttons["groupfilter.add"]
+        for _ in 0..<8 where !addFilter.isHittable { app.swipeUp() }
+        // A tap while the keyboard is still going away does not open the menu; try again.
+        let typeFilter = app.buttons["groupfilter.add.type"]
+        for _ in 0..<3 where !typeFilter.exists {
+            addFilter.tap()
+            _ = typeFilter.waitForExistence(timeout: 2)
+        }
+        typeFilter.tap()
+        snapshot("pbs-sync-job-editor")
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["job.sync.x-ui-pull"].waitForExistence(timeout: 10))
+
+        // The jobs of one datastore, with its garbage collection.
+        app.buttons["tab.datastores"].tap()
+        let main = app.buttons["datastore.main"]
+        XCTAssertTrue(main.waitForExistence(timeout: 5))
+        main.tap()
+        XCTAssertTrue(app.buttons["tab.jobs"].waitForExistence(timeout: 5))
+        app.buttons["tab.jobs"].tap()
+        XCTAssertTrue(app.buttons["job.gc.main"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["job.sync.offsite-copy"].exists)
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // A remote's connection check lists what its user sees there.
+        app.buttons["tab.more"].tap()
+        app.buttons["more.remotes"].tap()
+        let cloud = app.buttons["remote.cloud"]
+        XCTAssertTrue(cloud.waitForExistence(timeout: 10))
+        cloud.tap()
+        let check = app.buttons["remote.check"]
+        for _ in 0..<6 where !check.exists || !check.isHittable { app.swipeUp() }
+        check.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'homelab-copy'")).firstMatch.waitForExistence(timeout: 10))
+        snapshot("pbs-remote")
+    }
+
+    @MainActor
     func testAddAndRemoveDatastore() {
         app.launch()
         XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
@@ -277,5 +354,17 @@ final class BackupServerUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+}
+
+private extension XCUIElement {
+    /// Waits until the element can be used again, e.g. after the task it started has ended.
+    func waitForEnabled(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if exists, isEnabled { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        return false
     }
 }

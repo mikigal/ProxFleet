@@ -190,10 +190,10 @@ struct LiveBackupServerTests {
 
     @Test func jobsAndRemotesDecode() async throws {
         let session = try await signedIn()
-        let sync = try await session.send(PBS.syncJobs())
+        let sync = try await session.send(PBS.syncJobs()).value
         #expect(Set(sync.map(\.direction)) == [.pull, .push])
-        #expect(try await !session.send(PBS.verifyJobs()).isEmpty)
-        #expect(try await !session.send(PBS.pruneJobs()).isEmpty)
+        #expect(try await !session.send(PBS.verifyJobs()).value.isEmpty)
+        #expect(try await !session.send(PBS.pruneJobs()).value.isEmpty)
         let remote = try #require(try await session.send(PBS.remotes()).value.first)
         #expect(try await session.send(PBS.remoteDatastores(remote.name)).contains { $0.store == "store1" })
         _ = try await session.send(PBS.trafficControlStatus())
@@ -282,7 +282,7 @@ extension LiveBackupServerTests {
         #expect(draft.problems(isNew: true).isEmpty)
         let created = try await session.send(PBS.createDatastore(draft.creationParameters(usesNotificationSystem: true)))
         #expect(try await waitForTask(created, in: session).succeeded)
-        let pruneJob = try #require(try await session.send(PBS.pruneJobs(store: name)).first)
+        let pruneJob = try #require(try await session.send(PBS.pruneJobs(store: name)).value.first)
         #expect(pruneJob.retention == RetentionPolicy(last: 2))
         #expect(pruneJob.id.hasPrefix("default-\(name)-"))
 
@@ -339,7 +339,7 @@ extension LiveBackupServerTests {
         let removed = try await session.send(PBS.deleteDatastore(name, destroyData: true, keepJobs: false, digest: nil))
         #expect(try await waitForTask(removed, in: session).succeeded)
         #expect(try await !session.send(PBS.datastores()).contains { $0.store == name })
-        #expect(try await session.send(PBS.pruneJobs(store: name)).isEmpty)
+        #expect(try await session.send(PBS.pruneJobs(store: name)).value.isEmpty)
     }
 
     /// Prepares the spare disk as the web interface's Directory does with Removable Datastore, then adds a second
@@ -502,6 +502,166 @@ extension LiveBackupServerTests {
             #expect(namespace.removedSnapshots == 2)
         }
         _ = try await session.send(PBS.setProtected(store, oldest, false))
+    }
+}
+
+// MARK: - Jobs and remotes
+
+extension LiveBackupServerTests {
+    /// A remote pointing back at this server, and one job of each kind working on a throwaway datastore: created from
+    /// the app's drafts, read back, run, changed and removed again.
+    @Test func jobsAndRemotesLifecycle() async throws {
+        let session = try await signedIn()
+        let store = "pflive-jobs"
+        func cleanUp() async {
+            for id in ["pflive-pull", "pflive-push"] { _ = try? await session.send(PBS.deleteSyncJob(id)) }
+            _ = try? await session.send(PBS.deleteVerifyJob("pflive-verify"))
+            _ = try? await session.send(PBS.deletePruneJob("pflive-prune"))
+            _ = try? await session.send(PBS.deleteRemote("pflive-remote"))
+            try? await removeLeftover(store, in: session)
+        }
+        await cleanUp()
+        // `defer` cannot wait, so the checks run first and the cleanup always follows, also after a failure.
+        let outcome: Result<Void, any Error>
+        do {
+            try await checkJobs(session, store: store)
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        await cleanUp()
+        try outcome.get()
+    }
+
+    private func checkJobs(_ session: ProxmoxSession, store: String) async throws {
+        let version = try await session.send(PBS.version())
+        var datastore = DatastoreDraft()
+        datastore.name = store
+        datastore.path = "/datastore/\(store)"
+        datastore.pruneSchedule = ""
+        #expect(try await waitForTask(try await session.send(PBS.createDatastore(datastore.creationParameters(usesNotificationSystem: true))), in: session).succeeded)
+
+        // A remote back to this server with the seeded token; the seeded remote has the certificate's fingerprint.
+        var remote = RemoteDraft()
+        remote.name = "pflive-remote"
+        remote.address = "127.0.0.1"
+        remote.authID = try #require(server["SEED_TOKEN_ID"])
+        remote.password = try #require(server["SEED_TOKEN_SECRET"])
+        remote.fingerprint = try #require(try await session.send(PBS.remote("self")).value.fingerprint)
+        #expect(remote.problems(isNew: true).isEmpty)
+        _ = try await session.send(PBS.createRemote(remote.creationParameters))
+        #expect(try await session.send(PBS.remoteDatastores("pflive-remote")).contains { $0.store == "store1" })
+        #expect(try await session.send(PBS.remoteNamespaces("pflive-remote", store: "store1")).contains(BackupNamespace("pve")))
+        let remoteGroups = try await session.send(PBS.remoteGroups("pflive-remote", store: "store1", namespace: BackupNamespace("pve")))
+        #expect(remoteGroups.contains { $0.reference.type == .ct })
+        let loadedRemote = try await session.send(PBS.remote("pflive-remote"))
+        #expect(RemoteDraft(loadedRemote.value).serialized() == remote.serialized())
+        var editedRemote = RemoteDraft(loadedRemote.value)
+        editedRemote.comment = "ProxFleet live test"
+        _ = try await session.send(PBS.updateRemote("pflive-remote", editedRemote.update(from: RemoteDraft(loadedRemote.value), digest: loadedRemote.digest)))
+        #expect(try await session.send(PBS.remote("pflive-remote")).value.comment == "ProxFleet live test")
+
+        // A pull with a group filter, a rate limit and the options the server knows; it reads back as sent.
+        var pull = SyncJobDraft(direction: .pull, store: store, owner: "root@pam")
+        pull.id = "pflive-pull"
+        pull.remote = "pflive-remote"
+        pull.remoteStore = "store1"
+        pull.remoteNamespace = "pve"
+        pull.maxDepth = 0
+        pull.schedule = ""
+        pull.comment = "ProxFleet live test"
+        pull.groupFilters = [GroupFilter(kind: .type, value: "ct")]
+        pull.rateLimit = ByteRate(amount: "50", unit: .mib)
+        pull.transferLast = 1
+        if version.supports(.resyncCorrupt) { pull.resyncCorrupt = true }
+        if version.supports(.syncWorkerThreads) { pull.workerThreads = 2 }
+        #expect(pull.problems(isNew: true).isEmpty)
+        _ = try await session.send(PBS.createSyncJob(pull.creationParameters))
+        let listed = try await session.send(PBS.syncJobs(direction: version.supports(.pushSync) ? "all" : nil, store: store))
+        let created = try #require(listed.value.first { $0.id == "pflive-pull" })
+        #expect(SyncJobDraft(created).serialized() == pull.serialized())
+        #expect(SyncJobDraft(created).groupFilters == pull.groupFilters)
+        #expect(try await waitForTask(try await session.send(PBS.runSyncJob("pflive-pull")), in: session).succeeded)
+        let pulled = try await session.send(PBS.groups(store))
+        #expect(!pulled.isEmpty && pulled.allSatisfy { $0.reference.type == .ct })
+        #expect(try await session.send(PBS.snapshots(store, group: try #require(pulled.first).reference)).count == 1)
+
+        // Clearing the filter and the limit deletes them; a stale digest is refused afterwards.
+        var edited = SyncJobDraft(created)
+        edited.groupFilters = []
+        edited.rateLimit = ByteRate()
+        _ = try await session.send(PBS.updateSyncJob("pflive-pull", edited.changes(from: SyncJobDraft(created), digest: listed.digest)))
+        let cleared = try await session.send(PBS.syncJobConfig("pflive-pull")).value
+        #expect(cleared.groupFilters.isEmpty)
+        #expect(cleared.values["rate-in"] == nil)
+        var stale = SyncJobDraft(cleared)
+        stale.comment = "Stale"
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PBS.updateSyncJob("pflive-pull", stale.changes(from: SyncJobDraft(cleared), digest: listed.digest)))
+        }
+
+        // A push back through the remote, into a namespace of the same datastore.
+        if version.supports(.pushSync) {
+            _ = try await session.send(PBS.createNamespace(store, name: "pushed", parent: .root))
+            var push = SyncJobDraft(direction: .push, store: store, owner: "root@pam")
+            push.id = "pflive-push"
+            push.remote = "pflive-remote"
+            push.remoteStore = store
+            push.remoteNamespace = "pushed"
+            push.maxDepth = 0
+            push.schedule = ""
+            push.rateLimit = ByteRate(amount: "100", unit: .mib)
+            _ = try await session.send(PBS.createSyncJob(push.creationParameters))
+            let pushJob = try #require(try await session.send(PBS.syncJobConfig("pflive-push")).value)
+            #expect(pushJob.direction == .push)
+            #expect(pushJob.values["rate-out"].map { ByteRate(parsing: $0) } == push.rateLimit)
+            #expect(try await waitForTask(try await session.send(PBS.runSyncJob("pflive-push")), in: session).succeeded)
+            #expect(try await session.send(PBS.groups(store, namespace: BackupNamespace("pushed"))).count == pulled.count)
+        }
+
+        // Verification of everything, read back as sent.
+        var verify = VerifyJobDraft(store: store)
+        verify.id = "pflive-verify"
+        verify.schedule = ""
+        verify.skipVerified = false
+        if version.supports(.verificationThreads) {
+            verify.readThreads = 1
+            verify.verifyThreads = 2
+        }
+        _ = try await session.send(PBS.createVerifyJob(verify.creationParameters))
+        let verifyJob = try #require(try await session.send(PBS.verifyJobs(store: store)).value.first)
+        #expect(VerifyJobDraft(verifyJob).serialized() == verify.serialized())
+        #expect(try await waitForTask(try await session.send(PBS.runVerifyJob("pflive-verify")), in: session).succeeded)
+
+        // A disabled prune job with generous rules: running it by hand removes nothing.
+        var prune = PruneJobDraft(store: store)
+        prune.id = "pflive-prune"
+        prune.schedule = "daily"
+        prune.isEnabled = false
+        prune.retention = RetentionPolicy(last: 100)
+        _ = try await session.send(PBS.createPruneJob(prune.creationParameters))
+        let pruneList = try await session.send(PBS.pruneJobs(store: store))
+        let pruneJob = try #require(pruneList.value.first)
+        #expect(pruneJob.isDisabled)
+        #expect(PruneJobDraft(pruneJob).serialized() == prune.serialized())
+        #expect(try await waitForTask(try await session.send(PBS.runPruneJob("pflive-prune")), in: session).succeeded)
+        #expect(try await session.send(PBS.groups(store)).count == pulled.count)
+        var enabled = PruneJobDraft(pruneJob)
+        enabled.isEnabled = true
+        let enabling = enabled.changes(from: PruneJobDraft(pruneJob), digest: pruneList.digest)
+        #expect(enabling.deletions == ["disable"])
+        _ = try await session.send(PBS.updatePruneJob("pflive-prune", enabling))
+        #expect(try await session.send(PBS.pruneJobConfig("pflive-prune")).value.isDisabled == false)
+
+        // Garbage collection of the datastore, then its listing.
+        #expect(try await waitForTask(try await session.send(PBS.startGarbageCollection(store)), in: session).succeeded)
+        #expect(try await session.send(PBS.garbageCollectionJobs()).first { $0.store == store }?.lastRunState == "OK")
+
+        // A remote in use cannot be removed.
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PBS.deleteRemote("pflive-remote")) }
+        if version.supports(.syncEncryption) {
+            _ = try await session.send(PBS.encryptionKeys(includeArchived: true))
+        }
     }
 }
 

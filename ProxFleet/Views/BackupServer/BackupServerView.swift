@@ -3,12 +3,13 @@ import PBSKit
 import SwiftUI
 
 nonisolated enum BackupServerTab: String, DetailTab {
-    case dashboard, datastores, more
+    case dashboard, datastores, jobs, more
 
     var title: LocalizedStringKey {
         switch self {
         case .dashboard: "Dashboard"
         case .datastores: "Datastores"
+        case .jobs: "Jobs"
         case .more: "More"
         }
     }
@@ -17,6 +18,7 @@ nonisolated enum BackupServerTab: String, DetailTab {
         switch self {
         case .dashboard: "gauge.with.dots.needle.33percent"
         case .datastores: "cylinder.split.1x2"
+        case .jobs: "calendar.badge.clock"
         case .more: "ellipsis"
         }
     }
@@ -28,10 +30,12 @@ struct BackupServerView: View {
     @State private var tab: BackupServerTab = .dashboard
     /// Kept here so coming back to the tab shows the last data while it reloads.
     @State private var dashboard: BackupServerDashboard
+    @State private var jobs: BackupServerJobs
 
     init(connection: ServerConnection) {
         self.connection = connection
         _dashboard = State(initialValue: BackupServerDashboard(connection: connection))
+        _jobs = State(initialValue: BackupServerJobs(connection: connection))
     }
 
     var body: some View {
@@ -69,6 +73,8 @@ struct BackupServerView: View {
             BackupServerDashboardView(dashboard: dashboard)
         case .datastores:
             DatastoreListView(connection: connection)
+        case .jobs:
+            BackupServerJobsView(jobs: jobs)
         case .more:
             BackupServerMoreList(connection: connection)
         }
@@ -85,6 +91,14 @@ struct BackupServerMoreList: View {
                 Section {
                     LabeledContent("Proxmox Backup Server", value: version.displayVersion)
                 }
+            }
+            Section("Configuration") {
+                NavigationLink {
+                    BackupServerRemotesView(connection: connection)
+                } label: {
+                    MoreRow(title: "Remotes", systemImage: "server.rack", color: .teal)
+                }
+                .accessibilityIdentifier("more.remotes")
             }
             Section {
                 Button(role: .destructive) {

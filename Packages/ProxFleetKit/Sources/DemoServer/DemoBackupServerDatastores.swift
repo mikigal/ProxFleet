@@ -138,6 +138,7 @@ extension DemoBackupServerState {
             backingDevice: parameters["backing-device"], gcSchedule: parameters["gc-schedule"], namespaces: [""], groups: []
         ))
         datastoreSettings[name] = settings
+        addDefaultPruneJob(store: name, parameters)
         configRevision += 1
         return startTask("create-datastore", name, duration: 2)
     }
@@ -184,7 +185,7 @@ extension DemoBackupServerState {
         ]
     }
 
-    private func garbageCollectionJSON(_ datastore: DemoBackupServer.Datastore) -> JSONValue {
+    func garbageCollectionJSON(_ datastore: DemoBackupServer.Datastore) -> JSONValue {
         let gib = 1_073_741_824.0
         let referenced = datastore.groups.flatMap(\.snapshots).reduce(0) { $0 + $1.sizeGiB } * gib
         var status: [String: JSONValue] = [

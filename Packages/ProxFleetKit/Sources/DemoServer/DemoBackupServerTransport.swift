@@ -63,6 +63,8 @@ actor DemoBackupServerState {
         ("/datastore/main/laptops", "anna@pbs", "DatastorePowerUser", true),
         ("/", "monitoring@pbs!zabbix", "Audit", true),
     ]
+    var jobs = DemoBackupServerState.defaultJobs
+    var remotes = DemoBackupServerState.defaultRemotes
     let started = Date()
     private var ticketCounter = 0
 
@@ -98,7 +100,8 @@ actor DemoBackupServerState {
 
         let parts = path.split(separator: "/").map(String.init)
         if let response = handleDatastores(request.method, parts: parts, parameters: parameters)
-            ?? handleAccess(request.method, parts: parts, parameters: parameters) {
+            ?? handleAccess(request.method, parts: parts, parameters: parameters)
+            ?? handleJobs(request.method, parts: parts, parameters: parameters) {
             return response
         }
         switch (request.method, parts) {

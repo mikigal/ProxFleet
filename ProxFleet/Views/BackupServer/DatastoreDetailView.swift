@@ -4,12 +4,13 @@ import PVEKit
 import SwiftUI
 
 nonisolated enum DatastoreTab: String, DetailTab {
-    case summary, content, options, permissions
+    case summary, content, jobs, options, permissions
 
     var title: LocalizedStringKey {
         switch self {
         case .summary: "Summary"
         case .content: "Content"
+        case .jobs: "Jobs"
         case .options: "Options"
         case .permissions: "Permissions"
         }
@@ -19,15 +20,17 @@ nonisolated enum DatastoreTab: String, DetailTab {
         switch self {
         case .summary: "chart.bar.doc.horizontal"
         case .content: "archivebox"
+        case .jobs: "calendar.badge.clock"
         case .options: "slider.horizontal.3"
         case .permissions: "person.badge.key"
         }
     }
 }
 
-/// One datastore: its summary, settings and permissions.
+/// One datastore: its summary, content, jobs, settings and permissions.
 struct DatastoreDetailView: View {
     @State private var detail: DatastoreDetail
+    @State private var jobs: BackupServerJobs
     @State private var tab: DatastoreTab = .summary
     @State private var actionError: String?
     @State private var verifying = false
@@ -35,6 +38,7 @@ struct DatastoreDetailView: View {
 
     init(store: String, connection: ServerConnection) {
         _detail = State(initialValue: DatastoreDetail(store: store, connection: connection))
+        _jobs = State(initialValue: BackupServerJobs(connection: connection, store: store))
     }
 
     var body: some View {
@@ -94,6 +98,8 @@ struct DatastoreDetailView: View {
             } else {
                 ContentUnavailableView("Not Mounted", systemImage: "externaldrive.badge.xmark", description: Text("Mount the datastore to see its backups."))
             }
+        case .jobs:
+            BackupServerJobsView(jobs: jobs)
         case .options:
             DatastoreOptionsList(detail: detail, onRemoved: { dismiss() })
         case .permissions:

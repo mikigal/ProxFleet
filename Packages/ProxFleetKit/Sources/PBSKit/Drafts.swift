@@ -6,6 +6,8 @@ import ProxmoxCore
 /// parameter.
 public struct BackupServerConfigUpdate: Sendable, Equatable {
     public var values: [String: String] = [:]
+    /// Settings that are lists, such as a sync job's group filters: one parameter per item.
+    public var lists: [String: [String]] = [:]
     public var deletions: Set<String> = []
     public var digest: String?
 
@@ -13,7 +15,18 @@ public struct BackupServerConfigUpdate: Sendable, Equatable {
         self.digest = digest
     }
 
-    public var isEmpty: Bool { values.isEmpty && deletions.isEmpty }
+    public var isEmpty: Bool { values.isEmpty && lists.isEmpty && deletions.isEmpty }
+
+    /// Sets a list, or clears it when empty.
+    public mutating func setList(_ key: String, _ items: [String]) {
+        if items.isEmpty {
+            lists[key] = nil
+            deletions.insert(key)
+        } else {
+            lists[key] = items
+            deletions.remove(key)
+        }
+    }
 
     /// Sets a setting, or clears it when `value` is nil.
     public mutating func set(_ key: String, _ value: String?) {
@@ -30,6 +43,9 @@ public struct BackupServerConfigUpdate: Sendable, Equatable {
         var parameters = APIParameters()
         for key in values.keys.sorted() {
             parameters[key] = .string(values[key]!)
+        }
+        for key in lists.keys.sorted() {
+            for item in lists[key]! { parameters.append(key, .string(item)) }
         }
         for key in deletions.sorted() {
             parameters.append("delete", .string(key))

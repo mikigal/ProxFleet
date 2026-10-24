@@ -74,6 +74,8 @@ public struct SyncJob: Decodable, Sendable, Equatable, Identifiable {
     public var groupFilters: [String]
     /// Only the newest this many snapshots of each group.
     public var transferLast: Int?
+    /// Keys for decrypting pulled snapshots, or for snapshots pushed with an earlier key (4.2 and newer).
+    public var associatedKeys: [String]
     public var state: JobState
     public var values: [String: String]
 
@@ -96,7 +98,20 @@ public struct SyncJob: Decodable, Sendable, Equatable, Identifiable {
         maxDepth = container.lossyInt(AnyCodingKey("max-depth"))
         groupFilters = container.stringList("group-filter")
         transferLast = container.lossyInt(AnyCodingKey("transfer-last"))
+        associatedKeys = container.stringList("associated-key")
         state = JobState(container)
+    }
+}
+
+extension SyncJob {
+    /// Where the job copies from and to, e.g. `self:store1/pve → store2`.
+    public var routeDescription: String {
+        func location(_ store: String, _ namespace: BackupNamespace) -> String {
+            namespace.isRoot ? store : "\(store)/\(namespace.path)"
+        }
+        let local = location(store, namespace)
+        let other = (remote.map { "\($0):" } ?? "") + location(remoteStore, remoteNamespace)
+        return direction == .push ? "\(local) → \(other)" : "\(other) → \(local)"
     }
 }
 
@@ -159,20 +174,20 @@ public struct PruneJob: Decodable, Sendable, Equatable, Identifiable {
 }
 
 extension PBS {
-    /// Sync jobs with their state. `direction` nil leaves the filter out, which lists pull jobs only; servers before
+    /// Sync jobs with their state, and the digest of their configuration file. `direction` nil leaves the filter out, which lists pull jobs only; servers before
     /// 3.3 have no push jobs and refuse the parameter.
-    public static func syncJobs(direction: String? = "all", store: String? = nil) -> APIRequest<[SyncJob]> {
+    public static func syncJobs(direction: String? = "all", store: String? = nil) -> APIRequest<Digested<[SyncJob]>> {
         var parameters = APIParameters()
         if let direction { parameters["sync-direction"] = .string(direction) }
         if let store { parameters["store"] = .string(store) }
         return APIRequest(.get, "/admin/sync", parameters: parameters)
     }
 
-    public static func verifyJobs(store: String? = nil) -> APIRequest<[VerifyJob]> {
+    public static func verifyJobs(store: String? = nil) -> APIRequest<Digested<[VerifyJob]>> {
         APIRequest(.get, "/admin/verify", parameters: store.map { ["store": .string($0)] } ?? APIParameters())
     }
 
-    public static func pruneJobs(store: String? = nil) -> APIRequest<[PruneJob]> {
+    public static func pruneJobs(store: String? = nil) -> APIRequest<Digested<[PruneJob]>> {
         APIRequest(.get, "/admin/prune", parameters: store.map { ["store": .string($0)] } ?? APIParameters())
     }
 
