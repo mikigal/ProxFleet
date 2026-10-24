@@ -87,6 +87,19 @@ struct HighAvailabilityTests {
         #expect(HARuleDraft.newID().hasPrefix("ha-rule-") && HARuleDraft.newID().count == 21)
     }
 
+    @Test func nodeRuleDefaultsAreDeleted() {
+        var original = HARuleDraft(kind: .nodeAffinity)
+        original.resources = ["vm:231"]
+        original.nodes = ["pve-claude": nil]
+        original.isStrict = true
+        original.affinity = "negative"
+        var edited = original
+        edited.isStrict = false
+        edited.affinity = "positive"
+        let update = edited.changes(from: original)
+        #expect(update.values.isEmpty && update.deletions == ["strict", "affinity"])
+    }
+
     @Test func moveResultsAndRequests() throws {
         let blocked = #"{"blocking-resources": [{"cause": "node-affinity", "sid": "vm:231"}], "sid": "vm:231", "requested-node": "test3"}"#
         let result = try JSONDecoder().decode(HAMoveResult.self, from: Data(blocked.utf8))
