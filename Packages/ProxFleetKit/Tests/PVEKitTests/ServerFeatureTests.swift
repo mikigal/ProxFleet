@@ -27,6 +27,11 @@ struct ServerFeatureTests {
         #expect(version("unknown").supports(.sdnRouteFilters))
     }
 
+    @Test func releasesOlderThanPVE8AreUnsupported() {
+        #expect(!version("7.4-17").isSupported && !version("6.4-13").isSupported)
+        #expect(version("8.0.4").isSupported && version("9.2.21").isSupported && version("unknown").isSupported)
+    }
+
     @Test func cephReleasesWithoutTheReleaseList() {
         #expect(CephRelease.fallback(for: PVEVersionNumber(8, 2)).map(\.name) == ["quincy", "reef"])
         let pve84 = CephRelease.fallback(for: PVEVersionNumber(8, 4))

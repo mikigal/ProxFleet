@@ -24,6 +24,9 @@ public struct PVEVersionNumber: Sendable, Hashable, Comparable, CustomStringConv
     }
 
     public var description: String { "\(major).\(minor).\(patch)" }
+
+    /// The oldest release ProxFleet supports. Older ones may work in parts, but nothing is tested against them.
+    public static let oldestSupported = PVEVersionNumber(8, 0)
 }
 
 /// What the app offers only on Proxmox VE releases that have it. Older servers do not show these at all, as their
@@ -118,6 +121,9 @@ public enum PVEFeature: CaseIterable, Sendable {
 
 extension PVEVersion {
     public var number: PVEVersionNumber? { PVEVersionNumber(parsing: version) }
+
+    /// False for releases older than `PVEVersionNumber.oldestSupported`. A version the app cannot read counts as supported.
+    public var isSupported: Bool { number.map { $0 >= .oldestSupported } ?? true }
 
     /// Whether this release has the feature. A version the app cannot read counts as new enough.
     public func supports(_ feature: PVEFeature) -> Bool {

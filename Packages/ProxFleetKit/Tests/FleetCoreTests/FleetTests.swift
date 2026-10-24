@@ -116,6 +116,30 @@ struct OnboardingTests {
         #expect(fleet.environment.credentials.password(for: profile.id) == nil)
     }
 
+    /// Releases older than PVE 8 are added only after a warning.
+    @Test func olderReleaseIsAddedAfterAWarning() async throws {
+        var cluster = DemoCluster.homelab
+        cluster.version = "7.4-17"
+        let fleet = Fleet(environment: demoEnvironment(cluster: cluster))
+        let onboarding = fleet.makeOnboarding()
+        onboarding.addressText = "pve7.lan"
+        await onboarding.submitAddress()
+        onboarding.password = "secret"
+        await onboarding.signIn()
+        #expect(onboarding.step == .unsupportedRelease(version: "7.4-17"))
+        #expect(fleet.profiles.isEmpty)
+
+        onboarding.goBack()
+        #expect(onboarding.step == .credentials)
+        await onboarding.signIn()
+        onboarding.addUnsupportedRelease()
+        guard case .finished(let profile) = onboarding.step else {
+            Issue.record("expected finished, got \(onboarding.step)")
+            return
+        }
+        #expect(fleet.profiles.map(\.id) == [profile.id])
+    }
+
     @Test func secondNodeOfSavedClusterCanBeMerged() async throws {
         let fleet = Fleet(environment: demoEnvironment())
         let first = fleet.makeOnboarding()

@@ -12,6 +12,8 @@ public final class ServerOnboarding {
         case certificate(CertificateDetails)
         case credentials
         case secondFactor(SecondFactorChallenge)
+        /// The server runs a Proxmox VE release older than ProxFleet supports; the user may add it anyway.
+        case unsupportedRelease(version: String)
         /// The server belongs to a cluster that is already saved under another entry.
         case duplicateCluster(existing: ServerProfile)
         case finished(ServerProfile)
@@ -116,6 +118,12 @@ public final class ServerOnboarding {
         step = .finished(merged)
     }
 
+    /// Adds the server although its release is older than ProxFleet supports.
+    public func addUnsupportedRelease() {
+        guard let ticket else { return }
+        proceed(with: ticket)
+    }
+
     public func addSeparately() {
         guard let ticket else { return }
         save(ticket)
@@ -125,7 +133,7 @@ public final class ServerOnboarding {
         errorMessage = nil
         switch step {
         case .certificate, .credentials: step = .address
-        case .secondFactor, .duplicateCluster: step = .credentials
+        case .secondFactor, .unsupportedRelease, .duplicateCluster: step = .credentials
         case .address, .finished: break
         }
     }
@@ -164,6 +172,15 @@ public final class ServerOnboarding {
             let status = try? await session.send(PVE.clusterStatus())
             nodeName = status?.first { $0.kind == .node && $0.isLocal == true }?.name
         }
+        // Older releases may work in parts, so the user decides after a warning.
+        if let version = try? await session?.send(PVE.version()), !version.isSupported {
+            step = .unsupportedRelease(version: version.version)
+            return
+        }
+        proceed(with: ticket)
+    }
+
+    private func proceed(with ticket: AuthTicket) {
         if let cluster = ticket.clusterName, let existing = fleet.profile(inCluster: cluster) {
             step = .duplicateCluster(existing: existing)
             return

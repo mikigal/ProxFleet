@@ -1,5 +1,6 @@
 import FleetCore
 import ProxmoxCore
+import PVEKit
 import SwiftUI
 
 /// Sheet that walks through adding a server.
@@ -59,6 +60,8 @@ struct AddServerFlow: View {
                     Task { await onboarding.submitSecondFactor(challenge, method: method, code: code) }
                 }
             }
+        case .unsupportedRelease(let version):
+            UnsupportedReleaseStep(onboarding: onboarding, version: version)
         case .duplicateCluster(let existing):
             DuplicateClusterStep(onboarding: onboarding, existing: existing)
         }
@@ -189,6 +192,31 @@ private struct RealmMenu: View {
             .tint(.secondary)
             .accessibilityIdentifier("realm")
         }
+    }
+}
+
+private struct UnsupportedReleaseStep: View {
+    let onboarding: ServerOnboarding
+    let version: String
+
+    var body: some View {
+        Form {
+            Section {
+                Label {
+                    Text("This server runs Proxmox VE \(version), which ProxFleet does not officially support. Some features may not work correctly.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            } footer: {
+                Text("ProxFleet supports Proxmox VE \(String(PVEVersionNumber.oldestSupported.major)) and newer.")
+            }
+            Section {
+                Button("Add Anyway") { onboarding.addUnsupportedRelease() }
+                    .accessibilityIdentifier("addUnsupportedRelease")
+            }
+        }
+        .navigationTitle("Unsupported Version")
     }
 }
 
