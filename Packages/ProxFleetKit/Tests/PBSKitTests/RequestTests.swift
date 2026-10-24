@@ -59,7 +59,7 @@ struct RequestTests {
         #expect(PBS.createNamespace("store1", name: "nested", parent: .root).parameters == ["name": "nested"])
         let delete = PBS.deleteNamespace("store1", BackupNamespace("pve/nested"), deleteGroups: true)
         #expect(delete.method == .delete)
-        #expect(delete.parameters == ["ns": "pve/nested", "delete-groups": true])
+        #expect(delete.parameters == ["ns": "pve/nested", "delete-groups": true, "error-on-protected": false])
     }
 
     @Test func datastoreCalls() {

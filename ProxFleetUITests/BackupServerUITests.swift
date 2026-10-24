@@ -158,6 +158,94 @@ final class BackupServerUITests: XCTestCase {
         XCTAssertFalse(app.buttons["datastore.archive"].exists)
     }
 
+    /// Opens the content of the main datastore's homelab namespace.
+    private func openHomelabContent() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        app.buttons["tab.datastores"].tap()
+        let main = app.buttons["datastore.main"]
+        XCTAssertTrue(main.waitForExistence(timeout: 5))
+        main.tap()
+        app.buttons["tab.content"].tap()
+        let homelab = app.buttons["namespace.homelab"]
+        XCTAssertTrue(homelab.waitForExistence(timeout: 10))
+        snapshot("pbs-content-root")
+        homelab.tap()
+    }
+
+    @MainActor
+    func testBrowseABackupAndDownloadAFile() {
+        openHomelabContent()
+        let container = app.buttons["group.ct/200"]
+        XCTAssertTrue(container.waitForExistence(timeout: 10))
+        snapshot("pbs-content-groups")
+        container.tap()
+        let newest = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'snapshot.'")).firstMatch
+        XCTAssertTrue(newest.waitForExistence(timeout: 10))
+        snapshot("pbs-group")
+        newest.tap()
+
+        XCTAssertTrue(app.switches["snapshot.protected"].waitForExistence(timeout: 5))
+        let archive = app.buttons["file.root.pxar.didx"]
+        for _ in 0..<4 where !archive.isHittable { app.swipeUp() }
+        snapshot("pbs-snapshot")
+        archive.tap()
+        let etc = app.buttons["catalog.etc"]
+        XCTAssertTrue(etc.waitForExistence(timeout: 10))
+        etc.tap()
+        let hostname = app.buttons["catalog.hostname"]
+        XCTAssertTrue(hostname.waitForExistence(timeout: 10))
+        snapshot("pbs-catalog")
+        hostname.tap()
+        // Quick Look shows the downloaded file under the name the web interface gives it.
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'ct-200-hostname'")).firstMatch.waitForExistence(timeout: 15))
+        snapshot("pbs-download-preview")
+    }
+
+    @MainActor
+    func testGroupNotesPruneAndNamespaces() {
+        openHomelabContent()
+        let group = app.buttons["group.vm/101"]
+        XCTAssertTrue(group.waitForExistence(timeout: 10))
+        group.tap()
+        let notes = app.buttons["group.notes"]
+        XCTAssertTrue(notes.waitForExistence(timeout: 10))
+        notes.tap()
+        let text = app.textViews["notes.text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        text.tap()
+        text.typeText(" checked")
+        app.buttons["notes.save"].tap()
+        XCTAssertTrue(app.buttons["group.notes"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["group.notes"].label.contains("checked"), app.buttons["group.notes"].label)
+
+        app.buttons["group.actions"].tap()
+        app.buttons["group.prune"].tap()
+        // Keep the last three of the ten snapshots.
+        XCTAssertTrue(app.staticTexts["Remove"].firstMatch.waitForExistence(timeout: 10))
+        snapshot("pbs-prune-preview")
+        app.buttons["prune.start"].tap()
+        // The group's screen stays in the hierarchy under the sheet, so wait for the sheet to close.
+        XCTAssertTrue(app.buttons["prune.start"].waitForNonExistence(timeout: 15))
+        let snapshots = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'snapshot.'"))
+        expectation(for: NSPredicate(format: "count == 3"), evaluatedWith: snapshots)
+        waitForExpectations(timeout: 10)
+        snapshot("pbs-group-after-prune")
+
+        app.navigationBars.buttons.firstMatch.tap()
+        // Coming back shows the pruned group's new count.
+        let pruned = app.buttons.matching(NSPredicate(format: "identifier == 'group.vm/101' AND label CONTAINS '3 snapshots'")).firstMatch
+        XCTAssertTrue(pruned.waitForExistence(timeout: 10))
+        app.buttons["namespace.actions"].tap()
+        app.buttons["namespace.create"].tap()
+        // Alerts drop the identifiers of their text fields.
+        let name = app.alerts.textFields.firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.typeText("archive")
+        app.alerts.buttons["Create"].tap()
+        XCTAssertTrue(app.buttons["namespace.homelab/archive"].waitForExistence(timeout: 10))
+    }
+
     /// The demo address adds both demo servers, so App Review finds the backup server too.
     @MainActor
     func testDemoAddressAddsBothServers() {

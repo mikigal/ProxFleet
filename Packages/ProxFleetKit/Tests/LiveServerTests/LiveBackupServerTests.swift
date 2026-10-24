@@ -351,14 +351,24 @@ extension LiveBackupServerTests {
             Issue.record("the spare disk is not unused; wipe it first")
             return
         }
-        defer {
-            Task {
-                for name in ["pflive-usb2", "pflive-usb"] { try? await removeLeftover(name, in: session) }
-                if let upid = try? await session.send(APIRequest<String>(.put, "/nodes/localhost/disks/wipedisk", parameters: ["disk": .string(spare.name)])) {
-                    _ = try? await waitForTask(upid, in: session)
-                }
-            }
+        let outcome: Result<Void, any Error>
+        do {
+            try await checkRemovableDatastore(session, disk: spare.name)
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
         }
+        // Clean up after a failure as well; after success there is nothing left, which is harmless to repeat.
+        for name in ["pflive-usb2", "pflive-usb"] { try? await removeLeftover(name, in: session) }
+        if try await session.send(PBS.disks()).first(where: { $0.name == spare.name })?.isUnused == false,
+           let upid = try? await session.send(APIRequest<String>(.put, "/nodes/localhost/disks/wipedisk", parameters: ["disk": .string(spare.name)])) {
+            _ = try? await waitForTask(upid, in: session)
+        }
+        try outcome.get()
+    }
+
+    private func checkRemovableDatastore(_ session: ProxmoxSession, disk: String) async throws {
+        let spare = try #require(try await session.send(PBS.disks()).first { $0.name == disk })
         let directory = try await session.send(APIRequest<String>(.post, "/nodes/localhost/disks/directory", parameters: [
             "disk": .string(spare.name), "name": "pflive-usb", "filesystem": "ext4", "add-datastore": true, "removable-datastore": true,
         ]))
@@ -391,6 +401,107 @@ extension LiveBackupServerTests {
         let wipe = try await session.send(APIRequest<String>(.put, "/nodes/localhost/disks/wipedisk", parameters: ["disk": .string(spare.name)]))
         #expect(try await waitForTask(wipe, in: session).succeeded)
         #expect(try await session.send(PBS.disks()).first { $0.name == spare.name }?.isUnused == true)
+    }
+}
+
+// MARK: - Content
+
+extension LiveBackupServerTests {
+    /// Copies the seeded container and VM backups into a throwaway datastore with a local sync job, then works on the
+    /// copies: notes, protection, prune, browsing and downloading, owner, moves and deletion.
+    @Test func datastoreContent() async throws {
+        let session = try await signedIn()
+        let store = "pflive-content"
+        func cleanUp() async {
+            _ = try? await session.send(PBS.deleteSyncJob("pflive-copy"))
+            try? await removeLeftover(store, in: session)
+        }
+        await cleanUp()
+        // `defer` cannot wait, so the checks run first and the cleanup always follows, also after a failure.
+        let outcome: Result<Void, any Error>
+        do {
+            try await checkContent(session, store: store)
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        await cleanUp()
+        try outcome.get()
+    }
+
+    private func checkContent(_ session: ProxmoxSession, store: String) async throws {
+        var draft = DatastoreDraft()
+        draft.name = store
+        draft.path = "/datastore/\(store)"
+        draft.pruneSchedule = ""
+        #expect(try await waitForTask(try await session.send(PBS.createDatastore(draft.creationParameters(usesNotificationSystem: true))), in: session).succeeded)
+        _ = try await session.send(APIRequest<Nothing>(.post, "/config/sync", parameters: [
+            "id": "pflive-copy", "store": .string(store), "remote-store": "store1", "remote-ns": "pve", "max-depth": 0,
+        ]))
+        #expect(try await waitForTask(try await session.send(PBS.runSyncJob("pflive-copy")), in: session).succeeded)
+
+        let groups = try await session.send(PBS.groups(store))
+        let container = try #require(groups.first { $0.reference.type == .ct }).reference
+        let vm = try #require(groups.first { $0.reference.type == .vm }).reference
+        let snapshots = try await session.send(PBS.snapshots(store, group: container)).sorted { $0.reference.time < $1.reference.time }
+        #expect(snapshots.count == 2)
+        let (oldest, newest) = (try #require(snapshots.first).reference, try #require(snapshots.last).reference)
+
+        // Notes of the group and of a snapshot; the first line becomes the comment.
+        _ = try await session.send(PBS.setGroupNotes(store, container, notes: "Copied container\nfor tests"))
+        #expect(try await session.send(PBS.groupNotes(store, container)) == "Copied container\nfor tests")
+        _ = try await session.send(PBS.setSnapshotNotes(store, newest, notes: "Newest copy"))
+        #expect(try await session.send(PBS.snapshots(store, group: container)).first { $0.reference == newest }?.comment == "Newest copy")
+
+        // A protected snapshot cannot be deleted and survives every prune.
+        _ = try await session.send(PBS.setProtected(store, oldest, true))
+        await #expect(throws: ProxmoxError.self) { _ = try await session.send(PBS.deleteSnapshot(store, oldest)) }
+        let preview = try await session.send(PBS.previewPrune(store, container, keep: RetentionPolicy(last: 1)))
+        #expect(preview.allSatisfy { $0.keep })
+        #expect(preview.first { $0.reference.time == oldest.time }?.isProtected == true)
+
+        // Browsing the container's file archive and downloading from it.
+        let archives = try await session.send(PBS.catalog(store, newest, filePath: "/"))
+        let root = try #require(archives.first { $0.name == "root.pxar.didx" })
+        let top = try await session.send(PBS.catalog(store, newest, filePath: root.filePath))
+        let etc = try #require(top.first { $0.name == "etc" })
+        let hostname = try #require(try await session.send(PBS.catalog(store, newest, filePath: etc.filePath)).first { $0.name == "hostname" })
+        let file = try await session.download(PBS.downloadArchiveEntry(store, newest, filePath: hostname.filePath))
+        defer { try? FileManager.default.removeItem(at: file) }
+        #expect(try !String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        let zip = try await session.download(PBS.downloadArchiveEntry(store, newest, filePath: etc.filePath))
+        defer { try? FileManager.default.removeItem(at: zip) }
+        #expect(try Data(contentsOf: zip).prefix(2) == Data("PK".utf8))
+        let config = try await session.download(PBS.downloadSnapshotFile(store, newest, fileName: "pct.conf.blob"))
+        defer { try? FileManager.default.removeItem(at: config) }
+        #expect(try String(contentsOf: config, encoding: .utf8).contains("hostname:"))
+
+        // Verification of a group, a new owner and a move to another namespace.
+        #expect(try await waitForTask(try await session.send(PBS.verify(store, group: container, skipVerified: false)), in: session).succeeded)
+        let owner = "\(try #require(server["LIMITED_USER"]))@\(server["LIMITED_REALM"] ?? "pbs")"
+        _ = try await session.send(PBS.changeOwner(store, vm, to: owner))
+        #expect(try await session.send(PBS.groups(store)).first { $0.reference == vm }?.owner == owner)
+        _ = try await session.send(PBS.createNamespace(store, name: "moved", parent: .root))
+        let version = try await session.send(PBS.version())
+        if version.supports(.moveGroupsAndNamespaces) {
+            #expect(try await waitForTask(try await session.send(PBS.moveGroup(store, vm, to: BackupNamespace("moved"), merge: true)), in: session).succeeded)
+            #expect(try await session.send(PBS.groups(store, namespace: BackupNamespace("moved"))).map(\.reference.path) == [vm.path])
+            _ = try await session.send(PBS.createNamespace(store, name: "target", parent: .root))
+            #expect(try await waitForTask(try await session.send(PBS.moveNamespace(store, BackupNamespace("moved"), to: BackupNamespace("target/moved"), mergeGroups: true)), in: session).succeeded)
+            #expect(try await session.send(PBS.namespaces(store)).map(\.path).sorted() == ["", "target", "target/moved"])
+        }
+
+        // Prune of everything as a dry run, then deletion: the protected snapshot keeps its group.
+        #expect(try await waitForTask(try await session.send(PBS.pruneNamespace(store, .root, keep: RetentionPolicy(last: 1), dryRun: true)), in: session).succeeded)
+        let deleted = try #require(try await session.send(PBS.deleteGroup(store, container)))
+        #expect(deleted.protectedSnapshots == 1)
+        #expect(deleted.removedSnapshots == 1)
+        #expect(try await session.send(PBS.snapshots(store, group: container)).map(\.reference) == [oldest])
+        if version.supports(.moveGroupsAndNamespaces) {
+            let namespace = try #require(try await session.send(PBS.deleteNamespace(store, BackupNamespace("target"), deleteGroups: true)))
+            #expect(namespace.removedSnapshots == 2)
+        }
+        _ = try await session.send(PBS.setProtected(store, oldest, false))
     }
 }
 

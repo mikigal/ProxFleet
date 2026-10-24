@@ -4,11 +4,12 @@ import PVEKit
 import SwiftUI
 
 nonisolated enum DatastoreTab: String, DetailTab {
-    case summary, options, permissions
+    case summary, content, options, permissions
 
     var title: LocalizedStringKey {
         switch self {
         case .summary: "Summary"
+        case .content: "Content"
         case .options: "Options"
         case .permissions: "Permissions"
         }
@@ -17,6 +18,7 @@ nonisolated enum DatastoreTab: String, DetailTab {
     var systemImage: String {
         switch self {
         case .summary: "chart.bar.doc.horizontal"
+        case .content: "archivebox"
         case .options: "slider.horizontal.3"
         case .permissions: "person.badge.key"
         }
@@ -86,6 +88,12 @@ struct DatastoreDetailView: View {
         switch tab {
         case .summary:
             DatastoreSummaryList(detail: detail)
+        case .content:
+            if detail.isMounted {
+                DatastoreContentView(store: detail.store, connection: detail.connection)
+            } else {
+                ContentUnavailableView("Not Mounted", systemImage: "externaldrive.badge.xmark", description: Text("Mount the datastore to see its backups."))
+            }
         case .options:
             DatastoreOptionsList(detail: detail, onRemoved: { dismiss() })
         case .permissions:
@@ -156,7 +164,7 @@ private struct DatastoreSummaryList: View {
                     ForEach(BackupType.allCases) { type in
                         if let counts = status.counts[type] {
                             LabeledContent {
-                                Text("\(counts.groups) groups · \(counts.snapshots) snapshots")
+                                Text("^[\(counts.groups) group](inflect: true) · ^[\(counts.snapshots) snapshot](inflect: true)")
                             } label: {
                                 Label(type.title, systemImage: type.systemImage)
                             }

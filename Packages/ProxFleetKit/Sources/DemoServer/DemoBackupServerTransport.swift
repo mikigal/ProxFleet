@@ -7,7 +7,7 @@ import ProxmoxCore
 /// so the demo catches requests a real server would reject. Any password but `wrong` is accepted; user names
 /// containing `tfa` need the TOTP code `123456`.
 public final class DemoBackupServerTransport: HTTPTransport {
-    private let state: DemoBackupServerState
+    let state: DemoBackupServerState
 
     public init(server: DemoBackupServer = .homelab) {
         state = DemoBackupServerState(server: server)

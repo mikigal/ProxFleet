@@ -160,6 +160,7 @@ public enum TaskDescription {
         "forget-group": "Remove Group", "realm-sync": "User Sync", "logrotate": "Log Rotation", "mount-device": "Mount Device",
         "unmount-device": "Unmount Device", "mount-sync-jobs": "Sync Jobs on Mount", "s3-refresh": "S3 Refresh",
         "notification-threshold-reset": "Threshold Reset", "remove-encryption-key": "Remove Key",
+        "move-group": "Move Group", "move-namespace": "Move Namespace",
     ]
 
     /// The object of a Proxmox Backup Server task in the form its web interface shows: the datastore and backup group
@@ -167,6 +168,15 @@ public enum TaskDescription {
     static func backupServerObject(type: String, id: String) -> String? {
         let parts = id.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
         switch type {
+        case "prune" where parts.count == 3:
+            // `store:ns:type/id` for a group, `store:ns` for a whole namespace.
+            let location = parts[1].isEmpty ? parts[0] : "\(parts[0]):\(parts[1])"
+            return parts[2].isEmpty ? location : "\(location) \(parts[2])"
+        case "move-group" where parts.count == 3:
+            // `store:/type/id:target`: the source namespace is not part of the ID.
+            return "\(parts[0]) \(parts[1].trimmingCharacters(in: CharacterSet(charactersIn: "/"))) → \(parts[2].isEmpty ? "/" : parts[2])"
+        case "move-namespace" where parts.count == 3:
+            return "\(parts[0]) \(parts[1]) → \(parts[2])"
         case "backup", "reader", "prune", "verify", "verify_group", "verify_snapshot":
             guard parts.count == 2 else { return nil }
             // `store:[ns/<name>/…]type/id[/time]`: verification tasks name the namespace (`ns/pve/ns/nested/`, or a

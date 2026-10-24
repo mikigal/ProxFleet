@@ -31,11 +31,11 @@ extension DemoBackupServerState {
         String(format: "%064x", configRevision)
     }
 
-    private func datastoreIndex(_ name: String) -> Int? {
+    func datastoreIndex(_ name: String) -> Int? {
         server.datastores.firstIndex { $0.name == name }
     }
 
-    private func startTask(_ type: String, _ workerID: String, duration: TimeInterval, result: String = "OK") -> HTTPResponse {
+    func startTask(_ type: String, _ workerID: String, duration: TimeInterval, result: String = "OK") -> HTTPResponse {
         let task = DemoBackupTask(number: (tasks.map(\.number).max() ?? 0) + 1, type: type, workerID: workerID, user: "demo@pbs",
                                   startedAt: Date(), duration: duration, result: result)
         tasks.insert(task, at: 0)
@@ -101,9 +101,6 @@ extension DemoBackupServerState {
             return success(garbageCollectionJSON(datastore))
         case (.post, ["gc"]):
             return startTask("garbage_collection", name, duration: 4)
-        case (.post, ["verify"]):
-            let namespace = parameters["ns"].map { "ns/\($0)" } ?? ""
-            return startTask("verify", namespace.isEmpty ? name : "\(name):\(namespace)", duration: 3)
         case (.get, ["active-operations"]):
             return success(["read": 0, "write": 0])
         case (.get, ["rrd"]):
@@ -118,7 +115,7 @@ extension DemoBackupServerState {
             }
             return success(.array(namespaces.map { ["ns": .string($0)] }))
         default:
-            return nil
+            return handleContent(method, index: index, rest: rest, parameters: parameters)
         }
     }
 

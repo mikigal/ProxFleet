@@ -302,8 +302,23 @@ public struct CatalogEntry: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// What deleting a group or namespace removed. Older releases answer without it.
+public struct DeletionResult: Decodable, Sendable, Equatable {
+    public var removedGroups: Int
+    public var removedSnapshots: Int
+    /// Protected snapshots that stayed, and the groups holding them with them.
+    public var protectedSnapshots: Int
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        removedGroups = container.lossyInt(AnyCodingKey("removed-groups")) ?? 0
+        removedSnapshots = container.lossyInt(AnyCodingKey("removed-snapshots")) ?? 0
+        protectedSnapshots = container.lossyInt(AnyCodingKey("protected-snapshots")) ?? 0
+    }
+}
+
 /// One entry of a prune: a snapshot and whether the retention rules keep it.
-public struct PruneCandidate: Decodable, Sendable, Equatable, Identifiable {
+public struct SnapshotPruneDecision: Decodable, Sendable, Equatable, Identifiable {
     public var reference: SnapshotReference
     public var keep: Bool
     public var isProtected: Bool
@@ -345,10 +360,12 @@ extension PBS {
         return APIRequest(.post, content(store, "namespace"), parameters: parameters)
     }
 
-    /// Removes an empty namespace, or with `deleteGroups` everything in it. Protected snapshots stay, and so does the
-    /// namespace that holds them.
-    public static func deleteNamespace(_ store: String, _ namespace: BackupNamespace, deleteGroups: Bool) -> APIRequest<Nothing> {
-        APIRequest(.delete, content(store, "namespace"), parameters: ["ns": .string(namespace.path), "delete-groups": .bool(deleteGroups)])
+    /// Removes an empty namespace, or with `deleteGroups` everything in it. Protected snapshots stay with the
+    /// namespaces holding them; without `keepProtected` the server reports that as an error.
+    public static func deleteNamespace(_ store: String, _ namespace: BackupNamespace, deleteGroups: Bool, keepProtected: Bool = true) -> APIRequest<DeletionResult?> {
+        var parameters: APIParameters = ["ns": .string(namespace.path), "delete-groups": .bool(deleteGroups)]
+        if keepProtected { parameters["error-on-protected"] = false }
+        return APIRequest(.delete, content(store, "namespace"), parameters: parameters)
     }
 
     /// Groups of one namespace, without those of its children.
@@ -421,9 +438,38 @@ extension PBS {
         APIRequest(.delete, content(store, "snapshots"), parameters: snapshot.parameters)
     }
 
-    /// Deletes a group with its snapshots; protected snapshots and the group holding them stay.
-    public static func deleteGroup(_ store: String, _ group: BackupGroupReference) -> APIRequest<Nothing> {
-        APIRequest(.delete, content(store, "groups"), parameters: group.parameters)
+    /// Deletes a group with its snapshots. Protected snapshots stay, and so does the group then. The server deletes
+    /// the other snapshots either way, but reports that as an error unless `keepProtected` says it is expected.
+    public static func deleteGroup(_ store: String, _ group: BackupGroupReference, keepProtected: Bool = true) -> APIRequest<DeletionResult?> {
+        var parameters = group.parameters
+        if keepProtected { parameters["error-on-protected"] = false }
+        return APIRequest(.delete, content(store, "groups"), parameters: parameters)
+    }
+
+    /// Moves a group to another namespace of the datastore; returns the task. With `merge`, snapshots join a group of
+    /// the same name there.
+    public static func moveGroup(_ store: String, _ group: BackupGroupReference, to target: BackupNamespace, merge: Bool) -> APIRequest<String> {
+        var parameters = group.parameters
+        parameters["target-ns"] = .string(target.path)
+        parameters["merge-group"] = .bool(merge)
+        return APIRequest(.post, content(store, "move-group"), parameters: parameters)
+    }
+
+    /// Moves a namespace with everything below it; returns the task. The source is removed afterwards.
+    public static func moveNamespace(_ store: String, _ namespace: BackupNamespace, to target: BackupNamespace, mergeGroups: Bool) -> APIRequest<String> {
+        APIRequest(.post, content(store, "move-namespace"), parameters: [
+            "ns": .string(namespace.path), "target-ns": .string(target.path), "merge-groups": .bool(mergeGroups),
+        ])
+    }
+
+    /// Prunes every group of a namespace (and the ones below, up to `maxDepth`) by the rules; returns the task, whose
+    /// log lists what was kept and removed. With `dryRun` nothing is removed.
+    public static func pruneNamespace(_ store: String, _ namespace: BackupNamespace, keep retention: RetentionPolicy, maxDepth: Int? = nil, dryRun: Bool = false) -> APIRequest<String> {
+        var parameters = retention.parameters
+        if !namespace.isRoot { parameters["ns"] = .string(namespace.path) }
+        if let maxDepth { parameters["max-depth"] = .int(maxDepth) }
+        if dryRun { parameters["dry-run"] = true }
+        return APIRequest(.post, content(store, "prune-datastore"), parameters: parameters)
     }
 
     public static func changeOwner(_ store: String, _ group: BackupGroupReference, to owner: String) -> APIRequest<Nothing> {
@@ -433,7 +479,7 @@ extension PBS {
     }
 
     /// Shows which snapshots of a group the rules keep, without removing any.
-    public static func previewPrune(_ store: String, _ group: BackupGroupReference, keep retention: RetentionPolicy) -> APIRequest<[PruneCandidate]> {
+    public static func previewPrune(_ store: String, _ group: BackupGroupReference, keep retention: RetentionPolicy) -> APIRequest<[SnapshotPruneDecision]> {
         var parameters = group.parameters
         for item in retention.parameters.items { parameters[item.name] = item.value }
         parameters["dry-run"] = true
