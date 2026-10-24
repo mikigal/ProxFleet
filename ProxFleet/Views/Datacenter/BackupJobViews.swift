@@ -222,6 +222,7 @@ struct BackupJobEditor: View {
             // The first storage that holds backups, as the web interface preselects.
             draft.storage = Self.backupStorages(list.connection.snapshot).first ?? ""
         }
+        if !list.connection.supports(.notifications) { draft.useSendmailOnly() }
         original = draft
         _draft = State(initialValue: draft)
     }
@@ -468,11 +469,13 @@ struct BackupJobEditor: View {
 
     private var notificationSection: some View {
         Section {
-            Picker("Notify", selection: $draft.usesLegacySendmail) {
-                Text("Global Settings").tag(false)
-                Text("Sendmail (Legacy)").tag(true)
+            if draft.hasNotificationSystem {
+                Picker("Notify", selection: $draft.usesLegacySendmail) {
+                    Text("Global Settings").tag(false)
+                    Text("Sendmail (Legacy)").tag(true)
+                }
+                .accessibilityIdentifier("backupjob.notification")
             }
-            .accessibilityIdentifier("backupjob.notification")
             if draft.usesLegacySendmail {
                 LabeledTextField(title: "Recipients", prompt: "root@pam, ops@example.com", text: $draft.mailto, keyboard: .emailAddress, identifier: "backupjob.mailto")
                     .textInputAutocapitalization(.never)
@@ -486,9 +489,13 @@ struct BackupJobEditor: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text(draft.usesLegacySendmail
-                ? "Mails the recipients with sendmail, as before notification targets existed. Users are mailed at the address of their account."
-                : "Uses the datacenter's notification matchers and targets. Matchers can match this job by its ID.")
+            if !draft.hasNotificationSystem {
+                Text("Mails the recipients with sendmail; without recipients, nobody is mailed. Users are mailed at the address of their account.")
+            } else {
+                Text(draft.usesLegacySendmail
+                    ? "Mails the recipients with sendmail, as before notification targets existed. Users are mailed at the address of their account."
+                    : "Uses the datacenter's notification matchers and targets. Matchers can match this job by its ID.")
+            }
         }
     }
 

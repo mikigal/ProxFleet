@@ -224,6 +224,8 @@ public struct BackupJobDraft: Equatable, Sendable {
     public var mailto = ""
     /// `always` or `failure`.
     public var mailNotification = "always"
+    /// False before PVE 8.1, see `useSendmailOnly()`.
+    public private(set) var hasNotificationSystem = true
     private var otherPerformance = PropertyString(items: [])
     private var otherFleecing = PropertyString(items: [])
 
@@ -310,7 +312,7 @@ public struct BackupJobDraft: Equatable, Sendable {
         fleecing.items += otherFleecing.items
         set("fleecing", fleecing.items.isEmpty ? nil : fleecing.stringValue)
         set("pbs-change-detection-mode", Self.text(pbsChangeDetection))
-        set("notification-mode", usesLegacySendmail ? "legacy-sendmail" : "notification-system")
+        set("notification-mode", hasNotificationSystem ? (usesLegacySendmail ? "legacy-sendmail" : "notification-system") : nil)
         set("mailto", usesLegacySendmail ? Self.text(mailto) : nil)
         set("mailnotification", usesLegacySendmail && mailNotification != "always" ? mailNotification : nil)
         return values
@@ -334,6 +336,13 @@ public struct BackupJobDraft: Equatable, Sendable {
         return update
     }
 
+    /// Before PVE 8.1 there are no notification targets and no `notification-mode`: jobs mail with sendmail, and
+    /// only when recipients are given.
+    public mutating func useSendmailOnly() {
+        hasNotificationSystem = false
+        usesLegacySendmail = true
+    }
+
     public var problems: [String: String] {
         var problems = customRetention ? prune.problems : [:]
         if Self.text(schedule) == nil { problems["schedule"] = String(localized: "Enter a schedule.") }
@@ -353,7 +362,7 @@ public struct BackupJobDraft: Equatable, Sendable {
         number(bandwidthLimit, "bwlimit", 0...Int.max, String(localized: "Use a whole number of KiB/s, or leave it empty."))
         number(zstdThreads, "zstd", 0...256, String(localized: "Use a whole number of threads; 0 uses half of the cores."))
         number(ioWorkers, "performance", 1...256, String(localized: "Use a number from 1 to 256."))
-        if usesLegacySendmail, Self.text(mailto) == nil { problems["mailto"] = String(localized: "Enter at least one recipient.") }
+        if usesLegacySendmail, hasNotificationSystem, Self.text(mailto) == nil { problems["mailto"] = String(localized: "Enter at least one recipient.") }
         return problems
     }
 }

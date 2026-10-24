@@ -39,6 +39,17 @@ struct BackupTests {
             == "vmid=202&storage=local&mode=stop&compress=0&remove=1&notification-mode=legacy-sendmail&protected=1&mailto=ops%40example.com")
     }
 
+    /// PVE 8.0 knows no `notification-mode` and mails only when recipients are given.
+    @Test func backupNowBeforeTheNotificationSystem() {
+        var draft = BackupDraft(guest: container)
+        draft.storage = "local"
+        draft.useSendmailOnly()
+        #expect(draft.problems.isEmpty && draft.usesLegacySendmail)
+        #expect(PVE.backupNow(draft).parameters.formEncoded == "vmid=202&storage=local&mode=snapshot&compress=zstd&remove=0&notes-template=%7B%7Bguestname%7D%7D")
+        draft.mailto = "ops@example.com"
+        #expect(PVE.backupNow(draft).parameters["mailto"] == "ops@example.com")
+    }
+
     @Test func volumeRequestsEscapeTheVolumeID() {
         let volume = "local:backup/vzdump-qemu-100-2026_10_21-15_08_47.vma.zst"
         let update = PVE.updateBackup(node: "pve", volume: volume, notes: "note\n", isProtected: true)

@@ -83,15 +83,26 @@ public struct BackupDraft: Sendable, Equatable {
     /// Mail with sendmail instead of the datacenter's notification targets and matchers.
     public var usesLegacySendmail = false
     public var mailto = ""
+    /// False before PVE 8.1, see `useSendmailOnly()`.
+    public private(set) var hasNotificationSystem = true
 
     public init(guest: GuestReference) {
         self.guest = guest
     }
 
+    /// Before PVE 8.1 there are no notification targets and no `notification-mode`: backups mail with sendmail,
+    /// and only when recipients are given.
+    public mutating func useSendmailOnly() {
+        hasNotificationSystem = false
+        usesLegacySendmail = true
+    }
+
     public var problems: [String: String] {
         var problems: [String: String] = [:]
         if storage.isEmpty { problems["storage"] = String(localized: "Choose a storage.") }
-        if usesLegacySendmail, mailto.trimmingCharacters(in: .whitespaces).isEmpty { problems["mailto"] = String(localized: "Enter at least one recipient.") }
+        if usesLegacySendmail, hasNotificationSystem, mailto.trimmingCharacters(in: .whitespaces).isEmpty {
+            problems["mailto"] = String(localized: "Enter at least one recipient.")
+        }
         return problems
     }
 
@@ -100,12 +111,13 @@ public struct BackupDraft: Sendable, Equatable {
             "vmid": .int(guest.vmid), "storage": .string(storage), "mode": .string(mode.rawValue), "compress": .string(compression.rawValue),
             // Without Prune, a manual backup must not remove older ones by the storage's retention settings.
             "remove": .bool(prunes),
-            "notification-mode": .string(usesLegacySendmail ? "legacy-sendmail" : "notification-system"),
         ]
+        if hasNotificationSystem { parameters["notification-mode"] = .string(usesLegacySendmail ? "legacy-sendmail" : "notification-system") }
         let notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if !notes.isEmpty { parameters["notes-template"] = .string(notes) }
         if isProtected { parameters["protected"] = true }
-        if usesLegacySendmail { parameters["mailto"] = .string(mailto.trimmingCharacters(in: .whitespaces)) }
+        let recipients = mailto.trimmingCharacters(in: .whitespaces)
+        if usesLegacySendmail, !recipients.isEmpty { parameters["mailto"] = .string(recipients) }
         return parameters
     }
 }

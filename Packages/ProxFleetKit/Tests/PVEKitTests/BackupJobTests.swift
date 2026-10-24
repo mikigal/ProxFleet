@@ -77,6 +77,29 @@ struct BackupJobTests {
         #expect(draft.problems.keys.sorted() == ["id", "performance"])
     }
 
+    /// PVE 8.0 knows no `notification-mode`; a job mails with sendmail, and only when recipients are given.
+    @Test func jobsBeforeTheNotificationSystem() throws {
+        var draft = BackupJobDraft()
+        draft.storage = "local"
+        draft.schedule = "21:00"
+        draft.useSendmailOnly()
+        #expect(draft.problems.isEmpty)
+        let parameters = PVE.createBackupJob(draft).parameters
+        #expect(parameters["notification-mode"] == nil && parameters["mailto"] == nil)
+        draft.mailto = "root@pam"
+        draft.mailNotification = "failure"
+        #expect(PVE.createBackupJob(draft).parameters["mailto"] == "root@pam")
+
+        let job = try JSONDecoder().decode(BackupJob.self, from: Data(#"{"id":"job1","schedule":"21:00","storage":"local","all":1,"mailto":"root@pam"}"#.utf8))
+        var original = BackupJobDraft(job)
+        original.useSendmailOnly()
+        var edited = original
+        edited.mailto = ""
+        let update = edited.changes(from: original)
+        #expect(update.deletions == ["mailto"] && update.values.isEmpty)
+        #expect(original.changes(from: original).isEmpty)
+    }
+
     @Test func advancedOptionsRoundTrip() throws {
         let json = #"""
         {"id":"job1","schedule":"21:00","storage":"local","all":1,"bwlimit":10240,"zstd":2,"performance":{"max-workers":"4","pbs-entries-max":"2000"},

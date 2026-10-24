@@ -360,7 +360,9 @@ private struct BackupNowView: View {
 
     init(detail: GuestDetail) {
         self.detail = detail
-        _draft = State(initialValue: BackupDraft(guest: detail.reference))
+        var draft = BackupDraft(guest: detail.reference)
+        if !detail.connection.supports(.notifications) { draft.useSendmailOnly() }
+        _draft = State(initialValue: draft)
     }
 
     private var kindName: String { detail.reference.kind == .virtualMachine ? "VM" : "CT" }
@@ -416,9 +418,11 @@ private struct BackupNowView: View {
             Section {
                 Toggle("Prune Older Backups", isOn: $draft.prunes)
                     .accessibilityIdentifier("backup.prune")
-                Picker("Notify", selection: $draft.usesLegacySendmail) {
-                    Text("Global Settings").tag(false)
-                    Text("Sendmail (Legacy)").tag(true)
+                if draft.hasNotificationSystem {
+                    Picker("Notify", selection: $draft.usesLegacySendmail) {
+                        Text("Global Settings").tag(false)
+                        Text("Sendmail (Legacy)").tag(true)
+                    }
                 }
                 if draft.usesLegacySendmail {
                     LabeledTextField(title: "Recipients", prompt: "root@pam", text: $draft.mailto, keyboard: .emailAddress, identifier: "backup.mailto")
@@ -427,7 +431,9 @@ private struct BackupNowView: View {
                     FieldError(message: errors["mailto"])
                 }
             } footer: {
-                Text("Prune removes this guest's older backups on the storage by the storage's retention settings afterwards. Notifications go to the datacenter's matchers and targets, or by sendmail to the recipients.")
+                Text(draft.hasNotificationSystem
+                    ? "Prune removes this guest's older backups on the storage by the storage's retention settings afterwards. Notifications go to the datacenter's matchers and targets, or by sendmail to the recipients."
+                    : "Prune removes this guest's older backups on the storage by the storage's retention settings afterwards. The recipients get a mail by sendmail; without recipients, nobody is mailed.")
             }
         }
     }

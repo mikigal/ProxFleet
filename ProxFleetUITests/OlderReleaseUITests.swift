@@ -52,7 +52,7 @@ final class OlderReleaseUITests: XCTestCase {
         XCTAssertFalse(app.buttons["metric.add.opentelemetry"].exists)
     }
 
-    /// Proxmox VE 8.0 had no notification targets and matchers yet.
+    /// Proxmox VE 8.0 had no notification targets and matchers yet: backup jobs only mail with sendmail.
     @MainActor
     func testFirstPVE8Release() {
         app.launchArguments = ["-inMemory", "-demo", "-demoVersion", "8.0.4"]
@@ -61,6 +61,21 @@ final class OlderReleaseUITests: XCTestCase {
         app.buttons["tab.more"].tap()
         XCTAssertTrue(app.buttons["datacenter.metrics"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["datacenter.notifications"].exists)
+
+        app.buttons["tab.backup"].tap()
+        let add = app.buttons["backupjob.add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        add.tap()
+        XCTAssertTrue(app.textFields["backupjob.comment"].waitForExistence(timeout: 5))
+        let recipients = app.textFields["backupjob.mailto"]
+        for _ in 0..<10 where !recipients.exists { app.swipeUp() }
+        XCTAssertTrue(recipients.exists)
+        XCTAssertFalse(app.buttons["backupjob.notification"].exists)
+        snapshot("pve80-backup-job")
+        // Without recipients nobody is mailed, which is no error.
+        app.buttons["save"].tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.textFields["backupjob.comment"].exists)
     }
 
     private func open(_ identifier: String) {
