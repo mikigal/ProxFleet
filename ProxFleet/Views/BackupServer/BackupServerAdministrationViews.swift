@@ -8,11 +8,22 @@ import SwiftUI
 struct BackupServerMoreList: View {
     let connection: ServerConnection
     let node: NodeDetail
+    @State private var access: BackupServerAccess
+    @State private var settings: BackupServerSettings
+    @State private var twoFactors: AccessControl
     @State private var upgrades = false
     @State private var pendingPower: NodePowerCommand?
     @State private var sentCommand: NodePowerCommand?
     @State private var isWorking = false
     @State private var errorMessage: String?
+
+    init(connection: ServerConnection, node: NodeDetail) {
+        self.connection = connection
+        self.node = node
+        _access = State(initialValue: BackupServerAccess(connection: connection))
+        _settings = State(initialValue: BackupServerSettings(connection: connection))
+        _twoFactors = State(initialValue: AccessControl(connection: connection))
+    }
 
     var body: some View {
         List {
@@ -97,6 +108,32 @@ struct BackupServerMoreList: View {
                 }
                 .accessibilityIdentifier("more.options")
             }
+            Section("Access") {
+                NavigationLink {
+                    BackupServerUsersView(access: access)
+                } label: {
+                    MoreRow(title: "Users", systemImage: "person.2", color: .blue)
+                }
+                .accessibilityIdentifier("more.users")
+                NavigationLink {
+                    BackupServerPermissionsView(access: access)
+                } label: {
+                    MoreRow(title: "Permissions", systemImage: "person.badge.key", color: .indigo)
+                }
+                .accessibilityIdentifier("more.permissions")
+                NavigationLink {
+                    TwoFactorListView(access: twoFactors)
+                } label: {
+                    MoreRow(title: "Two-Factor Authentication", systemImage: "lock.shield", color: .green)
+                }
+                .accessibilityIdentifier("more.tfa")
+                NavigationLink {
+                    BackupServerRealmsView(access: access)
+                } label: {
+                    MoreRow(title: "Realms", systemImage: "building.columns", color: .brown)
+                }
+                .accessibilityIdentifier("more.realms")
+            }
             Section("Configuration") {
                 NavigationLink {
                     BackupServerRemotesView(connection: connection)
@@ -104,6 +141,40 @@ struct BackupServerMoreList: View {
                     MoreRow(title: "Remotes", systemImage: "server.rack", color: .teal)
                 }
                 .accessibilityIdentifier("more.remotes")
+                NavigationLink {
+                    TrafficControlView(settings: settings)
+                } label: {
+                    MoreRow(title: "Traffic Control", systemImage: "gauge.with.dots.needle.bottom.50percent", color: .orange)
+                }
+                .accessibilityIdentifier("more.traffic")
+                NavigationLink {
+                    NotificationsView(connection: connection)
+                } label: {
+                    MoreRow(title: "Notifications", systemImage: "bell.badge", color: .red)
+                }
+                .accessibilityIdentifier("more.notifications")
+                NavigationLink {
+                    BackupServerMetricServersView(settings: settings)
+                } label: {
+                    MoreRow(title: "Metric Servers", systemImage: "chart.xyaxis.line", color: .purple)
+                }
+                .accessibilityIdentifier("more.metrics")
+                if connection.supports(backupServer: .s3Datastores) {
+                    NavigationLink {
+                        S3EndpointsView(settings: settings)
+                    } label: {
+                        MoreRow(title: "S3 Endpoints", systemImage: "cloud", color: .cyan)
+                    }
+                    .accessibilityIdentifier("more.s3")
+                }
+                if connection.supports(backupServer: .syncEncryption) {
+                    NavigationLink {
+                        EncryptionKeysView(settings: settings)
+                    } label: {
+                        MoreRow(title: "Encryption Keys", systemImage: "key", color: .yellow)
+                    }
+                    .accessibilityIdentifier("more.keys")
+                }
             }
             Section {
                 Button {

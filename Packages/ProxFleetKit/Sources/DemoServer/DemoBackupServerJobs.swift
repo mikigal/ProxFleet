@@ -74,8 +74,7 @@ extension DemoBackupServerState {
         ], password: "secret"),
     ]
 
-    /// Routes below `/admin/{sync,verify,prune,gc}`, `/config/{sync,verify,prune,remote}` and
-    /// `/config/encryption-keys`. nil for other paths.
+    /// Routes below `/admin/{sync,verify,prune,gc}` and `/config/{sync,verify,prune,remote}`. nil for other paths.
     func handleJobs(_ method: HTTPMethod, parts: [String], parameters: [String: String]) -> HTTPResponse? {
         switch (method, parts) {
         case (.get, ["admin", "gc"]):
@@ -93,17 +92,6 @@ extension DemoBackupServerState {
             return createRemote(parameters)
         case (let method, let path) where path.count >= 3 && path[0] == "config" && path[1] == "remote":
             return handleRemote(method, name: path[2], rest: Array(path.dropFirst(3)), parameters: parameters)
-        case (.get, ["config", "encryption-keys"]):
-            let created = Int(started.timeIntervalSince1970) - 400 * 86_400
-            var keys: [JSONValue] = [
-                ["id": "cloud-2026", "fingerprint": "a3:5e:21:9c:0f:77:b4:d2:18:6a:e9:40:c3:5b:72:8d:01:f6:2e:94:bb:37:c8:5a:e0:19:4d:73:a2:6f:08:c1",
-                 "created": .int(created + 365 * 86_400), "kdf": "scrypt", "hint": "Password manager"],
-            ]
-            if parameters["include-archived"] == "1" {
-                keys.append(["id": "cloud-2025", "fingerprint": "7d:02:b8:4e:91:c5:3a:6f:e2:18:d0:7b:45:9c:a1:e3:66:0f:2d:b7:58:c4:19:8a:f3:20:5e:d6:7c:41:9b:02",
-                             "created": .int(created), "archived-at": .int(created + 365 * 86_400), "kdf": "scrypt"])
-            }
-            return digested(.array(keys))
         case (.get, let path) where path.count == 2 && path[0] == "config":
             guard let kind = DemoBackupServerJob.Kind(rawValue: path[1]) else { return nil }
             return digested(.array(listedJobs(kind, parameters).map { jobJSON($0, withState: false) }))

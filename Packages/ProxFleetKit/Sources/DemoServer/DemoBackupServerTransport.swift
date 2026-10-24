@@ -64,6 +64,7 @@ actor DemoBackupServerState {
         ("/", "monitoring@pbs!zabbix", "Audit", true),
     ]
     var node = DemoBackupServerNodeState()
+    var config = DemoBackupServerConfigState()
     var jobs = DemoBackupServerState.defaultJobs
     var remotes = DemoBackupServerState.defaultRemotes
     let started = Date()
@@ -86,10 +87,7 @@ actor DemoBackupServerState {
         case (.post, "/access/ticket"):
             return ticket(parameters)
         case (.get, "/access/domains"):
-            return success([
-                ["realm": "pam", "type": "pam", "comment": "Linux PAM standard authentication", "default": true],
-                ["realm": "pbs", "type": "pbs", "comment": "Proxmox Backup authentication server"],
-            ])
+            return success(realmListJSON())
         case (.get, "/ping"):
             return success(["pong": true])
         default:
@@ -100,7 +98,8 @@ actor DemoBackupServerState {
         }
 
         let parts = path.split(separator: "/").map(String.init)
-        if let response = handleDatastores(request.method, parts: parts, parameters: parameters)
+        if let response = handleConfiguration(request.method, parts: parts, parameters: parameters)
+            ?? handleDatastores(request.method, parts: parts, parameters: parameters)
             ?? handleAccess(request.method, parts: parts, parameters: parameters)
             ?? handleJobs(request.method, parts: parts, parameters: parameters) {
             return response

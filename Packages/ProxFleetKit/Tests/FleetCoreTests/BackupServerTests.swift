@@ -37,7 +37,7 @@ struct BackupServerOnboardingTests {
         await onboarding.submitAddress()
         #expect(onboarding.step == .credentials)
         #expect(!onboarding.switchedProduct)
-        #expect(onboarding.realms.map(\.realm) == ["pam", "pbs"])
+        #expect(onboarding.realms.map(\.realm) == ["pam", "pbs", "home"])
 
         onboarding.username = "root"
         onboarding.password = "secret"

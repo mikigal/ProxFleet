@@ -892,6 +892,333 @@ extension LiveBackupServerTests {
     }
 }
 
+// MARK: - Configuration
+
+extension LiveBackupServerTests {
+    /// A user with a password, a token with a permission and second factors, each changed and removed again.
+    @Test func usersTokensAndSecondFactors() async throws {
+        let session = try await signedIn()
+        let user = "pflive@pbs"
+        func cleanUp() async {
+            _ = try? await session.send(PBS.deleteUser(user))
+        }
+        await cleanUp()
+        let outcome: Result<Void, any Error>
+        do {
+            var draft = BackupServerUserDraft()
+            draft.userID = user
+            draft.password = "pflive-password-1"
+            draft.passwordConfirmation = "pflive-password-1"
+            draft.firstName = "Live"
+            draft.comment = "ProxFleet live test"
+            #expect(draft.problems(isNew: true, realms: ["pam", "pbs"]).isEmpty)
+            _ = try await session.send(PBS.createUser(draft))
+            let users = try await session.send(PBS.users())
+            let created = try #require(users.value.first { $0.id == user })
+            #expect(BackupServerUserDraft(created).serialized() == draft.serialized())
+
+            var edited = BackupServerUserDraft(created)
+            edited.comment = ""
+            edited.isEnabled = false
+            edited.expires = Date(timeIntervalSince1970: 2_000_000_000)
+            _ = try await session.send(PBS.updateUser(user, edited.changes(from: BackupServerUserDraft(created), digest: users.digest)))
+            let changed = try #require(try await session.send(PBS.users()).value.first { $0.id == user })
+            #expect(BackupServerUserDraft(changed).serialized() == edited.serialized())
+            _ = try await session.send(PBS.changePassword(of: user, to: "pflive-password-2", confirmation: nil))
+
+            // A token, its permission, a new secret.
+            var token = BackupServerTokenDraft()
+            token.name = "sync"
+            token.comment = "Live token"
+            let secret = try await session.send(PBS.createToken(of: user, token))
+            #expect(secret.tokenID == "\(user)!sync")
+            #expect(!secret.secret.isEmpty)
+            let entry = BackupServerACLEntry(path: "/datastore/store1", authID: secret.tokenID, role: "DatastoreReader", propagates: false)
+            _ = try await session.send(PBS.setACL(entry))
+            #expect(try await session.send(PBS.acl(path: "/datastore/store1", exact: true)).value.contains(entry))
+            _ = try await session.send(PBS.setACL(entry, remove: true))
+            if try await session.send(PBS.version()).supports(.regenerateTokenSecret) {
+                let regenerated = try await session.send(PBS.regenerateToken(of: user, name: "sync"))
+                #expect(!regenerated.secret.isEmpty && regenerated.secret != secret.secret)
+            }
+            var editedToken = BackupServerTokenDraft(try #require(try await session.send(PBS.users()).value.first { $0.id == user }?.tokens.first))
+            let tokenOriginal = editedToken
+            editedToken.isEnabled = false
+            _ = try await session.send(PBS.updateToken(of: user, name: "sync", editedToken.changes(from: tokenOriginal)))
+            #expect(try await session.send(PBS.users()).value.first { $0.id == user }?.tokens.first?.isEnabled == false)
+            _ = try await session.send(PBS.deleteToken(of: user, name: "sync"))
+
+            // Second factors through the requests the shared screens use.
+            let totp = TOTPSecret.random(issuer: "Proxmox Backup Server", account: user)
+            _ = try await session.send(PVE.addTOTP(userid: user, secret: totp, code: Self.totp(secret: totp.secret), description: "Live", password: nil))
+            _ = try await session.send(PVE.addRecoveryKeys(userid: user, password: nil))
+            let factors = try #require(try await session.send(PVE.twoFactors()).first { $0.userid == user })
+            #expect(Set(factors.entries.map(\.type)) == ["totp", "recovery"])
+            for factor in factors.entries {
+                _ = try await session.send(PVE.deleteTwoFactor(userid: user, id: factor.id, password: nil))
+            }
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        await cleanUp()
+        try outcome.get()
+        #expect(try await !session.send(PBS.users()).value.contains { $0.id == user })
+    }
+
+    /// An OpenID Connect realm, only its configuration, and the PAM realm's comment changed and set back. (LDAP and
+    /// Active Directory realms need a reachable directory: the server connects to it when they are saved.)
+    @Test func realmConfiguration() async throws {
+        let session = try await signedIn()
+        func cleanUp() async {
+            _ = try? await session.send(PBS.deleteRealm(.openid, "pflive"))
+        }
+        await cleanUp()
+        let outcome: Result<Void, any Error>
+        do {
+            var openID = BackupServerRealmDraft(kind: .openid)
+            openID.realm = "pflive"
+            openID.issuerURL = "https://sso.invalid/realms/main"
+            openID.clientID = "proxmox-backup"
+            openID.clientKey = "client-secret"
+            openID.scopes = "email profile"
+            openID.usernameClaim = "email"
+            openID.autocreate = true
+            openID.comment = "ProxFleet live test"
+            _ = try await session.send(PBS.createRealm(openID))
+            #expect(try await session.send(ProxmoxAccess.realms()).contains { $0.realm == "pflive" && $0.type == "openid" })
+            let stored = try await session.send(PBS.realmConfig(.openid, "pflive"))
+            let read = BackupServerRealmDraft(kind: .openid, realm: "pflive", config: stored.value)
+            #expect(read.serialized() == openID.serialized())
+            // Unlike LDAP bind passwords, the client key is returned; the form still only sends a typed one.
+            #expect(stored.value.values["client-key"] == "client-secret")
+            var edited = read
+            edited.scopes = ""
+            edited.autocreate = false
+            _ = try await session.send(PBS.updateRealm(.openid, "pflive", edited.update(from: read, digest: stored.digest)))
+            #expect(BackupServerRealmDraft(kind: .openid, realm: "pflive", config: try await session.send(PBS.realmConfig(.openid, "pflive")).value).serialized() == edited.serialized())
+
+            let pam = try await session.send(PBS.realmConfig(.pam, "pam"))
+            let pamDraft = BackupServerRealmDraft(kind: .pam, realm: "pam", config: pam.value)
+            var renamed = pamDraft
+            renamed.comment = "ProxFleet live test"
+            _ = try await session.send(PBS.updateRealm(.pam, "pam", renamed.update(from: pamDraft, digest: pam.digest)))
+            #expect(try await session.send(ProxmoxAccess.realms()).first { $0.realm == "pam" }?.comment == "ProxFleet live test")
+            _ = try await session.send(PBS.updateRealm(.pam, "pam", pamDraft.update(from: renamed, digest: nil)))
+            #expect(try await session.send(ProxmoxAccess.realms()).first { $0.realm == "pam" }?.comment == pamDraft.comment)
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        await cleanUp()
+        try outcome.get()
+    }
+
+    /// A sendmail target and a matcher through the requests the shared notification screens use, rewritten for the
+    /// backup server; two cleared settings go as two deletions.
+    @Test func notifications() async throws {
+        let session = try await signedIn()
+        func cleanUp() async {
+            _ = try? await session.send(PBS.notificationRequest(PVE.deleteNotificationMatcher("pflive-matcher")))
+            _ = try? await session.send(PBS.notificationRequest(PVE.deleteNotificationEndpoint(.sendmail, name: "pflive-mail")))
+        }
+        await cleanUp()
+        let outcome: Result<Void, any Error>
+        do {
+            var endpoint = NotificationEndpointDraft(type: .sendmail)
+            endpoint.name = "pflive-mail"
+            endpoint.mailtoUsers = ["root@pam"]
+            endpoint.comment = "ProxFleet live test"
+            _ = try await session.send(PBS.notificationRequest(PVE.createNotificationEndpoint(endpoint)))
+            var matcher = NotificationMatcherDraft()
+            matcher.name = "pflive-matcher"
+            matcher.comment = "ProxFleet live test"
+            matcher.severities = [.error]
+            matcher.targets = ["pflive-mail"]
+            _ = try await session.send(PBS.notificationRequest(PVE.createNotificationMatcher(matcher)))
+            let matchers = try await session.send(PBS.notificationRequest(PVE.notificationMatchers()))
+            let created = try #require(matchers.first { $0.name == "pflive-matcher" })
+            #expect(created.targets == ["pflive-mail"])
+            var edited = NotificationMatcherDraft(created)
+            edited.comment = ""
+            edited.severities = []
+            _ = try await session.send(PBS.notificationRequest(PVE.updateNotificationMatcher(created.name, edited.changes(from: NotificationMatcherDraft(created)), digest: created.config.digest)))
+            let changed = try #require(try await session.send(PBS.notificationRequest(PVE.notificationMatchers())).first { $0.name == "pflive-matcher" })
+            #expect(changed.comment == nil)
+            #expect(NotificationMatcherDraft(changed).severities.isEmpty)
+            #expect(try await session.send(PBS.notificationRequest(PVE.notificationTargets())).contains { $0.name == "pflive-mail" })
+            #expect(try await !session.send(PBS.notificationRequest(PVE.matcherFieldValues())).isEmpty)
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        await cleanUp()
+        try outcome.get()
+    }
+
+    /// Traffic control, a disabled UDP metric server and an S3 endpoint, as configuration only.
+    @Test func trafficMetricsAndS3Configuration() async throws {
+        let session = try await signedIn()
+        let version = try await session.send(PBS.version())
+        func cleanUp() async {
+            _ = try? await session.send(PBS.deleteTrafficControlRule("pflive-tc"))
+            _ = try? await session.send(PBS.deleteMetricServer(.influxDBUDP, "pflive-udp"))
+            _ = try? await session.send(PBS.deleteS3Endpoint("pflive-s3"))
+        }
+        await cleanUp()
+        let outcome: Result<Void, any Error>
+        do {
+            var rule = TrafficControlDraft()
+            rule.name = "pflive-tc"
+            rule.networks = ["10.255.0.0/16", "fd00:ffff::/32"]
+            rule.rateIn = ByteRate(amount: "10", unit: .mib)
+            rule.burstIn = ByteRate(amount: "20", unit: .mib)
+            rule.timeframes = ["mon..fri 8:00-18:00"]
+            if version.supports(.userTrafficControl) { rule.users = ["root@pam"] }
+            _ = try await session.send(PBS.createTrafficControlRule(rule))
+            let rules = try await session.send(PBS.trafficControlRules())
+            let created = try #require(rules.value.first { $0.name == "pflive-tc" })
+            #expect(TrafficControlDraft(created) == { var expected = rule; expected.name = created.name; return expected }())
+            var edited = TrafficControlDraft(created)
+            edited.timeframes = []
+            edited.burstIn = ByteRate()
+            _ = try await session.send(PBS.updateTrafficControlRule("pflive-tc", edited.changes(from: TrafficControlDraft(created), digest: rules.digest)))
+            #expect(TrafficControlDraft(try #require(try await session.send(PBS.trafficControlRules()).value.first { $0.name == "pflive-tc" })) == edited)
+            #expect(try await session.send(PBS.trafficControlStatus()).contains { $0.name == "pflive-tc" })
+
+            var udp = BackupServerMetricServerDraft(kind: .influxDBUDP)
+            udp.name = "pflive-udp"
+            udp.host = "127.0.0.1:8089"
+            udp.isEnabled = false
+            udp.mtu = 1400
+            _ = try await session.send(PBS.createMetricServer(udp))
+            let listed = try #require(try await session.send(PBS.metricServers()).value.first { $0.name == "pflive-udp" })
+            #expect(listed.kind == .influxDBUDP && !listed.isEnabled)
+            let config = try await session.send(PBS.metricServer(.influxDBUDP, "pflive-udp"))
+            let read = BackupServerMetricServerDraft(kind: .influxDBUDP, name: "pflive-udp", config: config.value)
+            #expect(read.serialized() == udp.serialized())
+            var changedUDP = read
+            changedUDP.mtu = nil
+            _ = try await session.send(PBS.updateMetricServer(.influxDBUDP, "pflive-udp", changedUDP.update(from: read, digest: config.digest)))
+
+            if version.supports(.s3Datastores) {
+                var s3 = S3EndpointDraft()
+                s3.id = "pflive-s3"
+                s3.endpoint = "s3.invalid"
+                s3.port = 9000
+                s3.region = "us-east-1"
+                s3.accessKey = "pflive"
+                s3.secretKey = "pflive-secret"
+                s3.usesPathStyle = true
+                s3.skipsIfNoneMatch = true
+                _ = try await session.send(PBS.createS3Endpoint(s3))
+                let endpoint = try #require(try await session.send(PBS.s3Endpoints()).value.first { $0.id == "pflive-s3" })
+                var expected = s3
+                expected.secretKey = ""
+                #expect(S3EndpointDraft(endpoint) == expected)
+                // Nothing answers at that address.
+                await #expect(throws: ProxmoxError.self) { _ = try await session.send(PBS.s3Buckets("pflive-s3")) }
+            }
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        await cleanUp()
+        try outcome.get()
+    }
+}
+
+// MARK: - S3 on a local test server
+
+extension LiveBackupServerTests {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PROXFLEET_PBS_PROBE"] != nil))
+    func probeServer() async throws {
+        let session = try await signedIn()
+        let command = try String(contentsOfFile: ProcessInfo.processInfo.environment["PROXFLEET_PBS_PROBE"]!, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = try await runOnServer(session, command, timeout: 120)
+        print("PROBE-OUTPUT-BEGIN\n\(result.output)\nPROBE-OUTPUT-END status \(result.status ?? -1)")
+    }
+
+    /// Sets up an S3 server on the test server for `s3DatastoreOnLocalS3`: moto from Debian's packages, with a
+    /// self-signed certificate, on 127.0.0.1:9000, as the service `pflive-s3`. MinIO no longer publishes binaries.
+    /// Run once with `PROXFLEET_PBS_SETUP_S3=1`.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PROXFLEET_PBS_SETUP_S3"] == "1"))
+    func setUpLocalS3() async throws {
+        let session = try await signedIn()
+        // A subshell, so a failing step ends it and not the terminal's shell.
+        let script = """
+        ( set -e
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3-moto python3-flask python3-flask-cors >/dev/null
+        mkdir -p /etc/pflive-s3
+        [ -f /etc/pflive-s3/cert.pem ] || openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=127.0.0.1 \\
+          -addext subjectAltName=IP:127.0.0.1 -keyout /etc/pflive-s3/key.pem -out /etc/pflive-s3/cert.pem 2>/dev/null
+        printf '[Unit]\\nDescription=S3 server for ProxFleet live tests\\nAfter=network-online.target\\n[Service]\\nExecStart=/usr/bin/python3 -m moto.server -H 127.0.0.1 -p 9000 -c /etc/pflive-s3/cert.pem -k /etc/pflive-s3/key.pem\\nRestart=always\\n[Install]\\nWantedBy=multi-user.target\\n' > /etc/systemd/system/pflive-s3.service
+        systemctl daemon-reload
+        systemctl enable --now pflive-s3 >/dev/null 2>&1
+        for i in $(seq 1 30); do curl -sk -o /dev/null https://127.0.0.1:9000/ && break; sleep 1; done
+        systemctl is-active pflive-s3 )
+        """
+        let result = try await runOnServer(session, script, timeout: 280)
+        #expect(result.status == 0, "\(result.output)")
+    }
+
+    /// An S3 endpoint for the local S3 server, its buckets, and a datastore in a bucket, removed again with its data.
+    @Test(.timeLimit(.minutes(5))) func s3DatastoreOnLocalS3() async throws {
+        let session = try await signedIn()
+        guard try await session.send(PBS.version()).supports(.s3Datastores), let access = server["S3_TEST_ACCESS_KEY"], let secret = server["S3_TEST_SECRET_KEY"] else { return }
+        let status = try await runOnServer(session, "systemctl is-active pflive-s3")
+        try #require(status.status == 0, "the local S3 server is not set up; run setUpLocalS3 first")
+        // The server keeps buckets in memory, so the test makes its own.
+        _ = try await runOnServer(session, "curl -sk -X PUT https://127.0.0.1:9000/pflive-bucket -o /dev/null")
+        let certificate = try await runOnServer(session, "openssl x509 -in /etc/pflive-s3/cert.pem -noout -fingerprint -sha256")
+        // The terminal echoes the command too; the fingerprint is the only such pattern.
+        let fingerprint = certificate.output.firstMatch(of: /([0-9A-F]{2}:){31}[0-9A-F]{2}/).map { String($0.output.0) }
+        let store = "pflive-s3ds"
+        func cleanUp() async {
+            try? await removeLeftover(store, in: session)
+            _ = try? await session.send(PBS.deleteS3Endpoint("pflive-s3"))
+            _ = try? await runOnServer(session, "rm -rf /datastore/\(store)")
+        }
+        await cleanUp()
+        let outcome: Result<Void, any Error>
+        do {
+            var endpoint = S3EndpointDraft()
+            endpoint.id = "pflive-s3"
+            endpoint.endpoint = "127.0.0.1"
+            endpoint.port = 9000
+            endpoint.region = "us-east-1"
+            endpoint.usesPathStyle = true
+            endpoint.accessKey = access
+            endpoint.secretKey = secret
+            endpoint.fingerprint = try #require(fingerprint, "no certificate fingerprint").lowercased()
+            _ = try await session.send(PBS.createS3Endpoint(endpoint))
+            #expect(try await session.send(PBS.s3Buckets("pflive-s3")).names.contains("pflive-bucket"))
+
+            var datastore = DatastoreDraft()
+            datastore.kind = .s3
+            datastore.name = store
+            datastore.path = "/datastore/\(store)"
+            datastore.s3Endpoint = "pflive-s3"
+            datastore.bucket = "pflive-bucket"
+            datastore.pruneSchedule = ""
+            #expect(datastore.problems(isNew: true).isEmpty)
+            let created = try await session.send(PBS.createDatastore(datastore.creationParameters(usesNotificationSystem: true)))
+            let task = try await waitForTask(created, in: session)
+            #expect(task.succeeded, "\(task.exitStatus ?? "")")
+            let config = try #require(try await session.send(PBS.datastoreConfigs()).value.first { $0.name == store })
+            #expect(config.isS3)
+            #expect(try await session.send(PBS.datastoreStatus(store)).total > 0)
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        await cleanUp()
+        try outcome.get()
+        #expect(try await !session.send(PBS.s3Endpoints()).value.contains { $0.id == "pflive-s3" })
+    }
+}
+
 /// Collects download progress from the transport's callback.
 private final class ProgressRecorder: Sendable {
     private let value = Mutex<Int64>(0)

@@ -51,10 +51,6 @@ extension DemoBackupServerState {
         case (let method, let path) where path.count >= 4 && path[0] == "admin" && path[1] == "datastore":
             guard let index = datastoreIndex(path[2]) else { return failure(400, "no such datastore '\(path[2])'") }
             return handleDatastore(method, index: index, rest: Array(path.dropFirst(3)), parameters: parameters)
-        case (.get, ["config", "s3"]):
-            return digested([["id": "minio", "endpoint": "minio.home.arpa", "port": 9000, "region": "us-east-1", "access-key": "pbs", "path-style": true]])
-        case (.get, let path) where path.count == 4 && path[0] == "config" && path[1] == "s3" && path[3] == "list-buckets":
-            return success([["name": "pbs-offsite"], ["name": "photos"]])
         default:
             return nil
         }
@@ -251,14 +247,6 @@ extension DemoBackupServerState {
             return success(nil)
         case (.get, ["access", "roles"]):
             return success(.array(Self.roles.map { ["roleid": .string($0.id), "privs": .array($0.privileges.map { .string($0) }), "comment": .string($0.comment)] }))
-        case (.get, ["access", "users"]):
-            return digested([
-                ["userid": "root@pam", "email": "admin@home.arpa", "enable": true],
-                ["userid": "backup@pbs", "comment": "Proxmox VE cluster homelab", "enable": true,
-                 "tokens": [["tokenid": "backup@pbs!pve", "comment": "Storage pbs", "enable": true]]],
-                ["userid": "anna@pbs", "firstname": "Anna", "comment": "Laptop backups", "enable": true],
-                ["userid": "monitoring@pbs", "enable": true, "tokens": [["tokenid": "monitoring@pbs!zabbix", "enable": true]]],
-            ])
         default:
             return nil
         }

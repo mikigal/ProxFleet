@@ -147,7 +147,7 @@ struct RemoteEditor: View {
                     LabeledContent(isNew ? "Password" : "New Password") {
                         SecureField(isNew ? "Password" : "New Password", text: $draft.password, prompt: Text(isNew ? "Required" : "Unchanged"))
                             .multilineTextAlignment(.trailing)
-                            .textContentType(.password)
+                            .textContentType(.oneTimeCode)
                             .accessibilityIdentifier("remote.password")
                     }
                     FieldError(message: errors["password"])

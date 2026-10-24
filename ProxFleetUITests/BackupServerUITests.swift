@@ -269,6 +269,82 @@ final class BackupServerUITests: XCTestCase {
     }
 
     @MainActor
+    func testConfiguration() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        app.buttons["tab.more"].tap()
+        // The More list may be scrolled anywhere after coming back: look below, then above.
+        func open(_ identifier: String) {
+            let row = app.buttons[identifier]
+            XCTAssertTrue(app.buttons["tab.more"].waitForExistence(timeout: 5))
+            for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeUp() }
+            for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeDown() }
+            row.tap()
+        }
+        func back() { app.navigationBars.buttons.firstMatch.tap() }
+
+        // A new user with a password, then an API token whose secret shows once.
+        open("more.users")
+        XCTAssertTrue(app.buttons["user.backup@pbs"].waitForExistence(timeout: 10))
+        app.buttons["user.add"].tap()
+        let userName = app.textFields["user.name"]
+        XCTAssertTrue(userName.waitForExistence(timeout: 5))
+        userName.tap()
+        // The realm defaults to pbs, whose users have a password here.
+        userName.typeText("sync")
+        let password = app.secureTextFields["user.newPassword"]
+        XCTAssertTrue(password.waitForExistence(timeout: 5))
+        password.tap()
+        password.typeText("a-long-password")
+        let confirmation = app.secureTextFields["user.confirmPassword"]
+        confirmation.tap()
+        confirmation.typeText("a-long-password")
+        snapshot("pbs-new-user")
+        app.buttons["save"].tap()
+        let user = app.buttons["user.sync@pbs"]
+        XCTAssertTrue(user.waitForExistence(timeout: 10))
+        snapshot("pbs-users")
+        user.tap()
+        let addToken = app.buttons["token.add"]
+        for _ in 0..<6 where !addToken.exists || !addToken.isHittable { app.swipeUp() }
+        addToken.tap()
+        let tokenName = app.textFields["token.name"]
+        XCTAssertTrue(tokenName.waitForExistence(timeout: 5))
+        tokenName.tap()
+        tokenName.typeText("remote")
+        app.buttons["token.create"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["token.secret"].waitForExistence(timeout: 10))
+        snapshot("pbs-token-secret")
+        app.buttons["token.done"].tap()
+        XCTAssertTrue(app.buttons["token.sync@pbs!remote"].waitForExistence(timeout: 10))
+        back()
+        back()
+
+        // Realms, traffic control, notifications and an S3 endpoint's buckets.
+        open("more.realms")
+        XCTAssertTrue(app.buttons["realm.home"].waitForExistence(timeout: 10))
+        snapshot("pbs-realms")
+        back()
+        open("more.traffic")
+        XCTAssertTrue(app.buttons["traffic.office-hours"].waitForExistence(timeout: 10))
+        snapshot("pbs-traffic-control")
+        back()
+        open("more.notifications")
+        XCTAssertTrue(app.buttons["target.mail-to-root"].waitForExistence(timeout: 10))
+        snapshot("pbs-notifications")
+        back()
+        open("more.s3")
+        let minio = app.buttons["s3.minio"]
+        XCTAssertTrue(minio.waitForExistence(timeout: 10))
+        minio.tap()
+        let check = app.buttons["s3.check"]
+        for _ in 0..<6 where !check.exists || !check.isHittable { app.swipeUp() }
+        check.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'pbs-offsite'")).firstMatch.waitForExistence(timeout: 10))
+        snapshot("pbs-s3-endpoint")
+    }
+
+    @MainActor
     func testAddAndRemoveDatastore() {
         app.launch()
         XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))

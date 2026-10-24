@@ -2,8 +2,8 @@ import FleetCore
 import PBSKit
 import SwiftUI
 
-/// Form scaffold for creating or editing a job: Add or Save, local problems after the first attempt, the server's
-/// field errors, a lock when the user may not change it, and Delete for existing jobs.
+/// Form scaffold for creating or editing a job or another configuration object: Add or Save, local problems after the
+/// first attempt, the server's field errors, a lock when the user may not change it, and Delete for existing ones.
 struct BackupServerJobForm<Content: View>: View {
     let title: String
     let isNew: Bool
@@ -13,6 +13,8 @@ struct BackupServerJobForm<Content: View>: View {
     let problems: () -> [String: String]
     let submit: () async throws(ConfigUpdateError) -> Void
     var delete: (() async throws(ConfigUpdateError) -> Void)?
+    var deleteTitle: LocalizedStringKey = "Delete Job"
+    var deleteMessage: LocalizedStringKey = "The job stops running. Backups it made stay."
     @ViewBuilder let content: (_ errors: [String: String]) -> Content
 
     @State private var isSaving = false
@@ -45,7 +47,7 @@ struct BackupServerJobForm<Content: View>: View {
             ErrorSection(message: errorMessage)
             if delete != nil, lockMessage == nil {
                 Section {
-                    Button("Delete Job", role: .destructive) { confirmsDeletion = true }
+                    Button(deleteTitle, role: .destructive) { confirmsDeletion = true }
                         .accessibilityIdentifier("job.delete")
                 }
             }
@@ -68,10 +70,10 @@ struct BackupServerJobForm<Content: View>: View {
                 }
             }
         }
-        .confirmationDialog("Delete this job?", isPresented: $confirmsDeletion, titleVisibility: .visible) {
-            Button("Delete Job", role: .destructive) { Task { await remove() } }
+        .confirmationDialog(deleteTitle, isPresented: $confirmsDeletion, titleVisibility: .visible) {
+            Button(deleteTitle, role: .destructive) { Task { await remove() } }
         } message: {
-            Text("The job stops running. Backups it made stay.")
+            Text(deleteMessage)
         }
     }
 
