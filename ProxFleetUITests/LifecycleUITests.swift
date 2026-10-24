@@ -224,9 +224,10 @@ final class LifecycleUITests: XCTestCase {
     func testBulkMigrateFromTheDatacenter() {
         app.launch()
         XCTAssertTrue(app.buttons["guest.100"].waitForExistence(timeout: 10))
-        app.buttons["More"].tap()
-        // Menu items show by their title.
-        app.buttons["Bulk Migrate"].tap()
+        app.buttons["tab.more"].tap()
+        let migrate = app.buttons["bulk.migrate"]
+        for _ in 0..<6 where !(migrate.exists && migrate.isHittable) { app.swipeUp() }
+        migrate.tap()
         XCTAssertTrue(app.staticTexts["Bulk Migrate"].waitForExistence(timeout: 5))
         // Guests already on the target are left out: pve1 is chosen, so its guests are not listed.
         XCTAssertTrue(app.buttons["bulk.guest.103"].exists)
@@ -234,6 +235,7 @@ final class LifecycleUITests: XCTestCase {
         app.buttons["Select None"].tap()
         app.buttons["bulk.guest.201"].tap()
         app.buttons["bulk.confirm"].tap()
+        app.buttons["tab.overview"].tap()
         XCTAssertTrue(app.buttons["guest.100"].waitForExistence(timeout: 5))
         // Restart mode: the container shuts down, moves and starts on pve1.
         let moved = element(containing: "CT 201 · pve1")

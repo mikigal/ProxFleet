@@ -3,18 +3,14 @@ import ProxmoxCore
 import PVEKit
 import SwiftUI
 
-/// Scheduled backup jobs of the datacenter, with Run Now and the guests no job covers.
+/// Scheduled backup jobs of the datacenter, with Run Now and the guests no job covers. Shown as a server's Backup tab.
 struct BackupJobsView: View {
-    @State private var list: BackupJobList
+    let list: BackupJobList
     @State private var creating = false
     @State private var running: BackupJob?
     @State private var removing: BackupJob?
     @State private var startedMessage: String?
     @State private var errorMessage: String?
-
-    init(connection: ServerConnection) {
-        _list = State(initialValue: BackupJobList(connection: connection))
-    }
 
     var body: some View {
         List {
@@ -47,6 +43,8 @@ struct BackupJobsView: View {
                             }
                         }
                     }
+                } header: {
+                    Text("Backup Jobs")
                 } footer: {
                     Text("Jobs run on every node that has the selected guests, at the times of their schedule.")
                 }
@@ -75,7 +73,6 @@ struct BackupJobsView: View {
                 ProgressView()
             }
         }
-        .navigationTitle("Backup Jobs")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add", systemImage: "plus") { creating = true }

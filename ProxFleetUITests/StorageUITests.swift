@@ -15,8 +15,10 @@ final class StorageUITests: XCTestCase {
         app.launch()
         let local = app.buttons["storage.pve1.local"]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
+        app.buttons["tab.storage"].tap()
         for _ in 0..<8 where !local.isHittable { app.swipeUp() }
         local.tap()
+        app.buttons["tab.content"].tap()
 
         let debian = app.descendants(matching: .any)["volume.debian-13.1.0-amd64-netinst.iso"]
         XCTAssertTrue(debian.waitForExistence(timeout: 10))
@@ -36,7 +38,7 @@ final class StorageUITests: XCTestCase {
         snapshot("71-storage-download")
         app.buttons["download.start"].tap()
 
-        // The list sits below the usage history; scroll down once the download has finished.
+        // Scroll down once the download has finished.
         let fedora = app.descendants(matching: .any)["volume.fedora-server-43.iso"]
         for _ in 0..<15 where !fedora.waitForExistence(timeout: 1) { app.swipeUp() }
         XCTAssertTrue(fedora.waitForExistence(timeout: 5))
@@ -58,23 +60,19 @@ final class StorageUITests: XCTestCase {
         app.buttons["tab.more"].tap()
         app.buttons["more.storage"].tap()
         app.buttons["storage.pve2.local-lvm"].tap()
-        // The content sits below the usage history.
+        app.buttons["tab.content"].tap()
         let disk = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'vm-103-disk-0'")).firstMatch
-        for _ in 0..<5 where !disk.waitForExistence(timeout: 2) { app.swipeUp() }
-        XCTAssertTrue(disk.waitForExistence(timeout: 5))
+        XCTAssertTrue(disk.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["VM Disks"].exists)
         snapshot("72-storage-disks")
     }
 
     @MainActor
-    func testAddNFSStorageAndDisableOne() {
+    func testAddNFSStorageThenDisableAndRemoveIt() {
         app.launch()
-        let entry = app.buttons["datacenter.storage"]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
-        for _ in 0..<10 where !entry.isHittable { app.swipeUp() }
-        entry.tap()
-        XCTAssertTrue(app.buttons["storageconfig.nas"].waitForExistence(timeout: 10))
-        snapshot("73-datacenter-storage")
+        app.buttons["tab.storage"].tap()
+        XCTAssertTrue(app.buttons["storage.pve1.nas"].waitForExistence(timeout: 10))
 
         app.buttons["storageconfig.add"].tap()
         app.buttons["NFS"].firstMatch.tap()
@@ -92,17 +90,38 @@ final class StorageUITests: XCTestCase {
         app.buttons["/mnt/tank/media (10.0.10.0/24)"].firstMatch.tap()
         snapshot("74-datacenter-storage-nfs")
         app.buttons["save"].tap()
-        XCTAssertTrue(app.buttons["storageconfig.media"].waitForExistence(timeout: 10))
 
-        app.buttons["storageconfig.nas"].tap()
+        // A shared storage shows once, through the first node.
+        let media = app.buttons["storage.pve1.media"]
+        XCTAssertTrue(media.waitForExistence(timeout: 10))
+        reveal(media).tap()
+        app.buttons["tab.settings"].tap()
         let enabled = app.switches["Enabled"]
-        XCTAssertTrue(enabled.waitForExistence(timeout: 5))
+        XCTAssertTrue(enabled.waitForExistence(timeout: 10))
+        snapshot("73-storage-settings")
         enabled.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
-        app.buttons["save"].tap()
-        let nas = app.buttons["storageconfig.nas"]
-        XCTAssertTrue(nas.waitForExistence(timeout: 10))
-        expectation(for: NSPredicate(format: "label CONTAINS 'Disabled'"), evaluatedWith: nas)
+        let save = app.buttons["save"]
+        save.tap()
+        // The form starts over from the saved settings, so there is nothing left to save.
+        expectation(for: NSPredicate(format: "isEnabled == false"), evaluatedWith: save)
         waitForExpectations(timeout: 10)
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // Disabled storages are not on any node; they are listed from the definitions.
+        let disabled = app.buttons["storageconfig.media"]
+        XCTAssertTrue(disabled.waitForExistence(timeout: 10))
+        XCTAssertFalse(media.exists)
+        reveal(disabled).tap()
+        reveal(app.buttons["storageconfig.remove"]).tap()
+        app.buttons["storageconfig.remove.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["storage.pve1.nas"].waitForExistence(timeout: 10))
+        XCTAssertFalse(disabled.exists)
+    }
+
+    /// Scrolls the list until the element can be tapped.
+    private func reveal(_ element: XCUIElement) -> XCUIElement {
+        for _ in 0..<6 where !(element.exists && element.isHittable) { app.swipeUp() }
+        return element
     }
 
     private func snapshot(_ name: String) {

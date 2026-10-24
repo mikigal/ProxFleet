@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A row with a colored icon, as in the Settings app. Used in the More tabs of guests and nodes.
+/// A row with a colored icon, as in the Settings app. Used in the More tabs of servers, guests and nodes.
 struct MoreRow: View {
     let title: LocalizedStringKey
     let systemImage: String

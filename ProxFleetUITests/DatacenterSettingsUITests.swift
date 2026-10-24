@@ -98,6 +98,7 @@ final class DatacenterSettingsUITests: XCTestCase {
     private func open(_ identifier: String) {
         let entry = app.buttons[identifier]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
+        app.buttons["tab.more"].tap()
         for _ in 0..<12 where !entry.isHittable { app.swipeUp() }
         entry.tap()
     }

@@ -4,87 +4,73 @@ import PVEKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The datacenter's storage definitions: add, edit, disable, restrict to nodes and remove.
-struct DatacenterStorageView: View {
-    @State private var storage: DatacenterStorage
-    @State private var creating: StorageBackend?
-    @State private var removing: StorageConfig?
-    @State private var errorMessage: String?
-
-    init(connection: ServerConnection) {
-        _storage = State(initialValue: DatacenterStorage(connection: connection))
-    }
+/// One storage's definition, shared by every node that has the storage: the editor, or the raw settings of types
+/// the app does not edit. Shown as a storage's Settings tab, and on its own for disabled storages.
+struct StorageSettingsView: View {
+    let storage: DatacenterStorage
+    let name: String
 
     var body: some View {
-        List {
-            if let configs = storage.configs {
-                Section {
-                    ForEach(configs) { config in
-                        NavigationLink {
-                            if let draft = StorageConfigDraft(config) {
-                                StorageConfigEditor(storage: storage, draft: draft, digest: config.digest, isNew: false)
-                            } else {
-                                UnsupportedStorageView(config: config)
-                            }
-                        } label: {
-                            StorageConfigRow(config: config)
-                        }
-                        .accessibilityIdentifier("storageconfig.\(config.storage)")
-                        .swipeActions {
-                            // Not `role: .destructive`: a full swipe would hide the row, but this only asks first.
-                            if storage.canModify {
-                                Button("Remove", systemImage: "trash") { removing = config }
-                                    .tint(.red)
-                            }
-                        }
-                    }
-                } footer: {
-                    Text("Storage definitions apply to every node of the cluster, or to the nodes they list.")
+        Group {
+            if let config = storage.configs?.first(where: { $0.storage == name }) {
+                if let draft = StorageConfigDraft(config) {
+                    StorageConfigEditor(storage: storage, draft: draft, digest: config.digest, isNew: false)
+                } else {
+                    UnsupportedStorageView(storage: storage, config: config)
                 }
-            }
-        }
-        .overlay {
-            if let error = storage.loadError, storage.configs == nil {
-                ContentUnavailableView("Cannot Load the Storage", systemImage: "exclamationmark.triangle", description: Text(error))
-            } else if storage.configs == nil {
+            } else if let error = storage.loadError {
+                ContentUnavailableView("Cannot Load the Settings", systemImage: "exclamationmark.triangle", description: Text(error))
+            } else if storage.configs != nil {
+                ContentUnavailableView("No Settings", systemImage: "gearshape", description: Text("\(name) is not in the datacenter's storage configuration."))
+            } else {
                 ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle("Storage")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu("Add", systemImage: "plus") {
-                    ForEach(StorageBackend.allCases) { type in
-                        Button(type.title, systemImage: type.systemImage) { creating = type }
-                    }
-                }
-                .disabled(!storage.canModify)
-                .accessibilityIdentifier("storageconfig.add")
-            }
-        }
-        .refreshable { await storage.load() }
         .task { await storage.load() }
-        .sheet(item: $creating) { type in
-            NavigationStack {
-                StorageConfigEditor(storage: storage, draft: StorageConfigDraft(type: type), digest: nil, isNew: true)
+    }
+}
+
+/// Removes a storage definition after asking, then leaves the screen.
+private struct RemoveStorageSection: View {
+    let storage: DatacenterStorage
+    let name: String
+    @State private var confirms = false
+    @State private var isRemoving = false
+    @State private var errorMessage: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Section {
+            Button(role: .destructive) {
+                confirms = true
+            } label: {
+                Label("Remove Storage", systemImage: "trash")
             }
-        }
-        .confirmationDialog("Remove \(removing?.storage ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible, presenting: removing) { config in
-            Button("Remove", role: .destructive) { Task { await remove(config) } }
-                .accessibilityIdentifier("storageconfig.remove.confirm")
-        } message: { _ in
-            Text("Only the definition is removed; the data on the storage stays. Guests whose disks are on it cannot start until it is added again.")
-        }
-        .alert("Storage Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage ?? "")
+            .disabled(!storage.canModify || isRemoving)
+            .accessibilityIdentifier("storageconfig.remove")
+            .confirmationDialog("Remove \(name)?", isPresented: $confirms, titleVisibility: .visible) {
+                Button("Remove", role: .destructive) { Task { await remove() } }
+                    .accessibilityIdentifier("storageconfig.remove.confirm")
+            } message: {
+                Text("Only the definition is removed; the data on the storage stays. Guests whose disks are on it cannot start until it is added again.")
+            }
+            .alert("Storage Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        } footer: {
+            Text("Removes the storage from every node.")
         }
     }
 
-    private func remove(_ config: StorageConfig) async {
+    private func remove() async {
+        isRemoving = true
+        defer { isRemoving = false }
         do {
-            try await storage.delete(config.storage)
+            try await storage.delete(name)
+            dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -125,7 +111,8 @@ extension StorageBackend {
     }
 }
 
-private struct StorageConfigRow: View {
+/// A storage definition: its type, location, content and nodes.
+struct StorageConfigRow: View {
     let config: StorageConfig
 
     var body: some View {
@@ -188,6 +175,7 @@ extension StorageContentType {
 
 /// iSCSI direct, DRBD and other storages the app does not edit.
 private struct UnsupportedStorageView: View {
+    let storage: DatacenterStorage
     let config: StorageConfig
 
     var body: some View {
@@ -199,6 +187,7 @@ private struct UnsupportedStorageView: View {
             } footer: {
                 Text("\(config.type) storages can be changed in the web interface.")
             }
+            RemoveStorageSection(storage: storage, name: config.storage)
         }
         .navigationTitle(config.storage)
         .navigationBarTitleDisplayMode(.inline)
@@ -207,13 +196,15 @@ private struct UnsupportedStorageView: View {
 
 // MARK: - Editor
 
-/// Creates or edits a storage definition. Connection settings can only be set when creating.
+/// Creates or edits a storage definition. Connection settings can only be set when creating. A new storage's
+/// sheet closes once it is added; an existing storage's form stays and starts over from the saved settings.
 struct StorageConfigEditor: View {
     let storage: DatacenterStorage
-    let original: StorageConfigDraft
-    let digest: String?
     let isNew: Bool
+    @State private var original: StorageConfigDraft
+    @State private var digest: String?
     @State private var draft: StorageConfigDraft
+    @State private var saveCount = 0
     @State private var isSaving = false
     @State private var showsProblems = false
     @State private var errorMessage: String?
@@ -224,9 +215,9 @@ struct StorageConfigEditor: View {
 
     init(storage: DatacenterStorage, draft: StorageConfigDraft, digest: String?, isNew: Bool) {
         self.storage = storage
-        self.digest = digest
         self.isNew = isNew
-        original = draft
+        _original = State(initialValue: draft)
+        _digest = State(initialValue: digest)
         _draft = State(initialValue: draft)
     }
 
@@ -279,12 +270,16 @@ struct StorageConfigEditor: View {
             }
             .disabled(!storage.canModify)
             ErrorSection(message: errorMessage)
+            if !isNew {
+                RemoveStorageSection(storage: storage, name: draft.storage)
+            }
         }
         .navigationTitle(isNew ? Text("New \(Text(draft.type.title))") : Text(draft.storage))
         .navigationBarTitleDisplayMode(.inline)
         .disabled(isSaving)
         .interactiveDismissDisabled(isSaving)
-        .sheet(isPresented: Binding(get: { generatedKey != nil }, set: { if !$0 { generatedKey = nil; dismiss() } })) {
+        .sensoryFeedback(.success, trigger: saveCount)
+        .sheet(isPresented: Binding(get: { generatedKey != nil }, set: { if !$0 { generatedKey = nil; if isNew { dismiss() } } })) {
             NavigationStack {
                 EncryptionKeyView(storage: draft.storage, key: generatedKey ?? "")
             }
@@ -336,6 +331,8 @@ struct StorageConfigEditor: View {
             }
         } header: {
             Text("Nodes")
+        } footer: {
+            Text("The settings are the same on every node that has the storage.")
         }
     }
 
@@ -392,9 +389,12 @@ struct StorageConfigEditor: View {
             let key = isNew
                 ? try await storage.create(draft)
                 : try await storage.update(draft.storage, draft.changes(from: original), digest: digest)
+            if !isNew {
+                startOver()
+            }
             if let key {
                 generatedKey = key
-            } else {
+            } else if isNew {
                 dismiss()
             }
         } catch .invalid(let message, let fields) {
@@ -403,6 +403,17 @@ struct StorageConfigEditor: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Shows the saved settings with their new digest, so the next save starts from them.
+    private func startOver() {
+        saveCount += 1
+        guard let config = storage.configs?.first(where: { $0.storage == draft.storage }),
+              let saved = StorageConfigDraft(config) else { return }
+        original = saved
+        draft = saved
+        digest = config.digest
+        showsProblems = false
     }
 }
 

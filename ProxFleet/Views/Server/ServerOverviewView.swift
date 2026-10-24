@@ -2,16 +2,130 @@ import FleetCore
 import PVEKit
 import SwiftUI
 
+nonisolated enum ServerTab: String, DetailTab {
+    case overview, storage, backup, more
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .overview: "Overview"
+        case .storage: "Storage"
+        case .backup: "Backup"
+        case .more: "More"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview: "square.grid.2x2"
+        case .storage: "externaldrive"
+        case .backup: "archivebox"
+        case .more: "ellipsis"
+        }
+    }
+}
+
+/// A connected server: its nodes and guests, storage, backup jobs, and the datacenter settings in More.
 struct ServerOverviewView: View {
     let connection: ServerConnection
+    @State private var tab: ServerTab = .overview
+    /// Kept here so coming back to a tab shows the last data while it reloads.
+    @State private var backupJobs: BackupJobList
+    @State private var storageDefinitions: DatacenterStorage
     @State private var creating: GuestKind?
     /// Set by the creation sheet; opened once the sheet is gone, as pushing while it closes is unreliable.
     @State private var newGuest: GuestReference?
     @State private var createdGuest: GuestReference?
+    @State private var bulkAction: NodeBulkAction?
+
+    init(connection: ServerConnection) {
+        self.connection = connection
+        _backupJobs = State(initialValue: BackupJobList(connection: connection))
+        _storageDefinitions = State(initialValue: DatacenterStorage(connection: connection))
+    }
+
+    var body: some View {
+        tabContent
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 8) {
+                    if let error = connection.refreshError {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .glassEffect()
+                    }
+                    DetailTabBar(selection: $tab)
+                }
+                .padding(.bottom, 6)
+            }
+            .task { await connection.keepRefreshing() }
+            .sensoryFeedback(.selection, trigger: tab)
+            .sheet(item: $creating, onDismiss: {
+                createdGuest = newGuest
+                newGuest = nil
+            }) { kind in
+                NavigationStack {
+                    switch kind {
+                    case .virtualMachine:
+                        CreateVMView(connection: connection) { newGuest = $0 }
+                    case .container:
+                        CreateContainerView(connection: connection) { newGuest = $0 }
+                    }
+                }
+                .serverDestinations(connection)
+            }
+            .sheet(item: $bulkAction) { action in
+                NavigationStack {
+                    NodeBulkActionView(connection: connection, node: nil, action: action) { draft throws(ConfigUpdateError) in
+                        try await connection.runBulkAction(draft)
+                    }
+                }
+            }
+            .navigationDestination(item: $createdGuest) { reference in
+                GuestDetailView(reference: reference, connection: connection)
+            }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink(value: ServerRoute.tasks) {
+                        Label("Tasks", systemImage: "list.bullet.rectangle")
+                    }
+                    .badge(connection.tasks.runningTasks.count)
+                    .accessibilityIdentifier("tasks")
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch tab {
+        case .overview:
+            ServerResourcesList(connection: connection)
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu("Create", systemImage: "plus") {
+                            Button("Virtual Machine", systemImage: "desktopcomputer") { creating = .virtualMachine }
+                                .accessibilityIdentifier("create.vm")
+                            Button("Container", systemImage: "shippingbox") { creating = .container }
+                                .accessibilityIdentifier("create.ct")
+                        }
+                        .accessibilityIdentifier("create.menu")
+                    }
+                }
+        case .storage:
+            ServerStorageList(connection: connection, definitions: storageDefinitions)
+        case .backup:
+            BackupJobsView(list: backupJobs)
+        case .more:
+            ServerMoreList(connection: connection) { bulkAction = $0 }
+        }
+    }
+}
+
+/// The Overview tab: the cluster or standalone node, then its guests.
+private struct ServerResourcesList: View {
+    let connection: ServerConnection
     @State private var isWaking = false
     @State private var wakeResult: WakeOnLANResult?
-    @State private var bulkAction: NodeBulkAction?
-    @State private var showsLog = false
 
     var body: some View {
         List {
@@ -50,172 +164,10 @@ struct ServerOverviewView: View {
                 guestSection("Virtual Machines", guests: snapshot.virtualMachines.filter { !$0.isTemplate }, showsNode: showsNode)
                 guestSection("Containers", guests: snapshot.containers.filter { !$0.isTemplate }, showsNode: showsNode)
                 guestSection("Templates", guests: snapshot.guests.filter(\.isTemplate), showsNode: showsNode)
-                StorageSection(connection: connection, snapshot: snapshot)
-                Section("Datacenter") {
-                    NavigationLink {
-                        DatacenterStorageView(connection: connection)
-                    } label: {
-                        MoreRow(title: "Storage", systemImage: "externaldrive.badge.plus", color: .purple)
-                    }
-                    .accessibilityIdentifier("datacenter.storage")
-                    NavigationLink {
-                        BackupJobsView(connection: connection)
-                    } label: {
-                        MoreRow(title: "Backup Jobs", systemImage: "calendar.badge.clock", color: .teal)
-                    }
-                    .accessibilityIdentifier("datacenter.backupjobs")
-                    if snapshot.nodes.count > 1 {
-                        NavigationLink {
-                            ReplicationJobsView(connection: connection, scope: .datacenter)
-                        } label: {
-                            MoreRow(title: "Replication", systemImage: "arrow.triangle.2.circlepath", color: .cyan)
-                        }
-                        .accessibilityIdentifier("datacenter.replication")
-                        NavigationLink {
-                            HAView(connection: connection)
-                        } label: {
-                            MoreRow(title: "High Availability", systemImage: "shield.lefthalf.filled", color: .green)
-                        }
-                        .accessibilityIdentifier("datacenter.ha")
-                        if let local = (snapshot.nodes.first(where: \.isLocal) ?? snapshot.nodes.first(where: \.isOnline))?.name {
-                            NavigationLink {
-                                CephView(connection: connection, node: local)
-                            } label: {
-                                MoreRow(title: "Ceph", systemImage: "circle.hexagongrid", color: .red)
-                            }
-                            .accessibilityIdentifier("datacenter.ceph")
-                        }
-                    }
-                    NavigationLink {
-                        PoolsView(connection: connection)
-                    } label: {
-                        MoreRow(title: "Pools", systemImage: "square.stack.3d.down.right", color: .orange)
-                    }
-                    .accessibilityIdentifier("datacenter.pools")
-                    NavigationLink {
-                        AccessHubView(connection: connection)
-                    } label: {
-                        MoreRow(title: "Users & Permissions", systemImage: "person.badge.key", color: .blue)
-                    }
-                    .accessibilityIdentifier("datacenter.access")
-                    NavigationLink {
-                        FirewallView(connection: connection, scope: .datacenter)
-                    } label: {
-                        MoreRow(title: "Firewall", systemImage: "flame", color: .red)
-                    }
-                    .accessibilityIdentifier("datacenter.firewall")
-                    NavigationLink {
-                        SDNView(connection: connection)
-                    } label: {
-                        MoreRow(title: "SDN", systemImage: "point.3.connected.trianglepath.dotted", color: .green)
-                    }
-                    .accessibilityIdentifier("datacenter.sdn")
-                    NavigationLink {
-                        ResourceMappingsView(connection: connection)
-                    } label: {
-                        MoreRow(title: "Resource Mappings", systemImage: "cpu", color: .indigo)
-                    }
-                    .accessibilityIdentifier("datacenter.mappings")
-                    NavigationLink {
-                        NotificationsView(connection: connection)
-                    } label: {
-                        MoreRow(title: "Notifications", systemImage: "bell", color: .pink)
-                    }
-                    .accessibilityIdentifier("datacenter.notifications")
-                    NavigationLink {
-                        MetricServersView(connection: connection)
-                    } label: {
-                        MoreRow(title: "Metric Servers", systemImage: "chart.xyaxis.line", color: .mint)
-                    }
-                    .accessibilityIdentifier("datacenter.metrics")
-                    NavigationLink {
-                        DatacenterOptionsView(connection: connection)
-                    } label: {
-                        MoreRow(title: "Options", systemImage: "gearshape", color: .gray)
-                    }
-                    .accessibilityIdentifier("datacenter.options")
-                }
             }
         }
         .refreshable { await connection.refresh() }
         .wakeOnLANAlert($wakeResult)
-        .task { await connection.keepRefreshing() }
-        .safeAreaInset(edge: .bottom) {
-            if let error = connection.refreshError {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .glassEffect()
-                    .padding(.bottom, 8)
-            }
-        }
-        .sheet(item: $creating, onDismiss: {
-            createdGuest = newGuest
-            newGuest = nil
-        }) { kind in
-            NavigationStack {
-                switch kind {
-                case .virtualMachine:
-                    CreateVMView(connection: connection) { newGuest = $0 }
-                case .container:
-                    CreateContainerView(connection: connection) { newGuest = $0 }
-                }
-            }
-            .serverDestinations(connection)
-        }
-        .sheet(item: $bulkAction) { action in
-            NavigationStack {
-                NodeBulkActionView(connection: connection, node: nil, action: action) { draft throws(ConfigUpdateError) in
-                    try await connection.runBulkAction(draft)
-                }
-            }
-        }
-        .navigationDestination(isPresented: $showsLog) {
-            ClusterLogView(connection: connection)
-        }
-        .navigationDestination(item: $createdGuest) { reference in
-            GuestDetailView(reference: reference, connection: connection)
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                NavigationLink(value: ServerRoute.tasks) {
-                    Label("Tasks", systemImage: "list.bullet.rectangle")
-                }
-                .badge(connection.tasks.runningTasks.count)
-                .accessibilityIdentifier("tasks")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Menu("Create", systemImage: "plus") {
-                    Button("Virtual Machine", systemImage: "desktopcomputer") { creating = .virtualMachine }
-                        .accessibilityIdentifier("create.vm")
-                    Button("Container", systemImage: "shippingbox") { creating = .container }
-                        .accessibilityIdentifier("create.ct")
-                }
-                .accessibilityIdentifier("create.menu")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Menu("More", systemImage: "ellipsis") {
-                    Section("Bulk Actions") {
-                        Button("Bulk Start", systemImage: "play") { bulkAction = .start }
-                            .accessibilityIdentifier("bulk.start")
-                        Button("Bulk Shutdown", systemImage: "power") { bulkAction = .shutdown }
-                            .accessibilityIdentifier("bulk.shutdown")
-                        Button("Bulk Hibernate", systemImage: "moon.zzz") { bulkAction = .hibernate }
-                            .accessibilityIdentifier("bulk.hibernate")
-                        if (connection.snapshot?.nodes.count ?? 0) > 1 {
-                            Button("Bulk Migrate", systemImage: "arrow.left.arrow.right") { bulkAction = .migrate }
-                                .accessibilityIdentifier("bulk.migrate")
-                        }
-                    }
-                    Button("Cluster Log", systemImage: "doc.text.magnifyingglass") { showsLog = true }
-                        .accessibilityIdentifier("cluster.log")
-                    Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right") {
-                        Task { await connection.signOut() }
-                    }
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -229,6 +181,91 @@ struct ServerOverviewView: View {
                     .accessibilityIdentifier("guest.\(guest.vmid)")
                 }
             }
+        }
+    }
+}
+
+/// The Storage tab: every storage with its usage, disabled storages, and adding new ones. A storage's own screen
+/// has its settings.
+private struct ServerStorageList: View {
+    let connection: ServerConnection
+    let definitions: DatacenterStorage
+    @State private var creating: StorageBackend?
+    @State private var removing: StorageConfig?
+    @State private var errorMessage: String?
+
+    /// Disabled storages are not in the cluster's resources, so they come from the definitions.
+    private var disabled: [StorageConfig] { definitions.configs?.filter(\.isDisabled) ?? [] }
+
+    var body: some View {
+        List {
+            if let snapshot = connection.snapshot {
+                StorageSection(connection: connection, snapshot: snapshot)
+            }
+            if !disabled.isEmpty {
+                Section {
+                    ForEach(disabled) { config in
+                        NavigationLink {
+                            StorageSettingsView(storage: definitions, name: config.storage)
+                        } label: {
+                            StorageConfigRow(config: config)
+                        }
+                        .accessibilityIdentifier("storageconfig.\(config.storage)")
+                        .swipeActions {
+                            // Not `role: .destructive`: a full swipe would hide the row, but this only asks first.
+                            if definitions.canModify {
+                                Button("Remove", systemImage: "trash") { removing = config }
+                                    .tint(.red)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Disabled")
+                } footer: {
+                    Text("No node uses a disabled storage. Turn it back on in its settings.")
+                }
+            }
+        }
+        .refreshable {
+            async let snapshot: Void = connection.refresh()
+            await definitions.load()
+            await snapshot
+        }
+        .task { await definitions.load() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu("Add Storage", systemImage: "plus") {
+                    ForEach(StorageBackend.allCases) { type in
+                        Button(type.title, systemImage: type.systemImage) { creating = type }
+                    }
+                }
+                .disabled(!definitions.canModify)
+                .accessibilityIdentifier("storageconfig.add")
+            }
+        }
+        .sheet(item: $creating) { type in
+            NavigationStack {
+                StorageConfigEditor(storage: definitions, draft: StorageConfigDraft(type: type), digest: nil, isNew: true)
+            }
+        }
+        .confirmationDialog("Remove \(removing?.storage ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible, presenting: removing) { config in
+            Button("Remove", role: .destructive) { Task { await remove(config) } }
+                .accessibilityIdentifier("storageconfig.remove.confirm")
+        } message: { _ in
+            Text("Only the definition is removed; the data on the storage stays. Guests whose disks are on it cannot start until it is added again.")
+        }
+        .alert("Storage Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private func remove(_ config: StorageConfig) async {
+        do {
+            try await definitions.delete(config.storage)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A section of a detail screen, shown in its bottom bar.
+/// A section of a server, guest or node screen, shown in its bottom bar.
 nonisolated protocol DetailTab: Hashable, CaseIterable, Identifiable, RawRepresentable where RawValue == String {
     var title: LocalizedStringKey { get }
     var systemImage: String { get }
@@ -10,7 +10,7 @@ nonisolated extension DetailTab {
     var id: String { rawValue }
 }
 
-/// Floating Liquid Glass bar for switching between the sections of a guest or node.
+/// Floating Liquid Glass bar for switching between the sections of a server, guest or node.
 struct DetailTabBar<Tab: DetailTab>: View {
     @Binding var selection: Tab
     @Namespace private var namespace

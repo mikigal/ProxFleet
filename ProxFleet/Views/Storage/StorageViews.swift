@@ -135,13 +135,36 @@ extension StorageContentType {
 
 // MARK: - Storage
 
-/// A storage's usage and its content, one content type at a time, with downloads and deletion.
+nonisolated enum StorageTab: String, DetailTab {
+    case summary, content, settings
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .summary: "Summary"
+        case .content: "Content"
+        case .settings: "Settings"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .summary: "chart.xyaxis.line"
+        case .content: "tray.full"
+        case .settings: "gearshape"
+        }
+    }
+}
+
+/// A storage: its usage, its content one type at a time with downloads and deletion, and its definition.
 struct StorageDetailView: View {
     /// Uploading files from the device is hidden for now (decided 2026-10-21). The code below and the upload
     /// support in the package stay, verified against a real server, so it can be turned back on here.
     static let allowsUploads = false
 
     @State private var detail: StorageDetail
+    @State private var definitions: DatacenterStorage
+    @State private var tab: StorageTab = .summary
+    @State private var isKeyboardVisible = false
     @State private var content: StorageContentType?
     @State private var fileTarget: StorageContentType?
     @State private var downloadTarget: StorageContentType?
@@ -156,6 +179,7 @@ struct StorageDetailView: View {
 
     init(node: String, storage: String, connection: ServerConnection) {
         _detail = State(initialValue: StorageDetail(node: node, storage: storage, connection: connection))
+        _definitions = State(initialValue: DatacenterStorage(connection: connection))
     }
 
     private var types: [StorageContentType] { detail.status?.contentTypes ?? [] }
@@ -163,6 +187,97 @@ struct StorageDetailView: View {
     private var canAllocate: Bool { detail.can("Datastore.AllocateSpace") || detail.can("Datastore.AllocateTemplate") }
 
     var body: some View {
+        tabContent
+            .safeAreaInset(edge: .bottom) {
+                // The settings form needs the space while typing.
+                if !(tab == .settings && isKeyboardVisible) {
+                    DetailTabBar(selection: $tab)
+                        .padding(.bottom, 6)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                isKeyboardVisible = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                isKeyboardVisible = false
+            }
+            .navigationTitle(detail.storage)
+            .navigationSubtitle(detail.node)
+            .navigationBarTitleDisplayMode(.inline)
+            .task { await detail.load() }
+            .sensoryFeedback(.selection, trigger: tab)
+            .sheet(item: $fileTarget) { type in
+                NavigationStack {
+                    UploadFileView(detail: detail, content: type)
+                }
+            }
+            .sheet(item: $downloadTarget) { type in
+                NavigationStack {
+                    DownloadURLView(detail: detail, content: type)
+                }
+            }
+            .sheet(isPresented: $downloadsTemplates, onDismiss: { Task { await detail.load() } }) {
+                NavigationStack {
+                    TemplateDownloadView(connection: detail.connection, node: detail.node) { _ in }
+                }
+            }
+            .sheet(isPresented: $pullsOCIImage) {
+                NavigationStack {
+                    OCIPullView(detail: detail)
+                }
+            }
+            .sheet(item: $importing, onDismiss: {
+                openedGuest = importedGuest
+                importedGuest = nil
+            }) { volume in
+                NavigationStack {
+                    if volume.isGuestArchive {
+                        GuestImportView(connection: detail.connection, node: detail.node, volume: volume.volumeID) { importedGuest = $0 }
+                    } else {
+                        ImportDiskTargetView(connection: detail.connection, node: detail.node, volume: volume.volumeID)
+                            .toolbar {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    Button("Cancel") { importing = nil }
+                                }
+                            }
+                    }
+                }
+                .serverDestinations(detail.connection)
+            }
+            .navigationDestination(item: $openedGuest) { reference in
+                GuestDetailView(reference: reference, connection: detail.connection)
+            }
+            .confirmationDialog("Delete \(deleting?.fileName ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible, presenting: deleting) { volume in
+                Button("Delete", role: .destructive) { Task { await delete(volume) } }
+                    .accessibilityIdentifier("volume.delete.confirm")
+            } message: { volume in
+                Text("\(volume.volumeID) is deleted from the storage. This cannot be undone.")
+            }
+            .alert("Storage Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
+            .alert("Upload Failed", isPresented: Binding(get: { detail.uploadError != nil }, set: { if !$0 { detail.uploadError = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(detail.uploadError ?? "")
+            }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch tab {
+        case .summary:
+            summaryList
+        case .content:
+            contentList
+        case .settings:
+            StorageSettingsView(storage: definitions, name: detail.storage)
+        }
+    }
+
+    private var summaryList: some View {
         List {
             if let status = detail.status {
                 Section {
@@ -172,6 +287,9 @@ struct StorageDetailView: View {
                                    detail: "\(Format.bytes(status.used)) of \(Format.bytes(status.total)), \(Format.bytes(status.available)) free")
                     }
                     LabeledContent("Shared", value: status.isShared ? String(localized: "Yes") : String(localized: "No"))
+                    if !types.isEmpty {
+                        LabeledContent("Content", value: types.map { String(localized: $0.shortTitle) }.joined(separator: ", "))
+                    }
                     if !status.isActive {
                         Label("The storage is not active on \(detail.node).", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
@@ -190,6 +308,13 @@ struct StorageDetailView: View {
                     .task { await detail.loadHistory() }
                 }
             }
+        }
+        .overlay { loadingOverlay }
+        .refreshable { await detail.load() }
+    }
+
+    private var contentList: some View {
+        List {
             if let upload = detail.upload {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
@@ -284,15 +409,13 @@ struct StorageDetailView: View {
             }
         }
         .overlay {
-            if let error = detail.loadError, detail.status == nil {
-                ContentUnavailableView("Cannot Load the Storage", systemImage: "exclamationmark.triangle", description: Text(error))
-            } else if detail.status == nil {
-                ProgressView()
+            if detail.status != nil, types.isEmpty {
+                ContentUnavailableView("No Content", systemImage: "tray", description: Text("This storage holds no content the app can show."))
+            } else {
+                loadingOverlay
             }
         }
-        .navigationTitle(detail.storage)
-        .navigationSubtitle(detail.node)
-        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await detail.load() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu("Add", systemImage: "plus") {
@@ -316,64 +439,14 @@ struct StorageDetailView: View {
                 .accessibilityIdentifier("storage.add")
             }
         }
-        .refreshable { await detail.load() }
-        .task { await detail.load() }
-        .sheet(item: $fileTarget) { type in
-            NavigationStack {
-                UploadFileView(detail: detail, content: type)
-            }
-        }
-        .sheet(item: $downloadTarget) { type in
-            NavigationStack {
-                DownloadURLView(detail: detail, content: type)
-            }
-        }
-        .sheet(isPresented: $downloadsTemplates, onDismiss: { Task { await detail.load() } }) {
-            NavigationStack {
-                TemplateDownloadView(connection: detail.connection, node: detail.node) { _ in }
-            }
-        }
-        .sheet(isPresented: $pullsOCIImage) {
-            NavigationStack {
-                OCIPullView(detail: detail)
-            }
-        }
-        .sheet(item: $importing, onDismiss: {
-            openedGuest = importedGuest
-            importedGuest = nil
-        }) { volume in
-            NavigationStack {
-                if volume.isGuestArchive {
-                    GuestImportView(connection: detail.connection, node: detail.node, volume: volume.volumeID) { importedGuest = $0 }
-                } else {
-                    ImportDiskTargetView(connection: detail.connection, node: detail.node, volume: volume.volumeID)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Cancel") { importing = nil }
-                            }
-                        }
-                }
-            }
-            .serverDestinations(detail.connection)
-        }
-        .navigationDestination(item: $openedGuest) { reference in
-            GuestDetailView(reference: reference, connection: detail.connection)
-        }
-        .confirmationDialog("Delete \(deleting?.fileName ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible, presenting: deleting) { volume in
-            Button("Delete", role: .destructive) { Task { await delete(volume) } }
-                .accessibilityIdentifier("volume.delete.confirm")
-        } message: { volume in
-            Text("\(volume.volumeID) is deleted from the storage. This cannot be undone.")
-        }
-        .alert("Storage Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
-        .alert("Upload Failed", isPresented: Binding(get: { detail.uploadError != nil }, set: { if !$0 { detail.uploadError = nil } })) {
-            Button("OK") {}
-        } message: {
-            Text(detail.uploadError ?? "")
+    }
+
+    @ViewBuilder
+    private var loadingOverlay: some View {
+        if let error = detail.loadError, detail.status == nil {
+            ContentUnavailableView("Cannot Load the Storage", systemImage: "exclamationmark.triangle", description: Text(error))
+        } else if detail.status == nil {
+            ProgressView()
         }
     }
 

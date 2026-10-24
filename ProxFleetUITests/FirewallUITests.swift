@@ -15,6 +15,7 @@ final class FirewallUITests: XCTestCase {
         app.launch()
         let entry = app.buttons["datacenter.firewall"]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
+        app.buttons["tab.more"].tap()
         for _ in 0..<10 where !entry.isHittable { app.swipeUp() }
         entry.tap()
 

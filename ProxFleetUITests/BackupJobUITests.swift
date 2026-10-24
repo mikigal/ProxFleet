@@ -13,10 +13,8 @@ final class BackupJobUITests: XCTestCase {
     @MainActor
     func testRunNowAndAddJob() {
         app.launch()
-        let entry = app.buttons["datacenter.backupjobs"]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
-        for _ in 0..<10 where !entry.isHittable { app.swipeUp() }
-        entry.tap()
+        app.buttons["tab.backup"].tap()
 
         let nightly = app.buttons["backupjob.Nightly, everything"]
         XCTAssertTrue(nightly.waitForExistence(timeout: 10))

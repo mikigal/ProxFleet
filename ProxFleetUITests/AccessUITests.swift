@@ -15,6 +15,7 @@ final class AccessUITests: XCTestCase {
         app.launch()
         let entry = app.buttons["datacenter.access"]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
+        app.buttons["tab.more"].tap()
         for _ in 0..<10 where !entry.isHittable { app.swipeUp() }
         entry.tap()
         app.buttons["access.users"].tap()
@@ -62,6 +63,7 @@ final class AccessUITests: XCTestCase {
         app.launch()
         let entry = app.buttons["datacenter.access"]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
+        app.buttons["tab.more"].tap()
         for _ in 0..<10 where !entry.isHittable { app.swipeUp() }
         entry.tap()
         app.buttons["access.roles"].tap()
@@ -169,6 +171,7 @@ final class AccessUITests: XCTestCase {
     private func openAccess() {
         let entry = app.buttons["datacenter.access"]
         XCTAssertTrue(app.buttons["node.pve1"].waitForExistence(timeout: 10))
+        app.buttons["tab.more"].tap()
         for _ in 0..<10 where !entry.isHittable { app.swipeUp() }
         entry.tap()
     }
