@@ -31,7 +31,7 @@ private struct LiveBackupServer {
 
 @Suite(.enabled(if: LiveBackupServer.current != nil, "Set PROXFLEET_PBS_TEST_SERVER_ENV to run against a real backup server"), .serialized, .timeLimit(.minutes(5)))
 struct LiveBackupServerTests {
-    private let server = LiveBackupServer.current!
+    fileprivate let server = LiveBackupServer.current!
 
     /// Accepts the certificate the way a user would, and returns a session using it.
     private func trustedSession(product: ProxmoxProduct = .backupServer) async throws -> ProxmoxSession {
@@ -48,7 +48,7 @@ struct LiveBackupServerTests {
         return ProxmoxSession(address: server.address, product: product, transport: transport)
     }
 
-    private func signedIn(user: String? = nil, realm: String? = nil, password: String? = nil) async throws -> ProxmoxSession {
+    fileprivate func signedIn(user: String? = nil, realm: String? = nil, password: String? = nil) async throws -> ProxmoxSession {
         let session = try await trustedSession()
         let outcome = try await session.login(username: try #require(user ?? server["USER"]), password: try #require(password ?? server["PASSWORD"]), realm: realm ?? server["REALM"])
         guard case .authenticated = outcome else { throw ProxmoxError.invalidResponse("expected a full ticket") }
@@ -246,6 +246,151 @@ struct LiveBackupServerTests {
         await #expect(throws: ProxmoxError.self) {
             _ = try await session.download(PBS.downloadArchiveEntry("store1", snapshot.reference, filePath: missing))
         }
+    }
+}
+
+// MARK: - Datastores
+
+extension LiveBackupServerTests {
+    /// Removes a datastore with its data if an earlier, aborted run left it behind.
+    fileprivate func removeLeftover(_ name: String, in session: ProxmoxSession) async throws {
+        guard try await session.send(PBS.datastoreConfigs()).value.contains(where: { $0.name == name }) else { return }
+        let upid = try await session.send(PBS.deleteDatastore(name, destroyData: true, keepJobs: false, digest: nil))
+        _ = try await waitForTask(upid, in: session)
+    }
+
+    fileprivate func waitForTask(_ upid: String, in session: ProxmoxSession) async throws -> TaskStatus {
+        for _ in 0..<240 {
+            let status = try await session.send(PBS.taskStatus(upid: upid))
+            if !status.isRunning { return status }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        throw ProxmoxError.invalidResponse("task \(upid) did not finish")
+    }
+
+    @Test func datastoreLifecycle() async throws {
+        let session = try await signedIn()
+        let name = "pflive-ds"
+        try await removeLeftover(name, in: session)
+
+        // Created like the app's form does: the prune settings become a prune job of the datastore.
+        var draft = DatastoreDraft()
+        draft.name = name
+        draft.path = "/datastore/\(name)"
+        draft.comment = "ProxFleet live test"
+        draft.retention = RetentionPolicy(last: 2)
+        #expect(draft.problems(isNew: true).isEmpty)
+        let created = try await session.send(PBS.createDatastore(draft.creationParameters(usesNotificationSystem: true)))
+        #expect(try await waitForTask(created, in: session).succeeded)
+        let pruneJob = try #require(try await session.send(PBS.pruneJobs(store: name)).first)
+        #expect(pruneJob.retention == RetentionPolicy(last: 2))
+        #expect(pruneJob.id.hasPrefix("default-\(name)-"))
+
+        // Every kind of option the editors change, sent as changes with the digest.
+        let loaded = try await session.send(PBS.datastoreConfig(name))
+        let original = DatastoreDraft(loaded.value)
+        var edited = original
+        edited.comment = ""
+        edited.gcSchedule = "sat 03:00"
+        edited.verifyNew = true
+        edited.notificationMode = "legacy-sendmail"
+        edited.notifyUser = "root@pam"
+        edited.notify = ["gc": .error, "verify": .always]
+        edited.tuning["chunk-order"] = "none"
+        edited.tuning["gc-cache-capacity"] = "0"
+        let update = edited.changes(from: original, digest: loaded.digest)
+        #expect(update.deletions == ["comment"])
+        _ = try await session.send(PBS.updateDatastore(name, update))
+        let saved = try await session.send(PBS.datastoreConfig(name)).value
+        #expect(saved.comment == nil)
+        #expect(saved.gcSchedule == "sat 03:00")
+        #expect(saved.verifyNew)
+        #expect(DatastoreDraft(saved).notify == ["gc": .error, "verify": .always])
+        #expect(PropertyMap(parsing: saved.values["tuning"]) == edited.tuning)
+        // The digest of the first read is stale now.
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PBS.updateDatastore(name, original.changes(from: edited, digest: loaded.digest)))
+        }
+
+        // Maintenance with a message the property string has to quote.
+        var maintenance = BackupServerConfigUpdate()
+        maintenance.set("maintenance-mode", DatastoreMaintenance(kind: .readOnly, message: #"Moving, "soon""#).stringValue)
+        _ = try await session.send(PBS.updateDatastore(name, maintenance))
+        let summary = try #require(try await session.send(PBS.datastores()).first { $0.store == name })
+        #expect(summary.maintenance == DatastoreMaintenance(kind: .readOnly, message: #"Moving, "soon""#))
+        maintenance.set("maintenance-mode", nil)
+        _ = try await session.send(PBS.updateDatastore(name, maintenance))
+        #expect(try await session.send(PBS.datastoreConfig(name)).value.maintenance == nil)
+
+        // Jobs on the empty datastore.
+        #expect(try await waitForTask(try await session.send(PBS.startGarbageCollection(name)), in: session).succeeded)
+        #expect(try await waitForTask(try await session.send(PBS.verify(name, skipVerified: false)), in: session).succeeded)
+        #expect(try await session.send(PBS.garbageCollectionStatus(name)).lastRunState == "OK")
+
+        // Permissions on the datastore and a namespace below it.
+        let entry = BackupServerACLEntry(path: "/datastore/\(name)", authID: try #require(server["LIMITED_USER"]) + "@" + (server["LIMITED_REALM"] ?? "pbs"),
+                                         role: "DatastoreReader", propagates: false)
+        _ = try await session.send(PBS.setACL(entry))
+        let acl = try await session.send(PBS.acl(path: entry.path))
+        #expect(acl.value.contains(entry))
+        _ = try await session.send(PBS.setACL(entry, remove: true, digest: acl.digest))
+        #expect(try await !session.send(PBS.acl(path: entry.path)).value.contains(entry))
+
+        let removed = try await session.send(PBS.deleteDatastore(name, destroyData: true, keepJobs: false, digest: nil))
+        #expect(try await waitForTask(removed, in: session).succeeded)
+        #expect(try await !session.send(PBS.datastores()).contains { $0.store == name })
+        #expect(try await session.send(PBS.pruneJobs(store: name)).isEmpty)
+    }
+
+    /// Prepares the spare disk as the web interface's Directory does with Removable Datastore, then adds a second
+    /// datastore on it the way the app's form does, mounts and unmounts, and wipes the disk again.
+    @Test func removableDatastoreOnTheSpareDisk() async throws {
+        let session = try await signedIn()
+        let disks = try await session.send(PBS.disks())
+        guard let spare = disks.first(where: { $0.name == (server["SPARE_DISK"] ?? "sdb") }), spare.isUnused else {
+            Issue.record("the spare disk is not unused; wipe it first")
+            return
+        }
+        defer {
+            Task {
+                for name in ["pflive-usb2", "pflive-usb"] { try? await removeLeftover(name, in: session) }
+                if let upid = try? await session.send(APIRequest<String>(.put, "/nodes/localhost/disks/wipedisk", parameters: ["disk": .string(spare.name)])) {
+                    _ = try? await waitForTask(upid, in: session)
+                }
+            }
+        }
+        let directory = try await session.send(APIRequest<String>(.post, "/nodes/localhost/disks/directory", parameters: [
+            "disk": .string(spare.name), "name": "pflive-usb", "filesystem": "ext4", "add-datastore": true, "removable-datastore": true,
+        ]))
+        #expect(try await waitForTask(directory, in: session).succeeded)
+        let partition = try #require(try await session.send(PBS.disks()).first { $0.name == spare.name }?.datastorePartitions.first)
+        let uuid = try #require(partition.uuid)
+        #expect(try await session.send(PBS.datastoreConfig("pflive-usb")).value.backingDevice == uuid)
+
+        var draft = DatastoreDraft()
+        draft.name = "pflive-usb2"
+        draft.kind = .removable
+        draft.path = "second"
+        draft.backingDevice = uuid
+        #expect(draft.problems(isNew: true).isEmpty)
+        #expect(try await waitForTask(try await session.send(PBS.createDatastore(draft.creationParameters(usesNotificationSystem: true))), in: session).succeeded)
+        #expect(try await session.send(PBS.datastoreConfig("pflive-usb2")).value.isRemovable)
+
+        #expect(try await waitForTask(try await session.send(PBS.unmountDatastore("pflive-usb2")), in: session).succeeded)
+        let unmounted = try #require(try await session.send(PBS.datastores()).first { $0.store == "pflive-usb2" })
+        #expect(unmounted.mountStatus == .notMounted)
+        await #expect(throws: ProxmoxError.api(status: 400, message: "datastore 'pflive-usb2' is not mounted", fieldErrors: [:])) {
+            _ = try await session.send(PBS.datastoreStatus("pflive-usb2"))
+        }
+        #expect(try await waitForTask(try await session.send(PBS.mountDatastore("pflive-usb2")), in: session).succeeded)
+        #expect(try await session.send(PBS.datastores()).first { $0.store == "pflive-usb2" }?.mountStatus == .mounted)
+
+        for name in ["pflive-usb2", "pflive-usb"] {
+            #expect(try await waitForTask(try await session.send(PBS.deleteDatastore(name, destroyData: true, keepJobs: false, digest: nil)), in: session).succeeded)
+        }
+        let wipe = try await session.send(APIRequest<String>(.put, "/nodes/localhost/disks/wipedisk", parameters: ["disk": .string(spare.name)]))
+        #expect(try await waitForTask(wipe, in: session).succeeded)
+        #expect(try await session.send(PBS.disks()).first { $0.name == spare.name }?.isUnused == true)
     }
 }
 

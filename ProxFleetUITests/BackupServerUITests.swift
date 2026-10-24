@@ -63,6 +63,101 @@ final class BackupServerUITests: XCTestCase {
         snapshot("pbs-more")
     }
 
+    @MainActor
+    func testDatastoreSummaryOptionsAndPermissions() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        app.buttons["tab.datastores"].tap()
+        // In the list the row is a navigation link; its content carries the same identifier.
+        let main = app.buttons["datastore.main"]
+        XCTAssertTrue(main.waitForExistence(timeout: 5))
+        main.tap()
+
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'groups'")).firstMatch.waitForExistence(timeout: 10))
+        snapshot("pbs-datastore-summary")
+        app.buttons["datastore.actions"].tap()
+        app.buttons["datastore.gc"].tap()
+        // The task starts without an error; it shows in the server's task list.
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 3))
+
+        // Comment and verify-new, saved through the general and verification editors.
+        app.buttons["tab.options"].tap()
+        let general = app.buttons["options.general"]
+        XCTAssertTrue(general.waitForExistence(timeout: 10))
+        general.tap()
+        let comment = app.textFields["datastore.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+        comment.press(forDuration: 1.2)
+        if app.menuItems["Select All"].waitForExistence(timeout: 2) { app.menuItems["Select All"].tap() }
+        comment.typeText("Nightly backups")
+        app.buttons["save"].tap()
+        XCTAssertTrue(general.waitForExistence(timeout: 10))
+        XCTAssertTrue(general.label.contains("Nightly backups"), general.label)
+
+        app.buttons["options.maintenance"].tap()
+        XCTAssertTrue(app.buttons["Read-Only"].waitForExistence(timeout: 5))
+        app.buttons["Read-Only"].tap()
+        app.textFields["datastore.maintenanceMessage"].tap()
+        app.textFields["datastore.maintenanceMessage"].typeText("Disk swap")
+        snapshot("pbs-datastore-maintenance")
+        app.buttons["save"].tap()
+        XCTAssertTrue(app.buttons["options.maintenance"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["options.maintenance"].label.contains("Read-Only"))
+
+        app.buttons["tab.permissions"].tap()
+        XCTAssertTrue(app.staticTexts["anna@pbs"].waitForExistence(timeout: 10))
+        app.buttons["permissions.add"].tap()
+        XCTAssertTrue(app.buttons["permission.user"].waitForExistence(timeout: 5))
+        app.buttons["permission.user"].tap()
+        app.buttons["monitoring@pbs!zabbix"].tap()
+        app.buttons["permission.save"].tap()
+        XCTAssertTrue(app.staticTexts["monitoring@pbs!zabbix"].waitForExistence(timeout: 10))
+        snapshot("pbs-datastore-permissions")
+    }
+
+    @MainActor
+    func testAddAndRemoveDatastore() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        app.buttons["tab.datastores"].tap()
+        let add = app.buttons["datastore.add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        add.tap()
+        let name = app.textFields["datastore.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("archive")
+        // A relative path is refused before anything is sent.
+        let path = app.textFields["datastore.path"]
+        path.tap()
+        path.typeText("archive")
+        app.buttons["datastore.create"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'absolute path'")).firstMatch.waitForExistence(timeout: 5))
+        snapshot("pbs-add-datastore-error")
+        path.tap()
+        path.press(forDuration: 1.2)
+        if app.menuItems["Select All"].waitForExistence(timeout: 2) { app.menuItems["Select All"].tap() }
+        path.typeText("/mnt/datastore/archive")
+        app.buttons["datastore.create"].tap()
+
+        let archive = app.buttons["datastore.archive"]
+        XCTAssertTrue(archive.waitForExistence(timeout: 15))
+        archive.tap()
+        app.buttons["tab.options"].tap()
+        let remove = app.buttons["datastore.remove"]
+        for _ in 0..<6 where !remove.isHittable { app.swipeUp() }
+        remove.tap()
+        let confirm = app.textFields["remove.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["remove.submit"].isEnabled)
+        confirm.tap()
+        confirm.typeText("archive")
+        app.buttons["remove.submit"].tap()
+        XCTAssertTrue(app.buttons["datastore.main"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["datastore.archive"].exists)
+    }
+
     /// The demo address adds both demo servers, so App Review finds the backup server too.
     @MainActor
     func testDemoAddressAddsBothServers() {

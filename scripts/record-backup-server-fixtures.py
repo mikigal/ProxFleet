@@ -109,7 +109,7 @@ for name, path, params in [
     ("node-apt-versions", "/nodes/localhost/apt/versions", None),
     ("node-apt-update", "/nodes/localhost/apt/update", None),
     ("node-apt-repositories", "/nodes/localhost/apt/repositories", None),
-    ("node-disks-list", "/nodes/localhost/disks/list", None),
+    ("node-disks-list", "/nodes/localhost/disks/list", {"include-partitions": 1, "skipsmart": 1}),
     ("node-disks-directory", "/nodes/localhost/disks/directory", None),
     ("node-disks-zfs", "/nodes/localhost/disks/zfs", None),
     ("node-journal", "/nodes/localhost/journal", {"lastentries": 10}),

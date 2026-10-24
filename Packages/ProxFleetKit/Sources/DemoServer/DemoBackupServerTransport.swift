@@ -54,12 +54,22 @@ struct DemoBackupTask: Sendable {
 actor DemoBackupServerState {
     var server: DemoBackupServer
     var tasks: [DemoBackupTask]
+    /// Settings of each datastore as the API names them, by datastore.
+    var datastoreSettings: [String: [String: String]]
+    /// Changes with every configuration change, so stale digests are refused like on a real server.
+    var configRevision = 1
+    var acl: [(path: String, authID: String, role: String, propagates: Bool)] = [
+        ("/datastore/main", "backup@pbs", "DatastoreBackup", true),
+        ("/datastore/main/laptops", "anna@pbs", "DatastorePowerUser", true),
+        ("/", "monitoring@pbs!zabbix", "Audit", true),
+    ]
     let started = Date()
     private var ticketCounter = 0
 
     init(server: DemoBackupServer) {
         self.server = server
         tasks = Self.taskHistory(for: server, now: started)
+        datastoreSettings = Dictionary(uniqueKeysWithValues: server.datastores.map { ($0.name, Self.settings(of: $0)) })
     }
 
     func handle(_ request: HTTPRequest) -> HTTPResponse {
@@ -87,21 +97,29 @@ actor DemoBackupServerState {
         }
 
         let parts = path.split(separator: "/").map(String.init)
+        if let response = handleDatastores(request.method, parts: parts, parameters: parameters)
+            ?? handleAccess(request.method, parts: parts, parameters: parameters) {
+            return response
+        }
         switch (request.method, parts) {
         case (.get, ["version"]):
             return success(["version": .string(server.version), "release": .string(server.release), "repoid": "demo"])
         case (.get, ["nodes"]):
             return success([["node": .string(server.name)]])
+        case (.get, let path) where path.count == 4 && path[0] == "nodes" && path[2] == "disks" && path[3] == "list":
+            return success(Self.disks)
         case (.get, ["access", "permissions"]):
             return success(permissions(path: parameters["path"] ?? "/"))
         case (.get, ["status", "datastore-usage"]):
             return success(.array(server.datastores.map(usageJSON)))
         case (.get, ["admin", "datastore"]):
             return success(.array(server.datastores.map { datastore in
-                [
-                    "store": .string(datastore.name), "comment": .string(datastore.comment), "backend-type": "filesystem",
+                var entry: [String: JSONValue] = [
+                    "store": .string(datastore.name), "comment": .string(datastoreSettings[datastore.name]?["comment"] ?? ""), "backend-type": "filesystem",
                     "mount-status": .string(datastore.backingDevice == nil ? "nonremovable" : datastore.isMounted ? "mounted" : "notmounted"),
                 ]
+                if let maintenance = datastoreSettings[datastore.name]?["maintenance-mode"] { entry["maintenance"] = .string(maintenance) }
+                return .object(entry)
             }))
         case (_, let parts) where parts.count >= 2 && parts[0] == "nodes":
             return handleNode(request.method, rest: Array(parts.dropFirst(2)), parameters: parameters)

@@ -309,12 +309,19 @@ struct DatastoreBadge: View {
 /// The datastores of a backup server with their usage.
 struct DatastoreListView: View {
     let connection: ServerConnection
+    @State private var adding = false
+    /// `Datastore.Allocate` on `/datastore`, which adding needs; nil until known.
+    @State private var canAdd: Bool?
 
     var body: some View {
         List {
             if let snapshot = connection.backupServer {
                 ForEach(snapshot.datastores) { datastore in
-                    DatastoreUsageRow(datastore: datastore, usage: snapshot.usage(of: datastore.store))
+                    NavigationLink {
+                        DatastoreDetailView(store: datastore.store, connection: connection)
+                    } label: {
+                        DatastoreUsageRow(datastore: datastore, usage: snapshot.usage(of: datastore.store))
+                    }
                 }
             }
         }
@@ -323,7 +330,23 @@ struct DatastoreListView: View {
                 ContentUnavailableView("No Datastores", systemImage: "cylinder.split.1x2", description: Text("Datastores hold the backups. You see the ones you have permission for."))
             }
         }
+        .toolbar {
+            if canAdd == true {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Add Datastore", systemImage: "plus") { adding = true }
+                        .accessibilityIdentifier("datastore.add")
+                }
+            }
+        }
+        .sheet(isPresented: $adding) {
+            NavigationStack {
+                AddDatastoreView(connection: connection)
+            }
+        }
         .refreshable { await connection.refresh() }
+        .task {
+            canAdd = (try? await connection.apiSession.backupServerPrivileges(on: "/datastore"))?.contains("Datastore.Allocate") ?? false
+        }
     }
 }
 
