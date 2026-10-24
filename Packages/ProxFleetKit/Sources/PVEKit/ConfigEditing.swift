@@ -30,7 +30,7 @@ public struct GuestConfigUpdate: Sendable, Equatable {
         set(key, flag ? "1" : "0")
     }
 
-    var parameters: APIParameters {
+    public var parameters: APIParameters {
         var parameters = APIParameters()
         for key in values.keys.sorted() {
             parameters[key] = .string(values[key]!)

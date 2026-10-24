@@ -35,7 +35,8 @@ struct NodeDisksView: View {
                             StorageRow(title: pool.name, systemImage: "cylinder.split.1x2", used: pool.allocated, total: pool.size, badge: pool.isHealthy ? nil : pool.health)
                         }
                         .accessibilityIdentifier("zfs.\(pool.name)")
-                        .swipeActions { deleteButton(DiskStorageTarget(kind: .zfs, name: pool.name)) }
+                        // A backup server's API cannot destroy pools.
+                        .swipeActions { if !detail.isBackupServer { deleteButton(DiskStorageTarget(kind: .zfs, name: pool.name)) } }
                     }
                 }
             }
@@ -71,6 +72,7 @@ struct NodeDisksView: View {
                             }
                         }
                         .swipeActions { deleteButton(DiskStorageTarget(kind: .directory, name: mount.name)) }
+                        .accessibilityIdentifier("directory.\(mount.name)")
                     }
                 }
             }
@@ -86,8 +88,10 @@ struct NodeDisksView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    ForEach(DiskStorageKind.allCases) { kind in
+                    // A backup server offers directories and ZFS pools, each optionally with a datastore.
+                    ForEach(detail.isBackupServer ? [.directory, .zfs] : DiskStorageKind.allCases) { kind in
                         Button(kind.createTitle, systemImage: kind.systemImage) { creating = kind }
+                            .accessibilityIdentifier("disks.add.\(kind.rawValue)")
                     }
                 } label: {
                     Label("Create", systemImage: "plus")
@@ -533,6 +537,8 @@ private struct ZFSPoolView: View {
 private struct CreateDiskStorageView: View {
     let detail: NodeDetail
     @State private var draft: DiskStorageDraft
+    /// Backup server: the datastore on a directory is removable, mounted only while needed.
+    @State private var removableDatastore = false
     @State private var isCreating = false
     @State private var showsProblems = false
     @State private var errorMessage: String?
@@ -549,16 +555,35 @@ private struct CreateDiskStorageView: View {
         NodeDisk.grouped(detail.disks ?? []).map(\.disk).filter(\.isUnused)
     }
 
-    private var errors: [String: String] { showsProblems ? draft.problems.merging(fieldErrors) { _, server in server } : fieldErrors }
+    private var problems: [String: String] {
+        guard detail.isBackupServer else { return draft.problems }
+        return draft.backupServerProblems(existingDatastores: detail.connection.backupServer?.datastores.map(\.store) ?? [])
+    }
+
+    private var errors: [String: String] { showsProblems ? problems.merging(fieldErrors) { _, server in server } : fieldErrors }
 
     var body: some View {
         Form {
             Section {
                 LabeledTextField(title: "Name", prompt: draft.kind == .zfs ? "tank" : "data", text: $draft.name, identifier: "storage.name")
                 FieldError(message: errors["name"])
-                Toggle("Add Storage", isOn: $draft.addStorage)
+                if detail.isBackupServer {
+                    Toggle("Add as Datastore", isOn: $draft.addStorage)
+                        .accessibilityIdentifier("storage.addDatastore")
+                    if draft.kind == .directory, draft.addStorage {
+                        Toggle("Removable Datastore", isOn: $removableDatastore)
+                    }
+                } else {
+                    Toggle("Add Storage", isOn: $draft.addStorage)
+                }
             } footer: {
-                Text("Add Storage also configures it as a storage of the datacenter, so guests and backups can use it.")
+                if detail.isBackupServer {
+                    Text(removableDatastore && draft.kind == .directory
+                        ? "Adds a removable datastore with the same name. It is mounted only while needed, so the disk can be swapped."
+                        : "Adds a datastore with the same name on it.")
+                } else {
+                    Text("Add Storage also configures it as a storage of the datacenter, so guests and backups can use it.")
+                }
             }
             Section {
                 if candidates.isEmpty {
@@ -596,7 +621,7 @@ private struct CreateDiskStorageView: View {
             if draft.kind == .zfs {
                 Section("ZFS") {
                     Picker("RAID Level", selection: $draft.raidLevel) {
-                        ForEach(DiskStorageDraft.raidLevels, id: \.self) { Text($0).tag($0) }
+                        ForEach(detail.isBackupServer ? DiskStorageDraft.backupServerRAIDLevels : DiskStorageDraft.raidLevels, id: \.self) { Text($0).tag($0) }
                     }
                     Picker("Compression", selection: $draft.compression) {
                         ForEach(DiskStorageDraft.compressions, id: \.self) { Text($0).tag($0) }
@@ -623,7 +648,7 @@ private struct CreateDiskStorageView: View {
                         Text("xfs").tag("xfs")
                     }
                 } footer: {
-                    Text("Mounted at /mnt/pve/\(draft.name.isEmpty ? "name" : draft.name).")
+                    Text("Mounted at \(detail.isBackupServer ? "/mnt/datastore" : "/mnt/pve")/\(draft.name.isEmpty ? "name" : draft.name).")
                 }
             }
             ErrorSection(message: errorMessage)
@@ -657,12 +682,12 @@ private struct CreateDiskStorageView: View {
     private func create() async {
         showsProblems = true
         fieldErrors = [:]
-        guard draft.problems.isEmpty else { return }
+        guard problems.isEmpty else { return }
         isCreating = true
         errorMessage = nil
         defer { isCreating = false }
         do {
-            try await detail.createDiskStorage(draft)
+            try await detail.createDiskStorage(draft, removableDatastore: removableDatastore)
             dismiss()
         } catch .invalid(let message, let fields) {
             fieldErrors = fields
@@ -685,20 +710,32 @@ private struct DeleteDiskStorageView: View {
 
     var body: some View {
         Form {
-            Section {
-                Label {
-                    Text("The \(Text(target.kind.title)) “\(target.name)” and all data on it are removed. This cannot be undone.")
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+            if detail.isBackupServer {
+                Section {
+                    Label {
+                        Text("The directory “\(target.name)” is unmounted and its mount unit removed. The data stays on the disk.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
+                } footer: {
+                    Text("Remove a datastore on it first; it cannot work without the mount.")
                 }
-            }
-            Section {
-                Toggle("Remove Storage Configuration", isOn: $cleanupConfig)
-                Toggle("Wipe Disks", isOn: $wipeDisks)
-            } footer: {
-                Text(target.kind == .lvmThin
-                    ? "Removes the storage entries that use it. Wiping also removes the thin pool's volume group, so its disks show as unused."
-                    : "Removes the storage entries that use it, and wipes its disks so they show as unused.")
+            } else {
+                Section {
+                    Label {
+                        Text("The \(Text(target.kind.title)) “\(target.name)” and all data on it are removed. This cannot be undone.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                    }
+                }
+                Section {
+                    Toggle("Remove Storage Configuration", isOn: $cleanupConfig)
+                    Toggle("Wipe Disks", isOn: $wipeDisks)
+                } footer: {
+                    Text(target.kind == .lvmThin
+                        ? "Removes the storage entries that use it. Wiping also removes the thin pool's volume group, so its disks show as unused."
+                        : "Removes the storage entries that use it, and wipes its disks so they show as unused.")
+                }
             }
             Section {
                 TextField(target.name, text: $confirmation)

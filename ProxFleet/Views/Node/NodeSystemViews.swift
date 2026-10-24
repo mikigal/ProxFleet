@@ -27,7 +27,7 @@ struct NodeSettingsForm<Content: View>: View {
             if isReadOnly {
                 Section {
                     Label {
-                        Text("Read only. Changing this needs the \(privilege) privilege on /nodes/\(detail.node).")
+                        Text("Read only. Changing this needs the \(detail.privilegeName(privilege)) privilege on \(detail.privilegePath).")
                     } icon: {
                         Image(systemName: "lock.fill").foregroundStyle(.secondary)
                     }

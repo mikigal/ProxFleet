@@ -31,11 +31,14 @@ struct BackupServerView: View {
     /// Kept here so coming back to the tab shows the last data while it reloads.
     @State private var dashboard: BackupServerDashboard
     @State private var jobs: BackupServerJobs
+    /// The server itself, for the administration screens it shares with Proxmox VE nodes.
+    @State private var node: NodeDetail
 
     init(connection: ServerConnection) {
         self.connection = connection
         _dashboard = State(initialValue: BackupServerDashboard(connection: connection))
         _jobs = State(initialValue: BackupServerJobs(connection: connection))
+        _node = State(initialValue: NodeDetail(node: PBS.node, connection: connection))
     }
 
     var body: some View {
@@ -76,38 +79,7 @@ struct BackupServerView: View {
         case .jobs:
             BackupServerJobsView(jobs: jobs)
         case .more:
-            BackupServerMoreList(connection: connection)
-        }
-    }
-}
-
-/// The More tab of a backup server.
-struct BackupServerMoreList: View {
-    let connection: ServerConnection
-
-    var body: some View {
-        List {
-            if let version = connection.backupServer?.version {
-                Section {
-                    LabeledContent("Proxmox Backup Server", value: version.displayVersion)
-                }
-            }
-            Section("Configuration") {
-                NavigationLink {
-                    BackupServerRemotesView(connection: connection)
-                } label: {
-                    MoreRow(title: "Remotes", systemImage: "server.rack", color: .teal)
-                }
-                .accessibilityIdentifier("more.remotes")
-            }
-            Section {
-                Button(role: .destructive) {
-                    Task { await connection.signOut() }
-                } label: {
-                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-                .accessibilityIdentifier("signOut")
-            }
+            BackupServerMoreList(connection: connection, node: node)
         }
     }
 }

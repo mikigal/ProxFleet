@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import PBSKit
+import ProxmoxConsole
 import ProxmoxCore
 import ProxmoxURLSession
 import PVEKit
@@ -662,6 +663,232 @@ extension LiveBackupServerTests {
         if version.supports(.syncEncryption) {
             _ = try await session.send(PBS.encryptionKeys(includeArchived: true))
         }
+    }
+}
+
+// MARK: - Administration
+
+extension LiveBackupServerTests {
+    /// Runs a command in the server's shell and returns its output, which ends before the exit status.
+    fileprivate func runOnServer(_ session: ProxmoxSession, _ command: String, timeout: TimeInterval = 30) async throws -> (output: String, status: Int?) {
+        let terminal = try await TerminalConnection.open(.node(PBS.node), session: session)
+        defer { terminal.close() }
+        try await terminal.resize(columns: 200, rows: 50)
+        let marker = "PFDONE\(Int.random(in: 100_000...999_999))"
+        // The marker is split in the command line, so only the command's own echo matches it.
+        try await terminal.send("{ \(command) ; } 2>&1; echo \"\(marker.prefix(3))\"\"\(marker.dropFirst(3))-$?\"\n")
+        var text = ""
+        let deadline = Date().addingTimeInterval(timeout)
+        for try await chunk in terminal.output {
+            text += String(decoding: chunk, as: UTF8.self)
+            if text.range(of: "\(marker)-\\d+", options: .regularExpression) != nil || Date() > deadline { break }
+        }
+        guard let range = text.range(of: "\(marker)-\\d+", options: .regularExpression) else { return (text, nil) }
+        return (String(text[..<range.lowerBound]), Int(text[range].split(separator: "-").last ?? ""))
+    }
+
+    /// Services, updates, repositories, the journal and report, DNS, time zone, options, the certificate and the shell,
+    /// each changed and set back where it changes anything.
+    @Test func serverAdministration() async throws {
+        let session = try await signedIn()
+        let node = PBS.node
+        #expect(try await session.privileges(on: "/system").contains("Sys.PowerManagement"))
+
+        // Services: a restart is a task, although the API schema says it returns nothing.
+        #expect(try await session.send(PVE.services(node: node)).contains { $0.name == "proxmox-backup-proxy" && $0.isRunning })
+        let restart = try #require(try await session.send(PVE.serviceAction(node: node, service: "postfix", .restart)))
+        #expect(try await waitForTask(restart, in: session).succeeded)
+        var postfixRuns = false
+        for _ in 0..<10 where !postfixRuns {
+            postfixRuns = try await session.send(PVE.services(node: node)).first { $0.name == "postfix" }?.isRunning == true
+            if !postfixRuns { try await Task.sleep(for: .milliseconds(500)) }
+        }
+        #expect(postfixRuns)
+
+        // Updates and repositories: one Proxmox repository is switched and switched back.
+        let refresh = try #require(try await session.send(PVE.refreshPackageIndex(node: node)))
+        #expect(try await waitForTask(refresh, in: session).succeeded)
+        _ = try await session.send(PVE.packageUpdates(node: node))
+        #expect(try await session.send(PVE.packageVersions(node: node)).contains { $0.package == "proxmox-backup-server" })
+        #expect(try await !session.send(PVE.packageChangelog(node: node, package: "proxmox-backup-server")).isEmpty)
+        let repositories = try await session.send(PVE.aptRepositories(node: node))
+        let proxmox = try #require(repositories.files.flatMap(\.repositories).first { $0.uris.contains { $0.contains("proxmox.com") } })
+        _ = try await session.send(PVE.setRepository(node: node, proxmox, enabled: !proxmox.isEnabled, digest: repositories.digest))
+        let switched = try await session.send(PVE.aptRepositories(node: node))
+        #expect(switched.files.flatMap(\.repositories).first { $0.path == proxmox.path && $0.index == proxmox.index }?.isEnabled == !proxmox.isEnabled)
+        _ = try await session.send(PVE.setRepository(node: node, proxmox, enabled: proxmox.isEnabled, digest: switched.digest))
+
+        // Journal and report.
+        #expect(try await !NodeJournal.lines(session.send(PVE.journal(node: node, lastEntries: 20))).isEmpty)
+        let hostname = try await session.send(PBS.nodes()).first?.name ?? ""
+        #expect(try await session.send(PVE.systemReport(node: node)).contains(hostname))
+
+        // DNS saved as it is; the time zone changed and set back.
+        let dns = try await session.send(PVE.nodeDNS(node))
+        _ = try await session.send(PVE.updateNodeDNS(node, dns))
+        #expect(try await session.send(PVE.nodeDNS(node)).servers == dns.servers)
+        let timeZone = try await session.send(PVE.nodeTime(node)).timeZone
+        let other = timeZone == "Europe/Berlin" ? "Europe/Warsaw" : "Europe/Berlin"
+        _ = try await session.send(PVE.setNodeTimeZone(node, other))
+        #expect(try await session.send(PVE.nodeTime(node)).timeZone == other)
+        _ = try await session.send(PVE.setNodeTimeZone(node, timeZone))
+
+        // Options: the mail sender is set and set back.
+        let options = try await session.send(PBS.nodeOptions())
+        let original = BackupServerNodeOptionsDraft(options.value)
+        var draft = original
+        draft.emailFrom = "pflive@example.com"
+        draft.taskLogMaxDays = 120
+        _ = try await session.send(PBS.updateNodeOptions(draft.changes(from: original, digest: options.digest)))
+        let changed = try await session.send(PBS.nodeOptions())
+        #expect(BackupServerNodeOptionsDraft(changed.value) == draft)
+        _ = try await session.send(PBS.updateNodeOptions(original.changes(from: draft, digest: changed.digest)))
+        #expect(try await BackupServerNodeOptionsDraft(session.send(PBS.nodeOptions()).value) == original)
+
+        // The certificate is the one the connection trusts.
+        let certificate = try #require(try await session.send(PVE.certificates(node: node)).first { $0.fileName == "proxy.pem" })
+        if let expected = server["FINGERPRINT"] {
+            #expect(certificate.fingerprint?.uppercased() == expected.uppercased())
+        }
+
+        // The shell.
+        let shell = try await runOnServer(session, "echo pflive-$((6*7))")
+        #expect(shell.output.contains("pflive-42"))
+        #expect(shell.status == 0)
+    }
+
+    /// A bridge without ports, which touches nothing else: created, changed, applied, removed and applied again.
+    @Test func networkBridgeWithoutPorts() async throws {
+        let session = try await signedIn()
+        let name = "vmbr9"
+        func cleanUp() async throws {
+            _ = try? await session.send(PVE.revertNetwork(node: PBS.node))
+            if try await session.send(PVE.network(node: PBS.node)).interfaces.contains(where: { $0.name == name }) {
+                _ = try? await session.send(PVE.deleteInterface(node: PBS.node, name: name))
+                if let upid = try? await session.send(PVE.applyNetwork(node: PBS.node)) { _ = try? await waitForTask(upid, in: session) }
+            }
+        }
+        try? await cleanUp()
+        let outcome: Result<Void, any Error>
+        do {
+            let network = try await session.send(PVE.network(node: PBS.node))
+            try #require(network.pendingChanges == nil, "the server has pending network changes")
+            var bridge = NetworkInterfaceDraft(creating: .bridge, existing: network.interfaces)
+            bridge.name = name
+            bridge.comments = "ProxFleet live test"
+            bridge.vlanAware = true
+            _ = try await session.send(PBS.createInterface(bridge))
+            let pending = try await session.send(PVE.network(node: PBS.node))
+            let created = try #require(pending.interfaces.first { $0.name == name })
+            #expect(created.bridgeVLANAware)
+            #expect(created.comments == "ProxFleet live test")
+            #expect(pending.pendingChanges?.contains(name) == true)
+            #expect(NetworkInterfaceDraft(created).changes(from: bridge).isEmpty)
+
+            var edited = NetworkInterfaceDraft(created)
+            edited.comments = ""
+            edited.vlanAware = false
+            _ = try await session.send(PBS.updateInterface(name, edited.changes(from: NetworkInterfaceDraft(created))))
+            let changed = try #require(try await session.send(PVE.network(node: PBS.node)).interfaces.first { $0.name == name })
+            #expect(changed.comments == nil)
+            #expect(!changed.bridgeVLANAware)
+
+            // Applying is a task too, although the API schema says it returns nothing.
+            let apply = try #require(try await session.send(PVE.applyNetwork(node: PBS.node)))
+            #expect(try await waitForTask(apply, in: session).succeeded)
+            let applied = try await session.send(PVE.network(node: PBS.node))
+            #expect(applied.pendingChanges == nil)
+            // A bridge without ports has no carrier, so the server does not report it as active.
+            #expect(applied.interfaces.contains { $0.name == name })
+            _ = try await session.send(PVE.deleteInterface(node: PBS.node, name: name))
+            let removal = try #require(try await session.send(PVE.applyNetwork(node: PBS.node)))
+            #expect(try await waitForTask(removal, in: session).succeeded)
+            #expect(try await !session.send(PVE.network(node: PBS.node)).interfaces.contains { $0.name == name })
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        try? await cleanUp()
+        try outcome.get()
+    }
+
+    /// The spare disk: a GPT, a directory with a datastore, and a ZFS pool, each removed again; the disk is wiped at
+    /// the end, as it started.
+    @Test(.timeLimit(.minutes(5))) func diskStorageOnTheSpareDisk() async throws {
+        let session = try await signedIn()
+        func cleanUp() async throws {
+            if try await session.send(PBS.datastoreConfigs()).value.contains(where: { $0.name == "pflivedir" }) {
+                if let upid = try? await session.send(PBS.deleteDatastore("pflivedir", destroyData: true, keepJobs: false, digest: nil)) {
+                    _ = try? await waitForTask(upid, in: session)
+                }
+            }
+            if try await session.send(PBS.directories()).contains(where: { $0.name == "pflivedir" }) {
+                _ = try? await session.send(PBS.deleteDirectory("pflivedir"))
+            }
+            if try await session.send(PBS.zfsPools()).contains(where: { $0.name == "pflivezfs" }) {
+                _ = try? await runOnServer(session, "zpool destroy pflivezfs")
+            }
+            // Destroying a pool leaves its mount point, where the server refuses to create one again.
+            _ = try? await runOnServer(session, "rmdir /mnt/datastore/pflivezfs /mnt/datastore/pflivedir 2>/dev/null; true")
+            if let upid = try? await session.send(PVE.wipeDisk(node: PBS.node, disk: "sdb")) {
+                _ = try? await waitForTask(upid, in: session)
+            }
+        }
+        // An aborted earlier run may have left its mounts, pools and mount points behind; the spare disk must be free then.
+        try? await cleanUp()
+        let spare = try #require(try await session.send(PBS.nodeDisks()).first { $0.name == "sdb" })
+        try #require(spare.isUnused, "the spare disk sdb is in use")
+        let outcome: Result<Void, any Error>
+        do {
+            try await checkDiskStorage(session)
+            outcome = .success(())
+        } catch {
+            outcome = .failure(error)
+        }
+        try? await cleanUp()
+        try outcome.get()
+        #expect(try await session.send(PBS.nodeDisks()).first { $0.name == "sdb" }?.isUnused == true)
+    }
+
+    private func checkDiskStorage(_ session: ProxmoxSession) async throws {
+        _ = try await session.send(PVE.smart(node: PBS.node, disk: "sda"))
+
+        let gpt = try #require(try await session.send(PVE.initializeGPT(node: PBS.node, disk: "sdb")))
+        #expect(try await waitForTask(gpt, in: session).succeeded)
+        #expect(try await session.send(PBS.nodeDisks()).first { $0.name == "sdb" }?.hasGPT == true)
+        let wipe = try #require(try await session.send(PVE.wipeDisk(node: PBS.node, disk: "sdb")))
+        #expect(try await waitForTask(wipe, in: session).succeeded)
+
+        // A directory with a datastore; the mount stays until the datastore is gone.
+        var directory = DiskStorageDraft(kind: .directory)
+        directory.name = "pflivedir"
+        directory.devices = ["/dev/sdb"]
+        #expect(directory.backupServerProblems(existingDatastores: []).isEmpty)
+        let created = try #require(try await session.send(PBS.createDiskStorage(directory)))
+        #expect(try await waitForTask(created, in: session).succeeded)
+        let mount = try #require(try await session.send(PBS.directories()).first { $0.name == "pflivedir" })
+        #expect(mount.mount.path == "/mnt/datastore/pflivedir")
+        #expect(try await session.send(PBS.datastores()).contains { $0.store == "pflivedir" })
+        let flattened = try await session.send(PBS.nodeDisks()).flatMap(\.nodeDisks)
+        #expect(flattened.contains { $0.parent == "/dev/sdb" })
+        #expect(flattened.first { $0.path == "/dev/sdb" }?.isUnused == false)
+        let removed = try await session.send(PBS.deleteDatastore("pflivedir", destroyData: true, keepJobs: false, digest: nil))
+        #expect(try await waitForTask(removed, in: session).succeeded)
+        _ = try await session.send(PBS.deleteDirectory("pflivedir"))
+        #expect(try await !session.send(PBS.directories()).contains { $0.name == "pflivedir" })
+        let wipeDirectory = try #require(try await session.send(PVE.wipeDisk(node: PBS.node, disk: "sdb")))
+        #expect(try await waitForTask(wipeDirectory, in: session).succeeded)
+
+        // A ZFS pool without a datastore; the API cannot destroy pools, the shell can.
+        var pool = DiskStorageDraft(kind: .zfs)
+        pool.name = "pflivezfs"
+        pool.devices = ["/dev/sdb"]
+        pool.addStorage = false
+        let createdPool = try #require(try await session.send(PBS.createDiskStorage(pool)))
+        #expect(try await waitForTask(createdPool, in: session).succeeded)
+        #expect(try await session.send(PBS.zfsPools()).contains { $0.name == "pflivezfs" })
+        #expect(try await session.send(PBS.zfsPoolStatus("pflivezfs")).state == "ONLINE")
+        #expect(try await runOnServer(session, "zpool destroy pflivezfs && rmdir /mnt/datastore/pflivezfs").status == 0)
     }
 }
 

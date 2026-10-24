@@ -76,7 +76,7 @@ public struct CustomCertificateDraft: Equatable, Sendable {
         return problems
     }
 
-    var parameters: APIParameters {
+    public var parameters: APIParameters {
         var parameters: APIParameters = ["certificates": .string(certificates.trimmingCharacters(in: .whitespacesAndNewlines))]
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if !key.isEmpty { parameters["key"] = .string(key) }

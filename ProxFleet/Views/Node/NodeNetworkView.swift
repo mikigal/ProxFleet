@@ -63,11 +63,14 @@ struct NodeNetworkView: View {
                                 .accessibilityIdentifier("network.add.\(kind.rawValue)")
                         }
                     }
-                    Section("Open vSwitch") {
-                        ForEach(NetworkInterfaceDraft.Kind.allCases.filter(\.isOVS)) { kind in
-                            Button(kind.title, systemImage: kind.systemImage) { creating = kind }
-                                .disabled(kind != .ovsBridge && detail.network?.ovsBridges.isEmpty != false)
-                                .accessibilityIdentifier("network.add.\(kind.rawValue)")
+                    // A backup server has no Open vSwitch.
+                    if !detail.isBackupServer {
+                        Section("Open vSwitch") {
+                            ForEach(NetworkInterfaceDraft.Kind.allCases.filter(\.isOVS)) { kind in
+                                Button(kind.title, systemImage: kind.systemImage) { creating = kind }
+                                    .disabled(kind != .ovsBridge && detail.network?.ovsBridges.isEmpty != false)
+                                    .accessibilityIdentifier("network.add.\(kind.rawValue)")
+                            }
                         }
                     }
                 } label: {
@@ -434,7 +437,8 @@ struct NetworkInterfaceEditor: View {
         Section {
             Toggle("VLAN Aware", isOn: $draft.vlanAware)
                 .accessibilityIdentifier("interface.vlanAware")
-            if draft.vlanAware {
+            // A backup server's bridges take no VLAN ID list.
+            if draft.vlanAware, !detail.isBackupServer {
                 LabeledTextField(title: "VLAN IDs", prompt: "2-4094", text: $draft.bridgeVIDs, keyboard: .numbersAndPunctuation)
                 FieldError(message: errors["bridge_vids"])
             }

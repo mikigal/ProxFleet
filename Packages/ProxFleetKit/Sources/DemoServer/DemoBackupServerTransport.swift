@@ -63,6 +63,7 @@ actor DemoBackupServerState {
         ("/datastore/main/laptops", "anna@pbs", "DatastorePowerUser", true),
         ("/", "monitoring@pbs!zabbix", "Audit", true),
     ]
+    var node = DemoBackupServerNodeState()
     var jobs = DemoBackupServerState.defaultJobs
     var remotes = DemoBackupServerState.defaultRemotes
     let started = Date()
@@ -109,8 +110,6 @@ actor DemoBackupServerState {
             return success(["version": .string(server.version), "release": .string(server.release), "repoid": "demo"])
         case (.get, ["nodes"]):
             return success([["node": .string(server.name)]])
-        case (.get, let path) where path.count == 4 && path[0] == "nodes" && path[2] == "disks" && path[3] == "list":
-            return success(Self.disks)
         case (.get, ["access", "permissions"]):
             return success(permissions(path: parameters["path"] ?? "/"))
         case (.get, ["status", "datastore-usage"]):
@@ -185,6 +184,7 @@ actor DemoBackupServerState {
     // MARK: - Server
 
     private func handleNode(_ method: HTTPMethod, rest: [String], parameters: [String: String]) -> HTTPResponse? {
+        if let response = handleServerAdministration(method, rest: rest, parameters: parameters) { return response }
         switch (method, rest) {
         case (.get, ["status"]):
             return success(nodeStatus())

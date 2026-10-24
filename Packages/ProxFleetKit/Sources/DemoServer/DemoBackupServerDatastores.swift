@@ -11,22 +11,6 @@ extension DemoBackupServerState {
         return settings
     }
 
-    /// A system disk, the main datastore's ZFS disks, and a USB disk with a file system for removable datastores.
-    static let disks: JSONValue = [
-        ["name": "nvme0n1", "devpath": "/dev/nvme0n1", "model": "Samsung SSD 980 500GB", "size": 500_107_862_016, "disk-type": "ssd", "used": "partitions",
-         "status": "passed", "wearout": 98, "gpt": true, "partitions": [
-            ["name": "nvme0n1p2", "devpath": "/dev/nvme0n1p2", "size": 1_073_741_824, "used": "EFI", "filesystem": "vfat", "uuid": "8C1A-77D2", "mounted": false],
-            ["name": "nvme0n1p3", "devpath": "/dev/nvme0n1p3", "size": 498_000_000_000, "used": "LVM", "mounted": false],
-         ]],
-        ["name": "sda", "devpath": "/dev/sda", "model": "WDC WD40EFZX", "size": 4_000_787_030_016, "disk-type": "hdd", "used": "ZFS", "status": "passed", "gpt": true, "partitions": []],
-        ["name": "sdb", "devpath": "/dev/sdb", "model": "WDC WD40EFZX", "size": 4_000_787_030_016, "disk-type": "hdd", "used": "ZFS", "status": "passed", "gpt": true, "partitions": []],
-        ["name": "sdc", "devpath": "/dev/sdc", "model": "Samsung T7", "vendor": "Samsung", "size": 2_000_398_934_016, "disk-type": "usb", "used": "partitions",
-         "status": "unknown", "gpt": true, "partitions": [
-            ["name": "sdc1", "devpath": "/dev/sdc1", "size": 2_000_397_885_440, "used": "filesystem", "filesystem": "ext4",
-             "uuid": "c3d7e1f0-5a2b-4c9e-8f61-2b7d40a9e113", "mounted": false],
-         ]],
-    ]
-
     var configDigest: String {
         String(format: "%064x", configRevision)
     }

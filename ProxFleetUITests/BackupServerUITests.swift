@@ -58,9 +58,13 @@ final class BackupServerUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
 
         app.buttons["tab.more"].tap()
-        XCTAssertTrue(app.buttons["signOut"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["more.services"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS '4.2.1'")).firstMatch.exists)
         snapshot("pbs-more")
+        // Sign Out ends the list, below the administration rows.
+        let signOut = app.buttons["signOut"]
+        for _ in 0..<8 where !signOut.exists { app.swipeUp() }
+        XCTAssertTrue(signOut.exists)
     }
 
     @MainActor
@@ -182,7 +186,10 @@ final class BackupServerUITests: XCTestCase {
 
         // A remote's connection check lists what its user sees there.
         app.buttons["tab.more"].tap()
-        app.buttons["more.remotes"].tap()
+        let remotes = app.buttons["more.remotes"]
+        XCTAssertTrue(app.buttons["more.services"].waitForExistence(timeout: 5))
+        for _ in 0..<8 where !remotes.exists || !remotes.isHittable { app.swipeUp() }
+        remotes.tap()
         let cloud = app.buttons["remote.cloud"]
         XCTAssertTrue(cloud.waitForExistence(timeout: 10))
         cloud.tap()
@@ -191,6 +198,74 @@ final class BackupServerUITests: XCTestCase {
         check.tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'homelab-copy'")).firstMatch.waitForExistence(timeout: 10))
         snapshot("pbs-remote")
+    }
+
+    @MainActor
+    func testAdministration() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        app.buttons["tab.more"].tap()
+        let services = app.buttons["more.services"]
+        XCTAssertTrue(services.waitForExistence(timeout: 5))
+        services.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["service.proxmox-backup-proxy"].waitForExistence(timeout: 10))
+        snapshot("pbs-services")
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // A directory with a datastore on the unused disk.
+        app.buttons["more.disks"].tap()
+        XCTAssertTrue(app.buttons["disk.sdd"].waitForExistence(timeout: 10))
+        snapshot("pbs-disks")
+        app.buttons["disks.add"].tap()
+        app.buttons["disks.add.directory"].tap()
+        let name = app.textFields["storage.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("usb-copy\n")
+        app.buttons["candidate.sdd"].tap()
+        snapshot("pbs-new-directory")
+        app.buttons["storage.create"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["directory.usb-copy"].waitForExistence(timeout: 15))
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // A bridge, applied.
+        app.buttons["more.network"].tap()
+        XCTAssertTrue(app.buttons["interface.vmbr0"].waitForExistence(timeout: 10))
+        app.buttons["network.add"].tap()
+        // A backup server has no Open vSwitch.
+        XCTAssertFalse(app.buttons["network.add.OVSBridge"].exists)
+        app.buttons["Linux Bridge"].firstMatch.tap()
+        let comment = app.textFields["interface.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+        comment.typeText("Backup network")
+        app.buttons["save"].tap()
+        let apply = app.buttons["network.apply"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 10))
+        apply.tap()
+        let confirm = app.alerts.buttons["network.apply.confirm"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(app.buttons["interface.vmbr1"].waitForExistence(timeout: 10))
+        let applied = NSPredicate(format: "exists == false")
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: applied, object: apply)], timeout: 10), .completed)
+        snapshot("pbs-network")
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // The server's options.
+        let options = app.buttons["more.options"]
+        for _ in 0..<6 where !options.isHittable { app.swipeUp() }
+        options.tap()
+        let proxy = app.textFields["options.httpProxy"]
+        XCTAssertTrue(proxy.waitForExistence(timeout: 10))
+        proxy.tap()
+        proxy.typeText("http://proxy.home.arpa:3128")
+        snapshot("pbs-options")
+        app.buttons["save"].tap()
+        XCTAssertTrue(options.waitForExistence(timeout: 10))
+        options.tap()
+        XCTAssertTrue(proxy.waitForExistence(timeout: 10))
+        XCTAssertEqual(proxy.value as? String, "http://proxy.home.arpa:3128")
     }
 
     @MainActor
