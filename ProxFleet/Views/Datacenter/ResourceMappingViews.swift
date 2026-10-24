@@ -59,8 +59,10 @@ struct ResourceMappingsView: View {
                         .accessibilityIdentifier("mapping.add.pci")
                     Button("USB Device", systemImage: "cable.connector") { creating = .usb }
                         .accessibilityIdentifier("mapping.add.usb")
-                    Button("Directory", systemImage: "folder") { creating = .dir }
-                        .accessibilityIdentifier("mapping.add.dir")
+                    if list.connection.supports(.directoryMappings) {
+                        Button("Directory", systemImage: "folder") { creating = .dir }
+                            .accessibilityIdentifier("mapping.add.dir")
+                    }
                 }
                 .disabled(!list.canModify)
                 .accessibilityIdentifier("mapping.add")

@@ -50,9 +50,11 @@ struct SDNView: View {
                     }
                     .disabled(!sdn.canModify || isApplying)
                     .accessibilityIdentifier("sdn.apply")
-                    Button("Revert", systemImage: "arrow.uturn.backward", role: .destructive) { confirmsRevert = true }
-                        .disabled(!sdn.canModify || isApplying)
-                        .accessibilityIdentifier("sdn.revert")
+                    if sdn.connection.supports(.sdnRevert) {
+                        Button("Revert", systemImage: "arrow.uturn.backward", role: .destructive) { confirmsRevert = true }
+                            .disabled(!sdn.canModify || isApplying)
+                            .accessibilityIdentifier("sdn.revert")
+                    }
                 } footer: {
                     Text("Apply writes the configuration to every node and reloads their networks.")
                 }
@@ -115,22 +117,26 @@ struct SDNView: View {
                                 pending: sdn.controllers.contains { $0.state != nil }, identifier: "sdn.controllers") {
                         SDNControllersView(sdn: sdn)
                     }
-                    routingLink("Fabrics", systemImage: "circle.grid.cross", color: .purple, count: sdn.fabrics.count,
-                                pending: (sdn.fabrics + sdn.fabricNodes).contains { $0.state != nil }, identifier: "sdn.fabrics") {
-                        SDNFabricsView(sdn: sdn)
+                    if sdn.connection.supports(.sdnFabrics) {
+                        routingLink("Fabrics", systemImage: "circle.grid.cross", color: .purple, count: sdn.fabrics.count,
+                                    pending: (sdn.fabrics + sdn.fabricNodes).contains { $0.state != nil }, identifier: "sdn.fabrics") {
+                            SDNFabricsView(sdn: sdn)
+                        }
                     }
-                    routingLink("Route Maps", systemImage: "arrow.triangle.branch", color: .orange, count: sdn.routeMaps.count,
-                                pending: sdn.routeMapEntries.contains { $0.state != nil }, identifier: "sdn.routemaps") {
-                        SDNRouteMapsView(sdn: sdn)
-                    }
-                    routingLink("Prefix Lists", systemImage: "line.3.horizontal.decrease", color: .green, count: sdn.prefixLists.count,
-                                pending: sdn.prefixLists.contains { $0.state != nil }, identifier: "sdn.prefixlists") {
-                        SDNPrefixListsView(sdn: sdn)
+                    if sdn.connection.supports(.sdnRouteFilters) {
+                        routingLink("Route Maps", systemImage: "arrow.triangle.branch", color: .orange, count: sdn.routeMaps.count,
+                                    pending: sdn.routeMapEntries.contains { $0.state != nil }, identifier: "sdn.routemaps") {
+                            SDNRouteMapsView(sdn: sdn)
+                        }
+                        routingLink("Prefix Lists", systemImage: "line.3.horizontal.decrease", color: .green, count: sdn.prefixLists.count,
+                                    pending: sdn.prefixLists.contains { $0.state != nil }, identifier: "sdn.prefixlists") {
+                            SDNPrefixListsView(sdn: sdn)
+                        }
                     }
                 } header: {
                     Text("Routing")
                 } footer: {
-                    Text("EVPN zones need a controller. Fabrics route between the nodes and can carry VXLAN and EVPN zones; route maps and prefix lists filter what they announce. The node needs the frr-pythontools package.")
+                    Text(routingFooter)
                 }
             }
             if !sdn.ipams.isEmpty {
@@ -192,6 +198,18 @@ struct SDNView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private var routingFooter: String {
+        let start = String(localized: "EVPN zones need a controller.")
+        let end = String(localized: "The node needs the frr-pythontools package.")
+        if sdn.connection.supports(.sdnRouteFilters) {
+            return [start, String(localized: "Fabrics route between the nodes and can carry VXLAN and EVPN zones; route maps and prefix lists filter what they announce."), end].joined(separator: " ")
+        }
+        if sdn.connection.supports(.sdnFabrics) {
+            return [start, String(localized: "Fabrics route between the nodes and can carry VXLAN and EVPN zones."), end].joined(separator: " ")
+        }
+        return [start, end].joined(separator: " ")
     }
 
     private func routingLink<Destination: View>(_ title: LocalizedStringKey, systemImage: String, color: Color, count: Int, pending: Bool, identifier: String,
@@ -470,12 +488,15 @@ struct SDNZoneEditor: View {
     private var typeSection: some View {
         switch draft.type {
         case .simple:
-            Section {
-                Toggle("Automatic DHCP", isOn: $draft.automaticDHCP)
-                    .accessibilityIdentifier("sdn.zone.dhcp")
-                FieldError(message: errors["dhcp"])
-            } footer: {
-                Text("Hands out addresses of the subnets' DHCP ranges with dnsmasq, which has to be installed on every node.")
+            // DHCP came with PVE 8.1.
+            if sdn.connection.supports(.sdnDHCP) {
+                Section {
+                    Toggle("Automatic DHCP", isOn: $draft.automaticDHCP)
+                        .accessibilityIdentifier("sdn.zone.dhcp")
+                    FieldError(message: errors["dhcp"])
+                } footer: {
+                    Text("Hands out addresses of the subnets' DHCP ranges with dnsmasq, which has to be installed on every node.")
+                }
             }
         case .vlan, .qinq:
             Section {
@@ -504,16 +525,22 @@ struct SDNZoneEditor: View {
             Section {
                 LabeledTextField(title: "Peers", prompt: "10.0.0.1, 10.0.0.2", text: $draft.peers, keyboard: .numbersAndPunctuation, identifier: "sdn.zone.peers")
                 FieldError(message: errors["peers"])
-                fabricPicker
+                if hasFabrics {
+                    fabricPicker
+                }
                 LabeledTextField(title: "UDP Port", prompt: "4789", text: $draft.vxlanPort, keyboard: .numberPad)
                 FieldError(message: errors["vxlan-port"])
             } footer: {
-                Text("The addresses of every node in the zone, including this one, or a fabric that connects them. VXLAN adds 50 bytes to each packet, so lower the MTU to 1450 or less.")
+                Text(hasFabrics
+                    ? "The addresses of every node in the zone, including this one, or a fabric that connects them. VXLAN adds 50 bytes to each packet, so lower the MTU to 1450 or less."
+                    : "The addresses of every node in the zone, including this one. VXLAN adds 50 bytes to each packet, so lower the MTU to 1450 or less.")
             }
         case .evpn:
             evpnSections
         }
     }
+
+    private var hasFabrics: Bool { sdn.connection.supports(.sdnFabrics) }
 
     private var fabricPicker: some View {
         Picker("Fabric", selection: $draft.fabric) {
@@ -544,11 +571,15 @@ struct SDNZoneEditor: View {
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
             FieldError(message: errors["mac"])
-            fabricPicker
+            if hasFabrics {
+                fabricPicker
+            }
         } header: {
             Text("EVPN")
         } footer: {
-            Text("Guests on the zone's VNets are routed in a VRF with this VNI. All VNets share the MAC address as their gateway on every node. Without a fabric, the controller's peers carry the tunnels.")
+            Text(hasFabrics
+                ? "Guests on the zone's VNets are routed in a VRF with this VNI. All VNets share the MAC address as their gateway on every node. Without a fabric, the controller's peers carry the tunnels."
+                : "Guests on the zone's VNets are routed in a VRF with this VNI. All VNets share the MAC address as their gateway on every node.")
         }
         Section {
             NodeSetPicker(title: "Exit Nodes", nodes: nodes, selection: $draft.exitNodes, emptyMeaning: "None")
@@ -568,7 +599,7 @@ struct SDNZoneEditor: View {
             Toggle("Disable ARP/ND Suppression", isOn: $draft.disablesARPNDSuppression)
             LabeledTextField(title: "Route Target Import", prompt: "None", text: $draft.routeTargetImport, keyboard: .numbersAndPunctuation)
             FieldError(message: errors["rt-import"])
-            if evpnControllers.count > 1 {
+            if evpnControllers.count > 1, sdn.connection.supports(.sdnEVPNControllerOptions) {
                 NodeSetPicker(title: "Additional Controllers", nodes: evpnControllers.map(\.id).filter { $0 != draft.controller },
                               selection: Binding(get: { Set(draft.secondaryControllers) }, set: { draft.secondaryControllers = $0.sorted() }), emptyMeaning: "None")
             }
@@ -668,12 +699,14 @@ struct SDNVNetDetailView: View {
                         }
                     }
                     .accessibilityIdentifier("sdn.vnet.settings")
-                    NavigationLink {
-                        FirewallView(connection: sdn.connection, scope: .vnet(vnetID, zone: vnet.zone ?? ""))
-                    } label: {
-                        Label("Firewall", systemImage: "flame")
+                    if sdn.connection.supports(.sdnVNetFirewall) {
+                        NavigationLink {
+                            FirewallView(connection: sdn.connection, scope: .vnet(vnetID, zone: vnet.zone ?? ""))
+                        } label: {
+                            Label("Firewall", systemImage: "flame")
+                        }
+                        .accessibilityIdentifier("sdn.vnet.firewall")
                     }
-                    .accessibilityIdentifier("sdn.vnet.firewall")
                 }
                 Section {
                     let subnets = sdn.subnets[vnetID] ?? []

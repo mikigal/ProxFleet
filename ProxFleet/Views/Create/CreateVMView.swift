@@ -98,13 +98,13 @@ struct CreateVMView: View {
                     .accessibilityIdentifier("name")
             }
             FieldError(message: errors["name"])
-            if isCluster {
+            if offersHA {
                 Toggle("Add to HA", isOn: $draft.isHAManaged)
                 FieldError(message: errors["ha-managed"])
             }
             PoolPicker(pools: pools, selection: $draft.pool)
         } footer: {
-            if isCluster {
+            if offersHA {
                 Text("High availability starts the VM on another node when its node fails.")
             }
         }
@@ -116,19 +116,21 @@ struct CreateVMView: View {
         }
         if showsAdvanced {
             StartupSection(startAtBoot: $draft.startOnBoot, startup: $draft.startup, error: errors["startup"])
-            Section {
-                Picker("Architecture", selection: Binding(get: { draft.architecture }, set: { draft.setArchitecture($0) })) {
-                    Text("Default (\(Self.architectureTitle(draft.hostArchitecture)))").tag("")
-                    Text(Self.architectureTitle("x86_64")).tag("x86_64")
-                    Text(Self.architectureTitle("aarch64")).tag("aarch64")
-                }
-                .accessibilityIdentifier("architecture")
-                FieldError(message: errors["arch"])
-            } footer: {
-                if draft.effectiveArchitecture != draft.hostArchitecture {
-                    Text("The vCPU architecture. The node cannot run this one natively, so the VM is emulated and much slower.")
-                } else {
-                    Text("The vCPU architecture; by default the node's own.")
+            if connection.supports(.vmArchitecture) {
+                Section {
+                    Picker("Architecture", selection: Binding(get: { draft.architecture }, set: { draft.setArchitecture($0) })) {
+                        Text("Default (\(Self.architectureTitle(draft.hostArchitecture)))").tag("")
+                        Text(Self.architectureTitle("x86_64")).tag("x86_64")
+                        Text(Self.architectureTitle("aarch64")).tag("aarch64")
+                    }
+                    .accessibilityIdentifier("architecture")
+                    FieldError(message: errors["arch"])
+                } footer: {
+                    if draft.effectiveArchitecture != draft.hostArchitecture {
+                        Text("The vCPU architecture. The node cannot run this one natively, so the VM is emulated and much slower.")
+                    } else {
+                        Text("The vCPU architecture; by default the node's own.")
+                    }
                 }
             }
             Section("Tags") {
@@ -143,7 +145,8 @@ struct CreateVMView: View {
     }
 
     /// High availability needs a cluster.
-    private var isCluster: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 }
+    /// HA needs a cluster; before PVE 9.1 guests are added to it after creation only.
+    private var offersHA: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 && connection.supports(.haManagedCreation) }
 
     @ViewBuilder
     private func operatingSystem(_ errors: [String: String]) -> some View {
@@ -382,11 +385,13 @@ struct CreateVMView: View {
             } footer: {
                 Text("With ballooning, the host can reclaim memory down to the minimum when it runs short. Shares weigh this VM against others when memory is reclaimed.")
             }
-            Section {
-                Toggle("Allow KSM", isOn: $draft.allowKSM)
-                FieldError(message: errors["allow-ksm"])
-            } footer: {
-                Text("Kernel Samepage Merging saves host memory by merging identical memory pages of guests.")
+            if connection.supports(.vmKSMControl) {
+                Section {
+                    Toggle("Allow KSM", isOn: $draft.allowKSM)
+                    FieldError(message: errors["allow-ksm"])
+                } footer: {
+                    Text("Kernel Samepage Merging saves host memory by merging identical memory pages of guests.")
+                }
             }
         }
     }

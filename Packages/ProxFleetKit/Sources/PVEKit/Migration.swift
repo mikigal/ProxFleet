@@ -167,6 +167,8 @@ public struct MigrationDraft: Sendable, Equatable {
     /// nil until loaded for the chosen target.
     public var preconditions: MigrationPreconditions?
     public var targetSupportsConntrackState = false
+    /// False before PVE 9, which cannot migrate the conntrack state at all.
+    public var offersConntrackState = true
 
     public init(guest: GuestReference, target: String = "") {
         self.guest = guest
@@ -193,7 +195,7 @@ public struct MigrationDraft: Sendable, Equatable {
 
     public var showsTargetStorage: Bool { mode == .online && !copiedDisks.isEmpty }
     public var showsForce: Bool { isVM && mode == .offline && !blockingLocalResources.isEmpty }
-    public var showsConntrackState: Bool { mode == .online && isVM && bothSupportConntrackState }
+    public var showsConntrackState: Bool { offersConntrackState && mode == .online && isVM && bothSupportConntrackState }
 
     private var bothSupportConntrackState: Bool { (preconditions?.supportsConntrackState ?? false) && targetSupportsConntrackState }
 
@@ -235,7 +237,7 @@ public struct MigrationDraft: Sendable, Equatable {
                 let size = disk.size.map { " (\($0.formatted(.byteCount(style: .memory))))" } ?? ""
                 notes.append(.init(.warning, String(localized: "Migration with local disk might take long: \(disk.volumeID)\(size)")))
             }
-            if mode == .online {
+            if mode == .online, offersConntrackState {
                 if !preconditions.supportsConntrackState {
                     notes.append(.init(.info, String(localized: "Cannot migrate the conntrack state, the source node lacks support.")))
                 } else if !targetSupportsConntrackState {

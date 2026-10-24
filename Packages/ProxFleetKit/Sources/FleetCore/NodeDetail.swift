@@ -208,7 +208,7 @@ public final class NodeDetail {
     @discardableResult
     public func run(_ draft: NodeBulkActionDraft) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
         do {
-            return try connection.tasks.track(try await connection.session.send(PVE.bulkAction(node: node, draft)))
+            return try connection.tasks.track(try await connection.session.send(PVE.bulkAction(node: node, draft, legacyWorkers: !connection.supports(.bulkActionParallelJobs))))
         } catch {
             throw ConfigUpdateError(error)
         }

@@ -227,13 +227,17 @@ struct NodeOptionsEditor: View {
         } content: { errors in
             Section {
                 LabeledTextField(title: "MAC Address", prompt: "Not Set", text: $draft.macAddress, keyboard: .asciiCapable, identifier: "options.mac")
-                LabeledTextField(title: "Interface", prompt: "Default Route", text: $draft.bindInterface, identifier: "options.interface")
-                LabeledTextField(title: "Broadcast Address", prompt: "255.255.255.255", text: $draft.broadcastAddress, keyboard: .numbersAndPunctuation, identifier: "options.broadcast")
+                if supports(.wakeOnLANOptions) {
+                    LabeledTextField(title: "Interface", prompt: "Default Route", text: $draft.bindInterface, identifier: "options.interface")
+                    LabeledTextField(title: "Broadcast Address", prompt: "255.255.255.255", text: $draft.broadcastAddress, keyboard: .numbersAndPunctuation, identifier: "options.broadcast")
+                }
                 FieldError(message: errors["wakeonlan"])
             } header: {
                 Text("Wake on LAN")
             } footer: {
-                Text("The MAC address of this node's network card. Another node of the cluster sends the magic packet from the interface given, or from the one carrying the default route.")
+                Text(supports(.wakeOnLANOptions)
+                    ? "The MAC address of this node's network card. Another node of the cluster sends the magic packet from the interface given, or from the one carrying the default route."
+                    : "The MAC address of this node's network card. Another node of the cluster sends the magic packet.")
             }
             Section {
                 LabeledTextField(title: "Start Delay", prompt: "0 s", text: $draft.startDelay, keyboard: .numberPad, identifier: "options.startDelay")
@@ -241,24 +245,30 @@ struct NodeOptionsEditor: View {
             } footer: {
                 Text("Seconds to wait after the node booted before starting the guests set to start at boot, up to 300.")
             }
-            Section {
-                LabeledTextField(title: "Ballooning Target", prompt: "80 %", text: $draft.ballooningTarget, keyboard: .numberPad, identifier: "options.ballooning")
-                FieldError(message: errors["ballooning-target"])
-            } footer: {
-                Text("The node's memory use, in percent, that ballooning aims for by taking memory back from VMs.")
+            if supports(.nodeBallooningTarget) {
+                Section {
+                    LabeledTextField(title: "Ballooning Target", prompt: "80 %", text: $draft.ballooningTarget, keyboard: .numberPad, identifier: "options.ballooning")
+                    FieldError(message: errors["ballooning-target"])
+                } footer: {
+                    Text("The node's memory use, in percent, that ballooning aims for by taking memory back from VMs.")
+                }
             }
-            Section {
-                LabeledTextField(title: "Latitude", prompt: "52.2297", text: $draft.location.latitude, keyboard: .numbersAndPunctuation, identifier: "options.latitude")
-                LabeledTextField(title: "Longitude", prompt: "21.0122", text: $draft.location.longitude, keyboard: .numbersAndPunctuation, identifier: "options.longitude")
-                LabeledTextField(title: "Name", prompt: "None", text: $draft.location.name)
-                FieldError(message: errors["location"])
-            } header: {
-                Text("Location")
-            } footer: {
-                Text("Where this node is, for the web interface's map. Empty uses the datacenter's location.")
+            if supports(.locations) {
+                Section {
+                    LabeledTextField(title: "Latitude", prompt: "52.2297", text: $draft.location.latitude, keyboard: .numbersAndPunctuation, identifier: "options.latitude")
+                    LabeledTextField(title: "Longitude", prompt: "21.0122", text: $draft.location.longitude, keyboard: .numbersAndPunctuation, identifier: "options.longitude")
+                    LabeledTextField(title: "Name", prompt: "None", text: $draft.location.name)
+                    FieldError(message: errors["location"])
+                } header: {
+                    Text("Location")
+                } footer: {
+                    Text("Where this node is, for the web interface's map. Empty uses the datacenter's location.")
+                }
             }
         }
     }
+
+    private func supports(_ feature: PVEFeature) -> Bool { detail.connection.supports(feature) }
 }
 
 // MARK: - Hosts

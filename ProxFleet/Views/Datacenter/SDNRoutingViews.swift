@@ -265,7 +265,7 @@ struct SDNControllerEditor: View {
                                      keyboard: .numbersAndPunctuation, identifier: "sdn.controller.peers")
                     FieldError(message: errors["peers"])
                 }
-                if draft.type == .evpn {
+                if draft.type == .evpn, sdn.connection.supports(.sdnFabrics) {
                     NamePicker(title: "Fabric", names: sdn.fabrics.filter { $0.state != .deleted }.map(\.id), selection: $draft.fabric)
                 }
                 if draft.type == .bgp {
@@ -273,7 +273,10 @@ struct SDNControllerEditor: View {
                 }
             } footer: {
                 switch draft.type {
-                case .evpn: Text("The nodes' own addresses as peers, or a fabric between them. All nodes share the AS number unless BGP controllers give them their own.")
+                case .evpn:
+                    Text(sdn.connection.supports(.sdnFabrics)
+                        ? "The nodes' own addresses as peers, or a fabric between them. All nodes share the AS number unless BGP controllers give them their own."
+                        : "The nodes' own addresses as peers. All nodes share the AS number unless BGP controllers give them their own.")
                 case .bgp: Text("BGP sessions of this node to routers outside the cluster, named bgp\(draft.node.isEmpty ? "<node>" : draft.node). eBGP is for peers in another AS.")
                 case .isis: Text("IS-IS on this node's interfaces as underlay for EVPN, named isis\(draft.node.isEmpty ? "<node>" : draft.node).")
                 }
@@ -291,12 +294,14 @@ struct SDNControllerEditor: View {
             }
             Section {
                 if draft.type != .isis {
-                    NamePicker(title: "Incoming Route Map", names: sdn.routeMapNames, selection: $draft.routeMapIn)
-                    NamePicker(title: "Outgoing Route Map", names: sdn.routeMapNames, selection: $draft.routeMapOut)
+                    if sdn.connection.supports(.sdnRouteFilters) {
+                        NamePicker(title: "Incoming Route Map", names: sdn.routeMapNames, selection: $draft.routeMapIn)
+                        NamePicker(title: "Outgoing Route Map", names: sdn.routeMapNames, selection: $draft.routeMapOut)
+                    }
                     LabeledTextField(title: "eBGP Multihop", prompt: "None", text: $draft.ebgpMultihop, keyboard: .numberPad)
                     FieldError(message: errors["ebgp-multihop"])
                 }
-                if draft.type == .evpn {
+                if draft.type == .evpn, sdn.connection.supports(.sdnEVPNControllerOptions) {
                     LabeledTextField(title: "Peer Group Name", prompt: "VTEP", text: $draft.peerGroupName)
                     Picker("BGP Mode", selection: $draft.bgpMode) {
                         Text("Automatic").tag("")
@@ -364,7 +369,8 @@ struct SDNFabricsView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu("Add", systemImage: "plus") {
-                    ForEach(SDNFabricProtocol.allCases) { type in
+                    // BGP fabrics came with route maps in PVE 9.2.
+                    ForEach(SDNFabricProtocol.allCases.filter { $0 != .bgp || sdn.connection.supports(.sdnRouteFilters) }) { type in
                         Button(type.title) { creating = type }
                             .accessibilityIdentifier("sdn.add.fabric.\(type.rawValue)")
                     }
@@ -499,6 +505,8 @@ struct SDNFabricEditor: View {
     }
 
     private var isNew: Bool { fabric == nil }
+    /// Prefix lists, route maps and route redistribution came with PVE 9.2.
+    private var hasRouteFilters: Bool { sdn.connection.supports(.sdnRouteFilters) }
 
     var body: some View {
         SDNEditorForm(title: isNew ? String(localized: "New \(draft.protocolType.title) Fabric") : draft.id, sdn: sdn, isNew: isNew,
@@ -524,9 +532,13 @@ struct SDNFabricEditor: View {
                     LabeledTextField(title: "Area", prompt: "0", text: $draft.area, keyboard: .numbersAndPunctuation)
                     FieldError(message: errors["area"])
                 }
-                NamePicker(title: "Route Filter", names: sdn.prefixListNames, selection: $draft.routeFilter, identifier: "sdn.fabric.filter")
+                if hasRouteFilters {
+                    NamePicker(title: "Route Filter", names: sdn.prefixListNames, selection: $draft.routeFilter, identifier: "sdn.fabric.filter")
+                }
             } footer: {
-                Text("The nodes' router addresses lie in these prefixes. IPv6 fabrics need IPv6 forwarding on every node. The route filter is a prefix list for the routes the nodes install.")
+                Text(hasRouteFilters
+                    ? "The nodes' router addresses lie in these prefixes. IPv6 fabrics need IPv6 forwarding on every node. The route filter is a prefix list for the routes the nodes install."
+                    : "The nodes' router addresses lie in these prefixes. IPv6 fabrics need IPv6 forwarding on every node.")
             }
             switch draft.protocolType {
             case .openfabric:
@@ -553,7 +565,7 @@ struct SDNFabricEditor: View {
                     Text("BFD notices failed links within a second.")
                 }
             }
-            if !draft.protocolType.redistributionSources.isEmpty {
+            if hasRouteFilters, !draft.protocolType.redistributionSources.isEmpty {
                 Section {
                     ForEach(draft.protocolType.redistributionSources, id: \.self) { source in
                         let index = draft.redistribution.firstIndex { $0.source == source }

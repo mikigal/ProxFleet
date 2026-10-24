@@ -29,6 +29,19 @@ public struct FleetEnvironment: Sendable {
     @Sendable public static func defaultTransport(for profile: ServerProfile) -> any HTTPTransport {
         profile.isDemo ? DemoTransport() : URLSessionTransport(pinnedFingerprints: Set(profile.trustedFingerprints))
     }
+
+    /// The demo cluster reports another Proxmox VE version, to see how the app adapts to older releases.
+    public func withDemoVersion(_ version: String) -> FleetEnvironment {
+        var environment = self
+        let makeTransport = makeTransport
+        environment.makeTransport = { profile in
+            guard profile.isDemo else { return makeTransport(profile) }
+            var cluster = DemoCluster.homelab
+            cluster.version = version
+            return DemoTransport(cluster: cluster)
+        }
+        return environment
+    }
 }
 
 /// All saved servers and their live connections. The root model of the app.

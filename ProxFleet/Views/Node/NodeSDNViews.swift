@@ -22,12 +22,18 @@ struct NodeSDNView: View {
             if networks != nil {
                 Section {
                     ForEach(zones) { zone in
-                        NavigationLink {
-                            SDNZoneStatusView(connection: connection, network: zone)
-                        } label: {
+                        // Before PVE 9.1 nodes cannot show their bridges, which is all the local network has.
+                        if zone.isLocalNetwork, !connection.supports(.sdnNodeStatus) {
                             SDNNetworkRow(network: zone)
+                                .accessibilityIdentifier("sdnstatus.zone.\(zone.name)")
+                        } else {
+                            NavigationLink {
+                                SDNZoneStatusView(connection: connection, network: zone)
+                            } label: {
+                                SDNNetworkRow(network: zone)
+                            }
+                            .accessibilityIdentifier("sdnstatus.zone.\(zone.name)")
                         }
-                        .accessibilityIdentifier("sdnstatus.zone.\(zone.name)")
                     }
                 } header: {
                     Text("Zones")
@@ -237,7 +243,9 @@ private struct SDNZoneStatusView: View {
                 content = try await connection.send(PVE.sdnZoneContent(node: network.node, zone: network.name))
                 if macVNet.isEmpty { macVNet = content?.first?.vnet ?? "" }
             }
-            bridges = try await connection.send(PVE.sdnZoneBridges(node: network.node, zone: network.name))
+            if connection.supports(.sdnNodeStatus) {
+                bridges = try await connection.send(PVE.sdnZoneBridges(node: network.node, zone: network.name))
+            }
             if isEVPN { ipVRF = try await connection.send(PVE.sdnIPVRF(node: network.node, zone: network.name)) }
             errorMessage = nil
         } catch is CancellationError {

@@ -77,7 +77,11 @@ public final class CephManager {
     // MARK: - Setup
 
     public func releases() async -> [CephRelease] {
-        ((try? await connection.session.send(PVE.cephReleases(node: node))) ?? []).filter(\.isAvailable)
+        guard let releases = try? await connection.session.send(PVE.cephReleases(node: node)) else {
+            // Older servers have no list; their web interface offers a fixed one.
+            return CephRelease.fallback(for: connection.version?.number)
+        }
+        return releases.filter(\.isAvailable)
     }
 
     /// The networks of the node's interfaces, like `10.0.0.0/24`, for Ceph's public and cluster network.

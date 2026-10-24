@@ -91,13 +91,13 @@ struct CreateContainerView: View {
                     .accessibilityIdentifier("hostname")
             }
             FieldError(message: errors["hostname"])
-            if isCluster {
+            if offersHA {
                 Toggle("Add to HA", isOn: $draft.isHAManaged)
                 FieldError(message: errors["ha-managed"])
             }
             PoolPicker(pools: pools, selection: $draft.pool)
         } footer: {
-            if isCluster {
+            if offersHA {
                 Text("High availability starts the container on another node when its node fails.")
             }
         }
@@ -152,7 +152,8 @@ struct CreateContainerView: View {
     }
 
     /// High availability needs a cluster.
-    private var isCluster: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 }
+    /// HA needs a cluster; before PVE 9.1 guests are added to it after creation only.
+    private var offersHA: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 && connection.supports(.haManagedCreation) }
 
     @ViewBuilder
     private func template(_ errors: [String: String]) -> some View {
@@ -310,12 +311,16 @@ struct CreateContainerView: View {
                     Toggle("Disconnected", isOn: $network.device.isDisconnected)
                     RateLimitField(rate: $network.device.rateLimit)
                     OptionalNumberField(title: "MTU", placeholder: "Same as Bridge", value: $network.device.mtu)
-                    Toggle("Host-Managed", isOn: $network.device.isHostManaged)
+                    if connection.supports(.applicationContainers) {
+                        Toggle("Host-Managed", isOn: $network.device.isHostManaged)
+                    }
                     removeButton(for: network, key: key, error: errors[key])
                 } header: {
                     Text("Advanced")
                 } footer: {
-                    Text("Rate limit in MB/s. With Host-Managed, the host configures the addresses; the container must not run its own DHCP client on this interface.")
+                    Text(connection.supports(.applicationContainers)
+                        ? "Rate limit in MB/s. With Host-Managed, the host configures the addresses; the container must not run its own DHCP client on this interface."
+                        : "Rate limit in MB/s.")
                 }
             }
         }

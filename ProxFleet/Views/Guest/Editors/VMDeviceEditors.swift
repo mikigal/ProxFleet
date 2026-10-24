@@ -72,7 +72,7 @@ struct AddDeviceList: View {
     var body: some View {
         List {
             ForEach(VMDeviceKind.allCases) { kind in
-                if kind.nextKey(in: config) != nil, kind != .efiDisk || config.bios == "ovmf" {
+                if kind.nextKey(in: config) != nil, kind != .efiDisk || config.bios == "ovmf", kind != .virtioFS || detail.connection.supports(.virtiofs) {
                     NavigationLink {
                         VMDeviceEditor(detail: detail, config: config, kind: kind, key: nil)
                     } label: {
@@ -175,7 +175,7 @@ private struct EFIDiskEditor: View {
     @State private var storages: [StorageInfo] = []
 
     var body: some View {
-        DeviceForm(detail: detail, config: config, kind: .efiDisk, key: nil, value: storage.isEmpty ? nil : GuestConfig.efiDiskValue(storage: storage, preEnrolledKeys: preEnrolledKeys, format: format), original: nil) { _ in
+        DeviceForm(detail: detail, config: config, kind: .efiDisk, key: nil, value: value, original: nil) { _ in
             Section {
                 StoragePicker(storage: $storage, storages: storages)
                 if let formats = selectedStorage?.diskFormats, formats.count > 1 {
@@ -194,6 +194,12 @@ private struct EFIDiskEditor: View {
     }
 
     private var selectedStorage: StorageInfo? { storages.first { $0.storage == storage } }
+
+    private var value: String? {
+        guard !storage.isEmpty else { return nil }
+        return GuestConfig.efiDiskValue(storage: storage, preEnrolledKeys: preEnrolledKeys, format: format,
+                                        microsoft2023Certificates: detail.connection.supports(.efiMicrosoftCertificates))
+    }
 }
 
 private struct TPMStateEditor: View {

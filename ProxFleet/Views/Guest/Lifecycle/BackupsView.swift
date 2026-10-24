@@ -517,7 +517,7 @@ struct RestoreView: View {
                 }
                 Toggle("Start After Restore", isOn: $draft.startAfterRestore)
                     .disabled(isLiveRestore)
-                if isCluster {
+                if offersHA {
                     Toggle("Add to HA", isOn: $draft.isHAManaged)
                     FieldError(message: errors["ha-managed"])
                 }
@@ -563,7 +563,8 @@ struct RestoreView: View {
     private var isLiveRestore: Bool { isVM && draft.backup.isOnBackupServer && draft.liveRestore }
 
     /// High availability needs a cluster.
-    private var isCluster: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 }
+    /// HA needs a cluster; before PVE 9.1 guests are added to it after creation only.
+    private var offersHA: Bool { (connection.snapshot?.nodes.count ?? 0) > 1 && connection.supports(.haManagedCreation) }
 
     @ViewBuilder
     private func overrideField(_ title: LocalizedStringKey, value: Binding<Int?>, key: String, errors: [String: String]) -> some View {

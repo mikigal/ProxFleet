@@ -140,7 +140,7 @@ actor DemoState {
         settleNodeReboots()
         switch (request.method, path) {
         case (.get, "/version"):
-            return success(["version": .string(cluster.version), "release": "9.0", "repoid": "demo"])
+            return success(["version": .string(cluster.version), "release": .string(cluster.version.split(separator: ".").prefix(2).joined(separator: ".")), "repoid": "demo"])
         case (.get, "/cluster/status"):
             return success(clusterStatus())
         case (.get, "/cluster/resources"):

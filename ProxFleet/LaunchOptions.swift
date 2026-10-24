@@ -6,12 +6,14 @@ import ProxmoxCore
 ///
 /// - `-demo`: add the demo cluster and open it.
 /// - `-inMemory`: do not read or write saved servers or the app lock.
+/// - `-demoVersion 8.4.0`: the demo cluster reports this Proxmox VE version.
 /// - DEBUG builds only: `PROXFLEET_DEBUG_ADDRESS`, `PROXFLEET_DEBUG_USER`, `PROXFLEET_DEBUG_REALM`,
 ///   `PROXFLEET_DEBUG_PASSWORD` and optionally `PROXFLEET_DEBUG_FINGERPRINT` add a test server and open it.
 ///   See `scripts/run-simulator.sh`.
 struct LaunchOptions {
     var demo: Bool
     var inMemory: Bool
+    var demoVersion: String?
     var debugServer: DebugServer?
 
     struct DebugServer {
@@ -25,6 +27,9 @@ struct LaunchOptions {
     init(arguments: [String], environment: [String: String]) {
         demo = arguments.contains("-demo")
         inMemory = arguments.contains("-inMemory")
+        if let index = arguments.firstIndex(of: "-demoVersion"), arguments.indices.contains(index + 1) {
+            demoVersion = arguments[index + 1]
+        }
         #if DEBUG
         if let text = environment["PROXFLEET_DEBUG_ADDRESS"],
            let address = ServerAddress(parsing: text, defaultPort: ProxmoxProduct.virtualEnvironment.defaultPort),
@@ -38,6 +43,11 @@ struct LaunchOptions {
             )
         }
         #endif
+    }
+
+    var environment: FleetEnvironment {
+        let environment: FleetEnvironment = inMemory ? .inMemory() : .live()
+        return demoVersion.map(environment.withDemoVersion) ?? environment
     }
 
     /// Applies the options and returns the server to open, if any.

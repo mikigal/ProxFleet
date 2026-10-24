@@ -4,7 +4,7 @@ import ProxmoxCore
 /// Node status, history, services, packages, journal, tasks and power in demo mode.
 extension DemoState {
     static let availableUpdates: [(package: String, title: String, old: String, new: String)] = [
-        ("pve-manager", "Proxmox VE: management tools and web interface", "9.0.10", "9.0.11"),
+        ("pve-manager", "Proxmox VE: management tools and web interface", "9.2.21", "9.2.22"),
         ("proxmox-widget-toolkit", "Core widgets and libraries for ExtJS", "5.0.5", "5.0.6"),
     ]
 
@@ -77,7 +77,7 @@ extension DemoState {
             return startTask(node: node, type: "aptupdate", objectID: "", user: user, duration: 3)
         case (.get, ["apt", "versions"]):
             let installed: [(String, String)] = [
-                ("proxmox-ve", "9.0.0"), ("pve-manager", "9.0.10"), ("proxmox-kernel-6.14", "6.14.11-2"), ("qemu-server", "9.0.22"),
+                ("proxmox-ve", "9.2.0"), ("pve-manager", "9.2.21"), ("proxmox-kernel-6.14", "6.14.11-2"), ("qemu-server", "9.2.4"),
                 ("pve-container", "6.0.13"), ("lxc-pve", "6.0.5-1"), ("pve-qemu-kvm", "10.0.2-4"), ("zfsutils-linux", "2.3.4-pve1"),
             ]
             return success(.array(installed.map { package, version in
@@ -110,7 +110,7 @@ extension DemoState {
             \(node)
 
             # pveversion --verbose
-            proxmox-ve: 9.0.0 (running kernel: 6.14.11-2-pve)
+            proxmox-ve: 9.2.0 (running kernel: 6.14.11-2-pve)
             pve-manager: \(cluster.version) (running version: \(cluster.version))
 
             ==== info about virtual guests ====

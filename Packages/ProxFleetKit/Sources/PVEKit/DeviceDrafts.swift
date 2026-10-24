@@ -305,13 +305,14 @@ public struct IVSHMEMDraft: Sendable, Equatable {
 
 extension GuestConfig {
     /// Value for a new EFI vars disk; Proxmox allocates the right size. `format` is for storages with several image formats.
-    public static func efiDiskValue(storage: String, preEnrolledKeys: Bool, format: String? = nil) -> String {
+    /// `microsoft2023Certificates` records the Microsoft 2023 certificates with the keys, which needs PVE 9.2.
+    public static func efiDiskValue(storage: String, preEnrolledKeys: Bool, format: String? = nil, microsoft2023Certificates: Bool = true) -> String {
         var property = PropertyString(items: [(key: nil, value: "\(storage):1")])
         if let format { property["format"] = format }
         property["efitype"] = "4m"
         if preEnrolledKeys {
             property["pre-enrolled-keys"] = "1"
-            property["ms-cert"] = "2023k"
+            if microsoft2023Certificates { property["ms-cert"] = "2023k" }
         }
         return property.stringValue
     }

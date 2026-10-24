@@ -53,7 +53,7 @@ struct MetricServersView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu("Add", systemImage: "plus") {
-                    ForEach(MetricServerType.allCases) { type in
+                    ForEach(MetricServerType.allCases.filter { $0 != .opentelemetry || settings.connection.supports(.metricServerOpenTelemetry) }) { type in
                         Button(type.title) { creating = type }
                             .accessibilityIdentifier("metric.add.\(type.rawValue)")
                     }

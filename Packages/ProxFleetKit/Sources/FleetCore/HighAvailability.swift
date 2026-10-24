@@ -41,8 +41,8 @@ public final class HAManager {
         let session = connection.session
         async let status = session.send(PVE.haStatus())
         async let resources = session.send(PVE.haResources())
-        // Rules exist from PVE 9 on.
-        async let rules = try? session.send(PVE.haRules())
+        let hasRules = connection.supports(.haRules)
+        async let rules = hasRules ? try? session.send(PVE.haRules()) : nil
         do {
             self.status = try await status
             self.resources = try await resources.sorted { ($0.vmid ?? 0, $0.sid) < ($1.vmid ?? 0, $1.sid) }

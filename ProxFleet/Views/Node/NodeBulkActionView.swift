@@ -8,6 +8,8 @@ struct NodeBulkActionView: View {
     let action: NodeBulkAction
     /// nil for the datacenter's bulk actions.
     let node: String?
+    /// Before PVE 9.2, only migrations take a number of parallel jobs.
+    private let offersParallelJobs: Bool
     private let run: (NodeBulkActionDraft) async throws(ConfigUpdateError) -> Void
     private let guests: [GuestSummary]
     private let targets: [String]
@@ -27,6 +29,7 @@ struct NodeBulkActionView: View {
         self.action = action
         self.node = node
         self.run = run
+        offersParallelJobs = action == .migrate || connection.supports(.bulkActionParallelJobs)
         let guests = connection.snapshot.map { action.eligibleGuests(on: node, in: $0) } ?? []
         self.guests = guests
         let targets = connection.snapshot?.nodes.filter { $0.isOnline && $0.name != node }.map(\.name) ?? []
@@ -117,26 +120,30 @@ struct NodeBulkActionView: View {
                 } footer: {
                     Text(footer)
                 }
-                Section {
-                    Picker("Parallel Jobs", selection: $draft.maxWorkers) {
-                        // Migrating always needs a number, as in the web interface.
-                        if action != .migrate {
-                            Text("Default").tag(Int?.none)
+                if offersParallelJobs || action == .shutdown {
+                    Section {
+                        if offersParallelJobs {
+                            Picker("Parallel Jobs", selection: $draft.maxWorkers) {
+                                // Migrating always needs a number, as in the web interface.
+                                if action != .migrate {
+                                    Text("Default").tag(Int?.none)
+                                }
+                                ForEach([1, 2, 4, 8, 16], id: \.self) { Text(String($0)).tag(Int?.some($0)) }
+                            }
                         }
-                        ForEach([1, 2, 4, 8, 16], id: \.self) { Text(String($0)).tag(Int?.some($0)) }
-                    }
-                    if action == .shutdown {
-                        LabeledTextField(title: "Timeout", prompt: "180 s", text: $timeoutText, keyboard: .numberPad, identifier: "bulk.timeout")
-                        Toggle("Force Stop After Timeout", isOn: $draft.forceStop)
-                    }
-                } footer: {
-                    switch action {
-                    case .shutdown:
-                        Text("Guests that have their own shutdown timeout use it instead. Without Force Stop, guests still running after the timeout are left running.")
-                    case .migrate:
-                        Text("Migrations at the same time. Each one copies memory and local disks over the network.")
-                    default:
-                        Text("Without a number, the datacenter's maximum workers setting applies.")
+                        if action == .shutdown {
+                            LabeledTextField(title: "Timeout", prompt: "180 s", text: $timeoutText, keyboard: .numberPad, identifier: "bulk.timeout")
+                            Toggle("Force Stop After Timeout", isOn: $draft.forceStop)
+                        }
+                    } footer: {
+                        switch action {
+                        case .shutdown:
+                            Text("Guests that have their own shutdown timeout use it instead. Without Force Stop, guests still running after the timeout are left running.")
+                        case .migrate:
+                            Text("Migrations at the same time. Each one copies memory and local disks over the network.")
+                        default:
+                            Text("Without a number, the datacenter's maximum workers setting applies.")
+                        }
                     }
                 }
             }

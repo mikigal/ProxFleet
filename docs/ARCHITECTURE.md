@@ -27,6 +27,7 @@ ProxFleet (app)          SwiftUI screens, navigation, launch options
 - **Two-factor authentication.** When the first login step returns a partial ticket (`PVE:!tfa!…`), the embedded challenge tells which factors are available. TOTP, Yubico OTP and recovery keys are supported. WebAuthn needs a browser bound to the server's domain and is not possible in a native app.
 - **Certificates.** Publicly trusted certificates are accepted normally. Otherwise the user sees the SHA-256 fingerprint and can trust it. The fingerprint is stored with the server and checked on every connection, including WebSockets later.
 - **Loose typing.** Proxmox sometimes sends numbers as strings and booleans as `0`/`1`. Models decode with the `lossy*` helpers from `LossyDecoding.swift`.
+- **Releases.** The app supports Proxmox VE 8 and 9. `ServerConnection` loads `GET /version` of the node it talks to with the first snapshot, and `supports(_:)` tells whether a `PVEFeature` exists there; each feature names the release that brought it (`ServerFeatures.swift`, from the release notes and the API schemas of PVE 8.4 and 9.2). Screens leave out what the server lacks, as its own web interface does, instead of failing when the user tries it. While the version is unknown, everything counts as available. A few things differ in shape rather than existence and are handled where they are decoded or sent: PVE 8 lists disk formats only in `format`, answers HA migrations with `null`, lists SDN zones in `/cluster/resources` with type `sdn`, calls the guest agent's `freeze-fs` `freeze-fs-on-backup` and node migration's `max-workers` `maxworkers`, and has no list of Ceph releases. The demo cluster reports 9.2; the `-demoVersion` launch argument makes it report another one.
 
 ## Servers and clusters
 
@@ -185,9 +186,9 @@ Both consoles open a one-time proxy on the node and connect to it through `/node
 
 - Package tests (`swift test`) cover the API client, decoding, authentication flows and the app domain, using `MockTransport` and the `DemoServer`.
 - The demo server also answers console WebSockets: `termproxy` reaches a small fake shell and `vncproxy` an RFB server that draws a text console with Core Text, so both console clients run end to end without a Proxmox host. It serves its own reduced API schema for All Settings.
-- UI tests run the app in the Simulator. Launch arguments: `-inMemory` (do not touch saved servers) and `-demo` (open the demo cluster).
+- UI tests run the app in the Simulator. Launch arguments: `-inMemory` (do not touch saved servers), `-demo` (open the demo cluster) and `-demoVersion 8.4.0` (the demo cluster reports an older release).
 - `PVEKitTests/Fixtures` holds responses recorded from a real Proxmox VE 9.2 node.
-- `LiveServerTests` run against a real server when `PROXFLEET_TEST_SERVER_ENV` points to an env file: certificate pinning, login, renewal, TOTP and error formats. They are skipped otherwise.
+- `LiveServerTests` run against a real server when `PROXFLEET_TEST_SERVER_ENV` points to an env file: certificate pinning, login, renewal, TOTP and error formats. They are skipped otherwise. On Proxmox VE 8 they leave out what came with 9.
 
 Verified on Proxmox VE 9.2: `extjs` errors return HTTP 200 with `success: 0` and `status` (sometimes as a string). Requests without a valid ticket or CSRF token return HTTP 401 with an empty body. `DELETE` must not have a body. A second-factor challenge can be retried after a wrong code. Renewing a ticket within the same second returns the same ticket.
 

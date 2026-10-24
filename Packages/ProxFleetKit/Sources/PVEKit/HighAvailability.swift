@@ -322,10 +322,18 @@ public struct HARuleDraft: Sendable, Equatable {
 }
 
 /// The answer to an HA migration or relocation request. Proxmox answers without an error when rules block it.
-public struct HAMoveResult: Decodable, Sendable, Equatable {
+/// Before PVE 9 it answers `null`.
+public struct HAMoveResult: Decodable, NullDecodable, Sendable, Equatable {
     public var blockingResources: [MigrationPreconditions.BlockingHAResource]
     /// Resources that move along because of a positive affinity rule.
     public var movedAlong: [String]
+
+    public static var nullValue: HAMoveResult { HAMoveResult(blockingResources: [], movedAlong: []) }
+
+    public init(blockingResources: [MigrationPreconditions.BlockingHAResource], movedAlong: [String]) {
+        self.blockingResources = blockingResources
+        self.movedAlong = movedAlong
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)

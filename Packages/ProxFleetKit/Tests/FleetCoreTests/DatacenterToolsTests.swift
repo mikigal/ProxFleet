@@ -49,7 +49,7 @@ struct DatacenterToolsTests {
         #expect(log.contains { $0.message.contains("bulk-start") && $0.upid != nil })
         let report = try await connection.send(PVE.systemReport(node: after.nodes[0].name))
         #expect(report.contains("==== general system info ===="))
-        let changelog = try await connection.send(PVE.packageChangelog(node: after.nodes[0].name, package: "pve-manager", version: "9.0.10"))
-        #expect(changelog.hasPrefix("pve-manager (9.0.10)"))
+        let changelog = try await connection.send(PVE.packageChangelog(node: after.nodes[0].name, package: "pve-manager", version: "9.2.21"))
+        #expect(changelog.hasPrefix("pve-manager (9.2.21)"))
     }
 }

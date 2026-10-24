@@ -64,7 +64,9 @@ private struct CephInstallView: View {
                     Text("Enterprise").tag("enterprise")
                     Text("No-Subscription").tag("no-subscription")
                     Text("Test").tag("test")
-                    Text("Manual").tag("manual")
+                    if manager.connection.supports(.cephManualRepository) {
+                        Text("Manual").tag("manual")
+                    }
                 }
                 .accessibilityIdentifier("ceph.repository")
             } footer: {

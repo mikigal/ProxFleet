@@ -2,7 +2,8 @@ import Foundation
 import ProxmoxCore
 
 /// An SDN zone or fabric on a node, as `/cluster/resources` lists them (`type` `network`), like the web interface's
-/// resource tree. Every node also has the zone `localnetwork` for its own bridges.
+/// resource tree. Every node also has the zone `localnetwork` for its own bridges. Before PVE 9.1 only zones are
+/// listed, with `type` `sdn`.
 public struct SDNNodeNetwork: Decodable, Sendable, Equatable, Identifiable {
     public enum Kind: String, Sendable {
         case zone, fabric
@@ -35,6 +36,7 @@ public struct SDNNodeNetwork: Decodable, Sendable, Equatable, Identifiable {
         node = container.lossyString(AnyCodingKey("node")) ?? ""
         name = container.lossyString(AnyCodingKey("network")) ?? container.lossyString(AnyCodingKey("sdn")) ?? ""
         kind = container.lossyString(AnyCodingKey("network-type")).flatMap(Kind.init)
+            ?? (container.lossyString(AnyCodingKey("type")) == "sdn" ? .zone : nil)
         status = container.lossyString(AnyCodingKey("status")) ?? ""
         zoneType = container.lossyString(AnyCodingKey("zone-type"))
         fabricProtocol = container.lossyString(AnyCodingKey("protocol"))

@@ -437,8 +437,10 @@ struct StorageDetailView: View {
                                 .accessibilityIdentifier("storage.download.\(type.rawValue)")
                             if type == .vztmpl {
                                 Button("Download Templates", systemImage: "square.and.arrow.down") { downloadsTemplates = true }
-                                Button("Pull from OCI Registry", systemImage: "shippingbox") { pullsOCIImage = true }
-                                    .accessibilityIdentifier("storage.oci")
+                                if detail.connection.supports(.applicationContainers) {
+                                    Button("Pull from OCI Registry", systemImage: "shippingbox") { pullsOCIImage = true }
+                                        .accessibilityIdentifier("storage.oci")
+                                }
                             }
                         }
                     }

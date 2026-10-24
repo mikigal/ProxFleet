@@ -33,6 +33,14 @@ public struct CephRelease: Decodable, Sendable, Equatable, Identifiable {
 
     public var id: String { name }
 
+    public init(name: String, version: String, isAvailable: Bool = true, isDefault: Bool = false, isUnsupported: Bool = false) {
+        self.name = name
+        self.version = version
+        self.isAvailable = isAvailable
+        self.isDefault = isDefault
+        self.isUnsupported = isUnsupported
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
         name = container.lossyString(AnyCodingKey("release")) ?? ""
@@ -40,6 +48,17 @@ public struct CephRelease: Decodable, Sendable, Equatable, Identifiable {
         isAvailable = container.lossyBool(AnyCodingKey("available")) ?? false
         isDefault = container.lossyBool(AnyCodingKey("is-default")) ?? false
         isUnsupported = container.lossyBool(AnyCodingKey("unsupported")) ?? false
+    }
+
+    /// What the web interface of servers without `GET .../ceph/releases` offers: Proxmox VE 8 installs Quincy, Reef
+    /// and, from 8.3 on, Squid, a technology preview until 8.4.
+    public static func fallback(for version: PVEVersionNumber?) -> [CephRelease] {
+        guard let version, version.major < 9 else { return [CephRelease(name: "squid", version: "19.2", isDefault: true)] }
+        var releases = [CephRelease(name: "quincy", version: "17.2"), CephRelease(name: "reef", version: "18.2", isDefault: true)]
+        if version >= PVEVersionNumber(8, 3) {
+            releases.append(CephRelease(name: "squid", version: "19.2", isUnsupported: version < PVEVersionNumber(8, 4)))
+        }
+        return releases
     }
 
     /// `cmd-opts` of the node shell's `ceph_install` command, as the web interface sends them.

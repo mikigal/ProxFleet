@@ -66,10 +66,11 @@ public final class SDNSettings {
         async let privileges = try? session.privileges(on: "/sdn")
         async let ipams = try? session.send(PVE.sdnIPAMs())
         async let dnsServers = try? session.send(PVE.sdnDNSServers())
-        // Fabrics, prefix lists and route maps came with Proxmox VE 9; older servers lack them.
-        async let fabrics = try? session.send(PVE.sdnFabrics())
-        async let prefixLists = try? session.send(PVE.sdnPrefixLists())
-        async let routeMapEntries = try? session.send(PVE.sdnRouteMapEntries())
+        let hasFabrics = connection.supports(.sdnFabrics)
+        let hasRouteFilters = connection.supports(.sdnRouteFilters)
+        async let fabrics = hasFabrics ? try? session.send(PVE.sdnFabrics()) : nil
+        async let prefixLists = hasRouteFilters ? try? session.send(PVE.sdnPrefixLists()) : nil
+        async let routeMapEntries = hasRouteFilters ? try? session.send(PVE.sdnRouteMapEntries()) : nil
         async let status = zoneStatusByNode()
         do {
             async let zones = session.send(PVE.sdnZones())

@@ -235,7 +235,8 @@ private struct ServerStorageList: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu("Add Storage", systemImage: "plus") {
-                    ForEach(StorageBackend.allCases) { type in
+                    // The ESXi importer came with PVE 8.2.
+                    ForEach(StorageBackend.allCases.filter { $0 != .esxi || definitions.connection.supports(.esxiImport) }) { type in
                         Button(type.title, systemImage: type.systemImage) { creating = type }
                     }
                 }

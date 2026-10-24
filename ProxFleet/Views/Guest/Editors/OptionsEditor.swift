@@ -28,12 +28,15 @@ private struct VMOptionsEditor: View {
     init(detail: GuestDetail, config: GuestConfig) {
         self.detail = detail
         self.config = config
-        let draft = VMOptionsDraft(config)
+        var draft = VMOptionsDraft(config)
+        if !detail.connection.supports(.agentFreezeFS) { draft.agentFreezeKey = "freeze-fs-on-backup" }
         original = draft
         _draft = State(initialValue: draft)
     }
 
     private var isRoot: Bool { detail.connection.profile.userID == "root@pam" }
+
+    private func supports(_ feature: PVEFeature) -> Bool { detail.connection.supports(feature) }
 
     var body: some View {
         ConfigEditor(title: "Options", detail: detail, makeUpdate: update, privilege: "VM.Config.Options") { errors in
@@ -136,7 +139,9 @@ private struct VMOptionsEditor: View {
             }
 
             Section("Memory") {
-                Toggle("Allow KSM", isOn: $draft.allowKSM)
+                if supports(.vmKSMControl) {
+                    Toggle("Allow KSM", isOn: $draft.allowKSM)
+                }
                 Picker("Hugepages", selection: $draft.hugepages) {
                     Text("Off").tag("")
                     Text("Any").tag("any")
@@ -183,15 +188,19 @@ private struct VMOptionsEditor: View {
                     Toggle("Allow SMT", isOn: $draft.sevAllowSMT)
                 }
                 FieldError(message: errors["amd-sev"])
-                Toggle("Intel TDX", isOn: $draft.tdxEnabled)
-                if draft.tdxEnabled {
-                    Toggle("Attestation", isOn: $draft.tdxAttestation)
+                if supports(.intelTDX) {
+                    Toggle("Intel TDX", isOn: $draft.tdxEnabled)
+                    if draft.tdxEnabled {
+                        Toggle("Attestation", isOn: $draft.tdxAttestation)
+                    }
+                    FieldError(message: errors["intel-tdx"])
                 }
-                FieldError(message: errors["intel-tdx"])
             } header: {
                 Text("Confidential Computing")
             } footer: {
-                Text("Encrypts guest memory on supported AMD or Intel CPUs. Needs host support and OVMF.")
+                Text(supports(.intelTDX)
+                    ? "Encrypts guest memory on supported AMD or Intel CPUs. Needs host support and OVMF."
+                    : "Encrypts guest memory on supported AMD CPUs. Needs host support and OVMF.")
             }
 
             Section {
@@ -320,35 +329,37 @@ private struct ContainerOptionsEditor: View {
                 Toggle("Debug Logging", isOn: $draft.debug)
             }
 
-            Section {
-                LabeledContent("Entrypoint") {
-                    TextField("/sbin/init", text: $draft.entrypoint)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                FieldError(message: errors["entrypoint"])
-                ForEach($draft.environment) { $variable in
-                    HStack {
-                        TextField("NAME", text: $variable.name)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                            .font(.body.monospaced())
-                        Text(verbatim: "=")
-                        TextField("value", text: $variable.value)
+            if detail.connection.supports(.applicationContainers) {
+                Section {
+                    LabeledContent("Entrypoint") {
+                        TextField("/sbin/init", text: $draft.entrypoint)
+                            .multilineTextAlignment(.trailing)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
+                    FieldError(message: errors["entrypoint"])
+                    ForEach($draft.environment) { $variable in
+                        HStack {
+                            TextField("NAME", text: $variable.name)
+                                .textInputAutocapitalization(.characters)
+                                .autocorrectionDisabled()
+                                .font(.body.monospaced())
+                            Text(verbatim: "=")
+                            TextField("value", text: $variable.value)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                    }
+                    .onDelete { draft.environment.remove(atOffsets: $0) }
+                    Button("Add Variable", systemImage: "plus") {
+                        draft.environment.append(.init(name: "", value: ""))
+                    }
+                    FieldError(message: errors["env"])
+                } header: {
+                    Text("Application Container")
+                } footer: {
+                    Text("For containers created from OCI images. Changes apply at the next start.")
                 }
-                .onDelete { draft.environment.remove(atOffsets: $0) }
-                Button("Add Variable", systemImage: "plus") {
-                    draft.environment.append(.init(name: "", value: ""))
-                }
-                FieldError(message: errors["env"])
-            } header: {
-                Text("Application Container")
-            } footer: {
-                Text("For containers created from OCI images. Changes apply at the next start.")
             }
 
             HookscriptSection(hookscript: $draft.hookscript, snippets: snippets, isRoot: isRoot, error: errors["hookscript"])

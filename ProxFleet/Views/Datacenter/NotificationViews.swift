@@ -84,7 +84,7 @@ struct NotificationsView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu("Add", systemImage: "plus") {
                     Section("Target") {
-                        ForEach(NotificationEndpointType.allCases) { type in
+                        ForEach(NotificationEndpointType.allCases.filter { $0 != .webhook || settings.connection.supports(.webhookNotifications) }) { type in
                             Button(type.title, systemImage: type.systemImage) { creatingEndpoint = type }
                                 .disabled(!settings.canModifyEndpoints)
                                 .accessibilityIdentifier("target.add.\(type.rawValue)")

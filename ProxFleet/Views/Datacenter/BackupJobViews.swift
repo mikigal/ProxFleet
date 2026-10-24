@@ -229,6 +229,21 @@ struct BackupJobEditor: View {
     private var isNew: Bool { job == nil }
     private var snapshot: ClusterSnapshot? { list.connection.snapshot }
 
+    private func supports(_ feature: PVEFeature) -> Bool { list.connection.supports(feature) }
+
+    private var advancedFooter: String {
+        var parts = [String(localized: "Empty fields use the datacenter's defaults. Zstd threads apply to backups not on a Backup Server; 0 uses half of the cores.")]
+        if supports(.backupFleecing) {
+            parts.append(String(localized: "IO workers and fleecing apply to VMs: fleecing keeps the VM's writes during the backup in a temporary image, so a slow backup target does not slow the VM."))
+        } else {
+            parts.append(String(localized: "IO workers apply to VMs."))
+        }
+        if supports(.backupChangeDetection) {
+            parts.append(String(localized: "PBS change detection applies to container backups on a Proxmox Backup Server."))
+        }
+        return parts.joined(separator: " ")
+    }
+
     private var errors: [String: String] {
         (showsProblems ? draft.problems : [:]).merging(fieldErrors) { _, server in server }
     }
@@ -493,9 +508,11 @@ struct BackupJobEditor: View {
             FieldError(message: errors["zstd"])
             LabeledTextField(title: "IO Workers", prompt: "16", text: $draft.ioWorkers, keyboard: .numberPad, identifier: "backupjob.workers")
             FieldError(message: errors["performance"])
-            Toggle("Fleecing", isOn: $draft.fleecing)
-                .accessibilityIdentifier("backupjob.fleecing")
-            if draft.fleecing {
+            if supports(.backupFleecing) {
+                Toggle("Fleecing", isOn: $draft.fleecing)
+                    .accessibilityIdentifier("backupjob.fleecing")
+            }
+            if draft.fleecing, supports(.backupFleecing) {
                 Picker("Fleecing Storage", selection: $draft.fleecingStorage) {
                     Text("Default").tag("")
                     ForEach(Self.imageStorages(snapshot), id: \.self) { Text($0).tag($0) }
@@ -505,16 +522,18 @@ struct BackupJobEditor: View {
                 }
                 .accessibilityIdentifier("backupjob.fleecingStorage")
             }
-            Picker("PBS Change Detection", selection: $draft.pbsChangeDetection) {
-                Text("Default").tag("")
-                Text("Legacy").tag("legacy")
-                Text("Data").tag("data")
-                Text("Metadata").tag("metadata")
+            if supports(.backupChangeDetection) {
+                Picker("PBS Change Detection", selection: $draft.pbsChangeDetection) {
+                    Text("Default").tag("")
+                    Text("Legacy").tag("legacy")
+                    Text("Data").tag("data")
+                    Text("Metadata").tag("metadata")
+                }
             }
         } header: {
             Text("Advanced")
         } footer: {
-            Text("Empty fields use the datacenter's defaults. Zstd threads apply to backups not on a Backup Server; 0 uses half of the cores. IO workers and fleecing apply to VMs: fleecing keeps the VM's writes during the backup in a temporary image, so a slow backup target does not slow the VM. PBS change detection applies to container backups on a Proxmox Backup Server.")
+            Text(advancedFooter)
         }
     }
 

@@ -12,7 +12,7 @@ struct ProxFleetApp: App {
 
     init() {
         let launch = LaunchOptions(arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment)
-        let fleet = Fleet(environment: launch.inMemory ? .inMemory() : .live())
+        let fleet = Fleet(environment: launch.environment)
         _fleet = State(initialValue: fleet)
         _appLock = State(initialValue: AppLock(store: launch.inMemory ? InMemoryAppLockStore() : KeychainAppLockStore()))
         initialSelection = launch.apply(to: fleet)

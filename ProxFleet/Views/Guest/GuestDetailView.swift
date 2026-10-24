@@ -760,7 +760,8 @@ private struct GuestHardwareSections: View {
             }
         }
 
-        if !isVM, !config.containerDevices.isEmpty || isRoot {
+        // Device passthrough came with PVE 8.1.
+        if !isVM, !config.containerDevices.isEmpty || isRoot && detail.connection.supports(.containerDevices) {
             Section("Devices") {
                 ForEach(config.containerDevices, id: \.key) { device in
                     let label = HardwareRow(
@@ -779,7 +780,7 @@ private struct GuestHardwareSections: View {
                         label.locked("Only root@pam can change device passthrough.")
                     }
                 }
-                if isRoot {
+                if isRoot, detail.connection.supports(.containerDevices) {
                     NavigationLink {
                         ContainerDeviceEditor(detail: detail, config: config, key: nil)
                     } label: {

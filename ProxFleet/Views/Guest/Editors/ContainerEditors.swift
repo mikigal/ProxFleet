@@ -101,12 +101,16 @@ struct ContainerNetworkEditor: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                 }
-                Toggle("Host-Managed", isOn: $draft.isHostManaged)
+                if detail.connection.supports(.applicationContainers) {
+                    Toggle("Host-Managed", isOn: $draft.isHostManaged)
+                }
                 FieldError(message: key.flatMap { errors[$0] })
             } header: {
                 Text("Advanced")
             } footer: {
-                Text("Rate limit in MB/s. With Host-Managed, the host configures the addresses; the container must not run its own DHCP client on this interface.")
+                Text(detail.connection.supports(.applicationContainers)
+                    ? "Rate limit in MB/s. With Host-Managed, the host configures the addresses; the container must not run its own DHCP client on this interface."
+                    : "Rate limit in MB/s.")
             }
 
             if let nic {

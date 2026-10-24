@@ -590,12 +590,14 @@ private struct NodeMoreList: View {
                         Label("Bulk Shutdown…", systemImage: "stop.circle")
                     }
                     .accessibilityIdentifier("node.bulk.shutdown")
-                    Button {
-                        bulkAction = .hibernate
-                    } label: {
-                        Label("Bulk Hibernate…", systemImage: "moon.circle")
+                    if detail.connection.supports(.bulkHibernate) {
+                        Button {
+                            bulkAction = .hibernate
+                        } label: {
+                            Label("Bulk Hibernate…", systemImage: "moon.circle")
+                        }
+                        .accessibilityIdentifier("node.bulk.hibernate")
                     }
-                    .accessibilityIdentifier("node.bulk.hibernate")
                     if (detail.connection.snapshot?.nodes.count ?? 0) > 1 {
                         Button {
                             bulkAction = .migrate

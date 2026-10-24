@@ -68,12 +68,14 @@ struct ServerMoreList: View {
                 .accessibilityIdentifier("datacenter.mappings")
             }
             Section {
-                NavigationLink {
-                    NotificationsView(connection: connection)
-                } label: {
-                    MoreRow(title: "Notifications", systemImage: "bell", color: .pink)
+                if connection.supports(.notifications) {
+                    NavigationLink {
+                        NotificationsView(connection: connection)
+                    } label: {
+                        MoreRow(title: "Notifications", systemImage: "bell", color: .pink)
+                    }
+                    .accessibilityIdentifier("datacenter.notifications")
                 }
-                .accessibilityIdentifier("datacenter.notifications")
                 NavigationLink {
                     MetricServersView(connection: connection)
                 } label: {
@@ -93,12 +95,15 @@ struct ServerMoreList: View {
                 }
                 .accessibilityIdentifier("cluster.log")
             }
-            Section("Bulk Actions") {
-                bulkButton(.start, title: "Bulk Start", systemImage: "play.fill", color: .green)
-                bulkButton(.shutdown, title: "Bulk Shutdown", systemImage: "power", color: .red)
-                bulkButton(.hibernate, title: "Bulk Hibernate", systemImage: "moon.zzz.fill", color: .indigo)
-                if nodes.count > 1 {
-                    bulkButton(.migrate, title: "Bulk Migrate", systemImage: "arrow.left.arrow.right", color: .purple)
+            // Older releases have bulk actions per node only.
+            if connection.supports(.datacenterBulkActions) {
+                Section("Bulk Actions") {
+                    bulkButton(.start, title: "Bulk Start", systemImage: "play.fill", color: .green)
+                    bulkButton(.shutdown, title: "Bulk Shutdown", systemImage: "power", color: .red)
+                    bulkButton(.hibernate, title: "Bulk Hibernate", systemImage: "moon.zzz.fill", color: .indigo)
+                    if nodes.count > 1 {
+                        bulkButton(.migrate, title: "Bulk Migrate", systemImage: "arrow.left.arrow.right", color: .purple)
+                    }
                 }
             }
             Section {

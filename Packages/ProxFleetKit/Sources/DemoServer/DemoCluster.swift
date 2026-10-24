@@ -45,7 +45,7 @@ public struct DemoCluster: Sendable {
     public var clusterName: String?
     public var nodes: [Node]
     public var guests: [Guest]
-    public var version = "9.0.10"
+    public var version = "9.2.21"
 
     /// A three-node home lab cluster with one node offline.
     public static let homelab = DemoCluster(

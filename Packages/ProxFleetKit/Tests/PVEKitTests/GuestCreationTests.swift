@@ -133,6 +133,15 @@ struct GuestCreationTests {
         #expect(draft.parameters["scsi0"] == "local-lvm:32,discard=on,iothread=1")
     }
 
+    /// PVE 8 has no `formats`, only `format` with the formats as keys and the default after them.
+    @Test func diskFormatsOfOlderServers() throws {
+        let json = #"[{"storage":"local","type":"dir","format":[{"vmdk":1,"qcow2":1,"subvol":1,"raw":1},"raw"]},{"storage":"local-lvm","type":"lvmthin"}]"#
+        let storages = try JSONDecoder().decode([StorageInfo].self, from: Data(json.utf8))
+        #expect(storages[0].diskFormats == ["qcow2", "raw", "vmdk"] && storages[0].defaultDiskFormat == "raw")
+        #expect(storages[0].preferredDiskFormat == "qcow2")
+        #expect(storages[1].diskFormats.isEmpty && storages[1].preferredDiskFormat == nil)
+    }
+
     @Test func severalDisks() {
         var draft = VMCreationDraft(node: "pve", vmid: 150)
         draft.isoVolume = "local:iso/debian.iso"

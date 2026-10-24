@@ -341,7 +341,8 @@ public final class GuestDetail {
         let session = connection.session
         async let preconditions = session.send(PVE.migrationPreconditions(reference, target: target))
         // Nodes without the endpoint count as lacking support, as in the web interface.
-        let capabilities = reference.kind == .virtualMachine ? try? await session.send(PVE.qemuMigrationCapabilities(node: target)) : nil
+        let asksCapabilities = reference.kind == .virtualMachine && connection.supports(.conntrackMigration)
+        let capabilities = asksCapabilities ? try? await session.send(PVE.qemuMigrationCapabilities(node: target)) : nil
         return (try await preconditions, capabilities?.supportsConntrackState ?? false)
     }
 

@@ -86,10 +86,15 @@ public struct StorageInfo: Decodable, Sendable, Equatable, Identifiable, Hashabl
         isShared = container.lossyBool(AnyCodingKey("shared")) ?? false
         available = container.lossyDouble(AnyCodingKey("avail")).map { Int64($0) }
         total = container.lossyDouble(AnyCodingKey("total")).map { Int64($0) }
+        // `subvol` is only for container volumes.
         if let formats = try? container.nestedContainer(keyedBy: AnyCodingKey.self, forKey: AnyCodingKey("formats")) {
-            // `subvol` is only for container volumes.
             diskFormats = ((try? formats.decode([String].self, forKey: AnyCodingKey("supported"))) ?? []).filter { $0 != "subvol" }
             defaultDiskFormat = formats.lossyString(AnyCodingKey("default"))
+        } else if var legacy = try? container.nestedUnkeyedContainer(forKey: AnyCodingKey("format")) {
+            // Before PVE 9 only `format`: the formats as keys of an object, then the default.
+            let supported = (try? legacy.decode([String: Int].self)) ?? [:]
+            diskFormats = supported.filter { $0.value != 0 && $0.key != "subvol" }.keys.sorted()
+            defaultDiskFormat = try? legacy.decode(String.self)
         }
     }
 

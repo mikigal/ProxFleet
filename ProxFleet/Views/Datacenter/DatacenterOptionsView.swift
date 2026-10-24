@@ -50,6 +50,8 @@ private struct DatacenterOptionsForm: View {
 
     private var hasChanges: Bool { !draft.changes(from: original).isEmpty }
 
+    private func supports(_ feature: PVEFeature) -> Bool { settings.connection.supports(feature) }
+
     var body: some View {
         Form {
             if !settings.canModifyOptions {
@@ -66,7 +68,9 @@ private struct DatacenterOptionsForm: View {
                 tagsSection
                 haSection
                 twoFactorSection
-                locationSection
+                if supports(.locations) {
+                    locationSection
+                }
                 otherSection
             }
             .disabled(!settings.canModifyOptions)
@@ -135,16 +139,21 @@ private struct DatacenterOptionsForm: View {
                 Text("Insecure").tag("insecure")
             }
             LabeledTextField(title: "Migration Network", prompt: "10.0.0.0/24", text: $draft.migrationNetwork, keyboard: .numbersAndPunctuation)
-            Picker("Replication", selection: $draft.replicationType) {
-                Text("Default (Secure)").tag("")
-                Text("Secure").tag("secure")
-                Text("Insecure").tag("insecure")
+            // Replication used the migration settings before PVE 9.
+            if supports(.replicationOptions) {
+                Picker("Replication", selection: $draft.replicationType) {
+                    Text("Default (Secure)").tag("")
+                    Text("Secure").tag("secure")
+                    Text("Insecure").tag("insecure")
+                }
+                LabeledTextField(title: "Replication Network", prompt: "10.0.0.0/24", text: $draft.replicationNetwork, keyboard: .numbersAndPunctuation)
             }
-            LabeledTextField(title: "Replication Network", prompt: "10.0.0.0/24", text: $draft.replicationNetwork, keyboard: .numbersAndPunctuation)
         } header: {
             Text("Network")
         } footer: {
-            Text("The proxy is used for downloads such as updates and templates. Insecure migration and replication skip the SSH tunnel; use them only on a private network.")
+            Text(supports(.replicationOptions)
+                ? "The proxy is used for downloads such as updates and templates. Insecure migration and replication skip the SSH tunnel; use them only on a private network."
+                : "The proxy is used for downloads such as updates and templates. Insecure migration skips the SSH tunnel; use it only on a private network. Replication uses the migration settings.")
         }
     }
 
@@ -237,12 +246,16 @@ private struct DatacenterOptionsForm: View {
                 Text("Default (Basic)").tag("")
                 Text("Basic").tag("basic")
                 Text("Static Load").tag("static")
-                Text("Dynamic Load").tag("dynamic")
+                if supports(.haLoadBalancing) {
+                    Text("Dynamic Load").tag("dynamic")
+                }
             }
             Toggle("Rebalance on Start", isOn: $draft.haRebalanceOnStart)
-            Toggle("Automatic Rebalancing", isOn: $draft.haAutoRebalance)
-                .accessibilityIdentifier("options.autoRebalance")
-            if draft.haAutoRebalance {
+            if supports(.haLoadBalancing) {
+                Toggle("Automatic Rebalancing", isOn: $draft.haAutoRebalance)
+                    .accessibilityIdentifier("options.autoRebalance")
+            }
+            if draft.haAutoRebalance, supports(.haLoadBalancing) {
                 LabeledTextField(title: "Imbalance Threshold (%)", prompt: "30", text: $draft.haRebalanceThreshold, keyboard: .decimalPad)
                 LabeledTextField(title: "Minimum Improvement (%)", prompt: "10", text: $draft.haRebalanceMargin, keyboard: .decimalPad)
                 LabeledTextField(title: "Hold Duration (Rounds)", prompt: "3", text: $draft.haRebalanceHoldDuration, keyboard: .numberPad)
@@ -262,7 +275,9 @@ private struct DatacenterOptionsForm: View {
         } header: {
             Text("High Availability")
         } footer: {
-            Text("What HA guests do when their node shuts down, and how a new node is chosen for them. Static load weighs the guests' CPU and memory settings, dynamic load their actual use. Rebalancing moves guests when nodes are loaded unevenly. Hardware fencing needs fence devices in /etc/pve/ha/fence.cfg.")
+            Text(supports(.haLoadBalancing)
+                ? "What HA guests do when their node shuts down, and how a new node is chosen for them. Static load weighs the guests' CPU and memory settings, dynamic load their actual use. Rebalancing moves guests when nodes are loaded unevenly. Hardware fencing needs fence devices in /etc/pve/ha/fence.cfg."
+                : "What HA guests do when their node shuts down, and how a new node is chosen for them. Static load weighs the guests' CPU and memory settings. Hardware fencing needs fence devices in /etc/pve/ha/fence.cfg.")
         }
     }
 

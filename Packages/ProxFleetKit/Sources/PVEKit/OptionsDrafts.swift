@@ -108,6 +108,8 @@ public struct VMOptionsDraft: OptionsDraft, Sendable {
     public var hotplug: Set<String>
     public var agentEnabled: Bool
     public var agentFreezeFS: Bool
+    /// The agent option `agentFreezeFS` is saved as: `freeze-fs-on-backup` before PVE 9.2.
+    public var agentFreezeKey = "freeze-fs"
     public var agentTrimClonedDisks: Bool
     public var agentType: String
     public var tablet: Bool
@@ -207,7 +209,7 @@ public struct VMOptionsDraft: OptionsDraft, Sendable {
         var agent = PropertyString(items: [])
         if agentEnabled || !agentFreezeFS || agentTrimClonedDisks || agentType != "virtio" {
             agent["enabled"] = agentEnabled ? "1" : "0"
-            if !agentFreezeFS { agent["freeze-fs"] = "0" }
+            if !agentFreezeFS { agent[agentFreezeKey] = "0" }
             if agentTrimClonedDisks { agent["fstrim_cloned_disks"] = "1" }
             if agentType != "virtio" { agent["type"] = agentType }
         }

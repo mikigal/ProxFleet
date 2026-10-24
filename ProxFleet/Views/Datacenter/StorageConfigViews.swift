@@ -227,6 +227,10 @@ struct StorageConfigEditor: View {
 
     private var hasChanges: Bool { isNew || !draft.changes(from: original).isEmpty }
 
+    private var offersVolumeChainSnapshots: Bool {
+        draft.type.supportsVolumeChainSnapshots && storage.connection.supports(.volumeChainSnapshots)
+    }
+
     var body: some View {
         Form {
             if !storage.canModify {
@@ -261,7 +265,7 @@ struct StorageConfigEditor: View {
                 if draft.type == .pbs {
                     PBSEncryptionSection(draft: $draft, isNew: isNew, error: errors["encryption-key"])
                 }
-                if draft.type.supportsPreallocation || draft.type.supportsVolumeChainSnapshots {
+                if draft.type.supportsPreallocation || offersVolumeChainSnapshots {
                     advancedSection
                 }
                 if draft.holdsBackups {
@@ -348,7 +352,7 @@ struct StorageConfigEditor: View {
                 }
                 FieldError(message: errors["preallocation"])
             }
-            if draft.type.supportsVolumeChainSnapshots {
+            if offersVolumeChainSnapshots {
                 Toggle("Snapshots as Volume-Chain", isOn: $draft.volumeChainSnapshots)
                     .disabled(!isNew && draft.type != .lvm)
                 FieldError(message: errors["snapshot-as-volume-chain"])
@@ -356,7 +360,7 @@ struct StorageConfigEditor: View {
         } header: {
             Text("Advanced")
         } footer: {
-            if draft.type.supportsVolumeChainSnapshots {
+            if offersVolumeChainSnapshots {
                 Text(draft.type == .lvm
                     ? "Snapshots as a volume chain are a technology preview. Keep them on while qcow2 images exist on the storage."
                     : "Snapshots as a volume chain are a technology preview and can only be turned on when the storage is added.")

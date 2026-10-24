@@ -16,7 +16,9 @@ struct MigrateView: View {
         self.detail = detail
         let source = detail.reference.node
         let target = detail.connection.snapshot?.nodes.first { $0.isOnline && $0.name != source }?.name ?? ""
-        _draft = State(initialValue: MigrationDraft(guest: detail.reference, target: target))
+        var draft = MigrationDraft(guest: detail.reference, target: target)
+        draft.offersConntrackState = detail.connection.supports(.conntrackMigration)
+        _draft = State(initialValue: draft)
     }
 
     private var isVM: Bool { detail.reference.kind == .virtualMachine }

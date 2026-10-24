@@ -304,11 +304,17 @@ public struct NodeBulkActionDraft: Sendable, Equatable {
 
 extension PVE {
     /// Starts one task on the node that runs the action for every chosen guest. Returns its task ID.
-    public static func bulkAction(node: String, _ draft: NodeBulkActionDraft) -> APIRequest<String> {
-        APIRequest(.post, "/nodes/\(node)/\(draft.action.endpoint)", parameters: draft.parameters)
+    /// - Parameter legacyWorkers: before PVE 9.2 only migration takes parallel jobs, as `maxworkers`.
+    public static func bulkAction(node: String, _ draft: NodeBulkActionDraft, legacyWorkers: Bool = false) -> APIRequest<String> {
+        var parameters = draft.parameters
+        if legacyWorkers, let workers = parameters["max-workers"] {
+            parameters["max-workers"] = nil
+            if draft.action == .migrate { parameters["maxworkers"] = workers }
+        }
+        return APIRequest(.post, "/nodes/\(node)/\(draft.action.endpoint)", parameters: parameters)
     }
 
-    /// The datacenter's bulk actions (PVE 9): one task that runs the action for the chosen guests on all nodes.
+    /// The datacenter's bulk actions (PVE 9.1): one task that runs the action for the chosen guests on all nodes.
     public static func clusterBulkAction(_ draft: NodeBulkActionDraft) -> APIRequest<String> {
         var parameters = APIParameters()
         for vmid in draft.vmids.sorted() { parameters.append("vms", .int(vmid)) }

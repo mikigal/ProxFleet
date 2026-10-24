@@ -22,15 +22,17 @@ struct HAView: View {
             if manager.status != nil {
                 statusSection
                 resourcesSection
-                Section {
-                    NavigationLink {
-                        HARulesView(manager: manager)
-                    } label: {
-                        MoreRow(title: "Rules", systemImage: "point.3.filled.connected.trianglepath.dotted", color: .indigo, hint: rulesHint)
+                if manager.connection.supports(.haRules) {
+                    Section {
+                        NavigationLink {
+                            HARulesView(manager: manager)
+                        } label: {
+                            MoreRow(title: "Rules", systemImage: "point.3.filled.connected.trianglepath.dotted", color: .indigo, hint: rulesHint)
+                        }
+                        .accessibilityIdentifier("ha.rules")
+                    } footer: {
+                        Text("Rules keep resources on preferred nodes, off some nodes, or together or apart.")
                     }
-                    .accessibilityIdentifier("ha.rules")
-                } footer: {
-                    Text("Rules keep resources on preferred nodes, off some nodes, or together or apart.")
                 }
             }
         }
@@ -45,8 +47,10 @@ struct HAView: View {
         }
         .navigationTitle("High Availability")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                armingMenu
+            if manager.connection.supports(.haArming) {
+                ToolbarItem(placement: .primaryAction) {
+                    armingMenu
+                }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Add", systemImage: "plus") { adding = true }
@@ -68,9 +72,15 @@ struct HAView: View {
         .confirmationDialog("Remove from HA?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible, presenting: removing) { resource in
             Button("Remove", role: .destructive) { Task { await remove(resource, purge: true) } }
                 .accessibilityIdentifier("ha.remove.confirm")
-            Button("Remove, Keep in Rules") { Task { await remove(resource, purge: false) } }
+            if manager.connection.supports(.haRulePurge) {
+                Button("Remove, Keep in Rules") { Task { await remove(resource, purge: false) } }
+            }
         } message: { resource in
-            Text("\(resource.sid) keeps running as it is, but no longer moves when its node fails. Rules left without resources are deleted too, unless it stays in them.")
+            if manager.connection.supports(.haRulePurge) {
+                Text("\(resource.sid) keeps running as it is, but no longer moves when its node fails. Rules left without resources are deleted too, unless it stays in them.")
+            } else {
+                Text("\(resource.sid) keeps running as it is, but no longer moves when its node fails.")
+            }
         }
         .confirmationDialog("Disarm HA?", isPresented: Binding(get: { disarmMode != nil }, set: { if !$0 { disarmMode = nil } }), titleVisibility: .visible, presenting: disarmMode) { mode in
             Button("Disarm", role: .destructive) { Task { await perform { try await manager.disarm(resourceMode: mode) } } }
@@ -323,15 +333,19 @@ struct HAResourceEditor: View {
                 FieldError(message: errors["max_restart"])
                 Stepper("Max. Relocate: \(draft.maxRelocate)", value: number($draft.maxRelocate), in: 0...10)
                 FieldError(message: errors["max_relocate"])
-                Toggle("Failback", isOn: $draft.failback)
-                Toggle("Auto-Rebalance", isOn: $draft.autoRebalance)
+                if manager.connection.supports(.haFailback) {
+                    Toggle("Failback", isOn: $draft.failback)
+                }
+                if manager.connection.supports(.haLoadBalancing) {
+                    Toggle("Auto-Rebalance", isOn: $draft.autoRebalance)
+                }
                 LabeledContent("Comment") {
                     TextField("Comment", text: $draft.comment, prompt: Text("None"))
                         .multilineTextAlignment(.trailing)
                         .accessibilityIdentifier("ha.comment")
                 }
             } footer: {
-                Text("A failed start is retried on the same node up to Max. Restart times, then on other nodes up to Max. Relocate times. Failback moves the guest back to its preferred node when that node returns; Auto-Rebalance lets the scheduler move it to balance the load.")
+                Text(restartFooter)
             }
             if let resource {
                 Section {
@@ -378,10 +392,22 @@ struct HAResourceEditor: View {
         }
         .confirmationDialog("Remove from HA?", isPresented: $confirmsRemoval, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { Task { await remove(purge: true) } }
-            Button("Remove, Keep in Rules") { Task { await remove(purge: false) } }
+            if manager.connection.supports(.haRulePurge) {
+                Button("Remove, Keep in Rules") { Task { await remove(purge: false) } }
+            }
         } message: {
             Text("The guest keeps running as it is, but no longer moves when its node fails.")
         }
+    }
+
+    private var restartFooter: String {
+        var text = String(localized: "A failed start is retried on the same node up to Max. Restart times, then on other nodes up to Max. Relocate times.")
+        switch (manager.connection.supports(.haFailback), manager.connection.supports(.haLoadBalancing)) {
+        case (true, true): text += " " + String(localized: "Failback moves the guest back to its preferred node when that node returns; Auto-Rebalance lets the scheduler move it to balance the load.")
+        case (true, false): text += " " + String(localized: "Failback moves the guest back to its preferred node when that node returns.")
+        default: break
+        }
+        return text
     }
 
     private var stateFooter: String {
@@ -475,7 +501,9 @@ struct HAMoveView: View {
             } footer: {
                 Text(relocate
                     ? "Relocate stops the guest, then HA starts it on the target."
-                    : "Migrate moves a running VM live; containers restart on the target. Rules can keep HA from moving it.")
+                    : manager.connection.supports(.haRules)
+                        ? "Migrate moves a running VM live; containers restart on the target. Rules can keep HA from moving it."
+                        : "Migrate moves a running VM live; containers restart on the target.")
             }
             ErrorSection(message: errorMessage)
         }

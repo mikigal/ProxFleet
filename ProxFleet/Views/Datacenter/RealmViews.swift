@@ -198,7 +198,8 @@ private struct RealmEditor: View {
                     DirectoryServerSection(draft: $draft, errors: errors)
                     DirectorySyncSection(draft: $draft, isNew: isNew, errors: errors)
                 case .openid:
-                    OpenIDSection(draft: $draft, isNew: isNew, errors: errors)
+                    OpenIDSection(draft: $draft, isNew: isNew, errors: errors, offersGroups: access.connection.supports(.openIDGroups),
+                                  offersAudiences: access.connection.supports(.openIDAudiences))
                 }
                 if draft.type.supportsTwoFactor {
                     RealmTwoFactorSection(twoFactor: $draft.twoFactor, error: errors["tfa"])
@@ -448,6 +449,9 @@ private struct OpenIDSection: View {
     @Binding var draft: RealmDraft
     let isNew: Bool
     let errors: [String: String]
+    /// Groups from a claim and the userinfo switch came with PVE 8.4, additional audiences with 9.2.
+    let offersGroups: Bool
+    let offersAudiences: Bool
 
     var body: some View {
         Section {
@@ -474,9 +478,11 @@ private struct OpenIDSection: View {
                 LabeledContent("Username Claim", value: draft.usernameClaim.isEmpty ? String(localized: "Default (subject)") : draft.usernameClaim)
             }
             Toggle("Create Users Automatically", isOn: $draft.autocreateUsers)
-            LabeledTextField(title: "Groups Claim", prompt: "None", text: $draft.groupsClaim)
-            Toggle("Create Groups Automatically", isOn: $draft.autocreateGroups)
-            Toggle("Overwrite Groups at Sign-In", isOn: $draft.overwriteGroups)
+            if offersGroups {
+                LabeledTextField(title: "Groups Claim", prompt: "None", text: $draft.groupsClaim)
+                Toggle("Create Groups Automatically", isOn: $draft.autocreateGroups)
+                Toggle("Overwrite Groups at Sign-In", isOn: $draft.overwriteGroups)
+            }
         } header: {
             Text("Users and Groups")
         } footer: {
@@ -484,8 +490,12 @@ private struct OpenIDSection: View {
         }
         Section {
             LabeledTextField(title: "ACR Values", prompt: "None", text: $draft.acrValues)
-            Toggle("Query Userinfo Endpoint", isOn: $draft.queriesUserinfo)
-            LabeledTextField(title: "Audiences", prompt: "None", text: $draft.audiences)
+            if offersGroups {
+                Toggle("Query Userinfo Endpoint", isOn: $draft.queriesUserinfo)
+            }
+            if offersAudiences {
+                LabeledTextField(title: "Audiences", prompt: "None", text: $draft.audiences)
+            }
         } header: {
             Text("Advanced")
         }

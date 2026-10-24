@@ -23,7 +23,7 @@ struct NodeDetailTests {
         await detail.load()
         let status = try #require(detail.status)
         #expect(status.cpuCount == 16 && status.memoryTotal > 0 && status.loadAverage.count == 3)
-        #expect(status.pveVersion == "9.0.10")
+        #expect(status.pveVersion == "9.2.21")
         #expect(detail.history.contains { $0.loadAverage != nil })
         #expect(detail.can("Sys.PowerMgmt"))
 

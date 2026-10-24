@@ -23,6 +23,8 @@ public final class ServerConnection: Identifiable {
     public private(set) var profile: ServerProfile
     public private(set) var state: State = .disconnected
     public private(set) var snapshot: ClusterSnapshot?
+    /// Proxmox VE version of the node the app talks to, loaded with the first snapshot.
+    public private(set) var version: PVEVersion?
     /// Error of the most recent background refresh, while older data is still shown.
     public private(set) var refreshError: String?
     public private(set) var isRefreshing = false
@@ -126,6 +128,7 @@ public final class ServerConnection: Identifiable {
         await session.logout()
         environment.credentials.setTicket(nil, for: profile.id)
         snapshot = nil
+        version = nil
         state = .disconnected
     }
 
@@ -191,6 +194,8 @@ public final class ServerConnection: Identifiable {
     private func failOver(after error: any Error) async -> Bool {
         guard case ProxmoxError.transport = error, addressIndex + 1 < profile.addresses.count else { return false }
         addressIndex += 1
+        // Nodes of a cluster can run different versions while it is upgraded.
+        version = nil
         let ticket = await session.ticket
         session = ProxmoxSession(address: profile.addresses[addressIndex], product: profile.product, transport: transport, ticket: ticket)
         return true
@@ -246,7 +251,12 @@ public final class ServerConnection: Identifiable {
     }
 
     private func loadSnapshot() async throws {
+        let session = session
+        let needsVersion = version == nil
+        // Optional: without it, the app offers everything, as servers refuse what they lack anyway.
+        async let loadedVersion = needsVersion ? try? await session.send(PVE.version()) : nil
         let snapshot = try await session.fetchClusterSnapshot()
+        if let loadedVersion = await loadedVersion { version = loadedVersion }
         self.snapshot = snapshot
         // Servers added by address alone get a meaningful name once we know what they are.
         if profile.name == profile.primaryAddress?.host,
@@ -297,6 +307,11 @@ public final class ServerConnection: Identifiable {
     public func canStopTask(startedBy user: String, node: String) async -> Bool {
         if user == profile.userID { return true }
         return (try? await session.privileges(on: "/nodes/\(node)"))?.contains("Sys.Modify") ?? true
+    }
+
+    /// Whether the server's Proxmox VE release has a feature; true while its version is unknown.
+    public func supports(_ feature: PVEFeature) -> Bool {
+        version?.supports(feature) ?? true
     }
 
     /// The authenticated session, for features such as consoles that talk to the API directly.
