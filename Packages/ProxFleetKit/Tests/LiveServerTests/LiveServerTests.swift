@@ -147,6 +147,11 @@ struct LiveServerTests {
         #expect(try await session.privileges(on: vm.aclPath).contains("VM.PowerMgmt"))
     }
 
+    /// The release of the connected node: parts that need a newer one are left out on older servers.
+    private func version(_ session: ProxmoxSession) async throws -> PVEVersion {
+        try await session.send(PVE.version())
+    }
+
     private func rootSession() async throws -> (ProxmoxSession, String) {
         let session = try await trustedSession()
         _ = try await session.login(username: try #require(server["USER"]), password: try #require(server["PASSWORD"]), realm: server["REALM"])
@@ -406,6 +411,7 @@ struct LiveServerTests {
             #expect(fieldErrors["vmid"] != nil)
         }
         #expect(try await !session.send(PVE.applianceTemplates(node: node)).isEmpty)
+        let hasKSMControl = try await version(session).supports(.vmKSMControl)
         let storage = try #require(try await session.send(PVE.storages(node: node, content: "images")).first?.storage)
         let iso = try await session.send(PVE.storageContent(node: node, storage: "local", content: "iso")).first?.volumeID
 
@@ -432,7 +438,7 @@ struct LiveServerTests {
         vm.cpu.limit = 1.5
         vm.cpu.units = "200"
         vm.memoryShares = "500"
-        vm.allowKSM = false
+        vm.allowKSM = !hasKSMControl
         vm.networks[0].device.mtu = 1400
         vm.networks[0].device.queues = 2
         vm.networks[0].device.model = "virtio"
@@ -457,7 +463,7 @@ struct LiveServerTests {
         #expect(vmConfig["cpu"] == "x86-64-v2-AES,flags=+aes")
         #expect(vmConfig["cpulimit"] == "1.5")
         #expect(vmConfig["shares"] == "500")
-        #expect(vmConfig["allow-ksm"] == "0")
+        #expect(vmConfig["allow-ksm"] == (hasKSMControl ? "0" : nil))
         #expect(vmConfig["net0"]?.contains("mtu=1400") == true && vmConfig["net0"]?.contains("queues=2") == true)
         #expect(vmConfig["net1"]?.hasPrefix("e1000e=") == true && vmConfig["net1"]?.contains("tag=30") == true)
         try await destroy(vmReference)
@@ -666,11 +672,13 @@ struct LiveServerTests {
         let files = try #require(try await session.send(PVE.storages(node: node, content: "images")).first { $0.storage == "pflive-images" })
         #expect(files.preferredDiskFormat == "qcow2")
 
+        let hasArchitecture = try await version(session).supports(.vmArchitecture)
         var arm = VMCreationDraft(node: node, vmid: try await session.send(PVE.nextVMID()).value)
         arm.name = "arm-test"
         arm.setHostArchitecture(try #require(try await session.send(PVE.nodeStatus(node)).architecture))
         #expect(!arm.isARM)
-        arm.setArchitecture("aarch64")
+        // Older servers get the same VM as x86 with UEFI.
+        if hasArchitecture { arm.setArchitecture("aarch64") } else { arm.bios = "ovmf" }
         arm.efiStorage = files.storage
         arm.efiFormat = files.preferredDiskFormat
         arm.disks[0].storage = "local-lvm"
@@ -684,15 +692,15 @@ struct LiveServerTests {
         #expect(created?.succeeded == true, "\(created?.exitStatus ?? "")")
         let armVM = GuestReference(node: node, vmid: arm.vmid, kind: .virtualMachine)
         var config = try await session.send(PVE.guestConfig(armVM))
-        #expect(config["arch"] == "aarch64" && config.bios == "ovmf" && config["machine"] == nil)
+        #expect(config["arch"] == (hasArchitecture ? "aarch64" : nil) && config.bios == "ovmf" && config["machine"] == nil)
         #expect(config["efidisk0"]?.hasPrefix("pflive-images:\(arm.vmid)/vm-\(arm.vmid)-disk-0.qcow2") == true)
         #expect(config["scsi0"]?.contains("size=112M") == true && config["scsi0"]?.contains("import-from") == false)
-        #expect(config["scsi2"] == "cdrom,media=cdrom")
-        #expect(config.bootOrder == ["scsi0", "scsi2"])
+        #expect(config[arm.cdromKey] == "cdrom,media=cdrom")
+        #expect(config.bootOrder == ["scsi0", arm.cdromKey])
 
         // The test server has no CD/DVD drive, so the emulated VM starts with an empty one.
         var eject = GuestConfigUpdate()
-        eject.set("scsi2", GuestConfig.cdromValue(isoVolume: nil))
+        eject.set(arm.cdromKey, GuestConfig.cdromValue(isoVolume: nil))
         _ = try await finish(try await session.send(PVE.updateConfig(armVM, eject)))
         #expect(try await finish(try await session.send(PVE.powerAction(.start, on: armVM)))?.succeeded == true)
         #expect(try await session.send(PVE.guestStatus(armVM)).powerState == .running)
@@ -792,7 +800,7 @@ struct LiveServerTests {
     @Test func nodeDetails() async throws {
         let (session, node) = try await rootSession()
         let status = try await session.send(PVE.nodeStatus(node))
-        #expect(status.pveVersion?.hasPrefix("9.") == true)
+        #expect(status.pveVersion == (try await version(session)).version)
         #expect(status.memoryTotal > 0 && status.rootTotal > 0 && status.cpuCount > 0)
         #expect(status.loadAverage.count == 3)
         let history = try await session.send(PVE.nodeRRD(node, timeframe: .hour)).filter(\.hasData)
@@ -867,7 +875,8 @@ struct LiveServerTests {
         var shutdown = NodeBulkActionDraft(action: .shutdown, vmids: [202])
         shutdown.timeout = 60
         shutdown.maxWorkers = 2
-        #expect(try await run(PVE.bulkAction(node: node, shutdown))?.succeeded == true)
+        let legacyWorkers = try await !version(session).supports(.bulkActionParallelJobs)
+        #expect(try await run(PVE.bulkAction(node: node, shutdown, legacyWorkers: legacyWorkers))?.succeeded == true)
         #expect(try await state(container) == .stopped)
 
         let hibernate = try #require(try await run(PVE.bulkAction(node: node, NodeBulkActionDraft(action: .hibernate, vmids: [102]))))
@@ -889,9 +898,12 @@ struct LiveServerTests {
         draft.macAddress = "aa:bb:cc:dd:ee:01"
         draft.broadcastAddress = "10.10.100.255"
         draft.startDelay = "5"
-        draft.location.latitude = "50.0647"
-        draft.location.longitude = "19.945"
-        draft.location.name = "Krakow"
+        let hasLocation = try await version(session).supports(.locations)
+        if hasLocation {
+            draft.location.latitude = "50.0647"
+            draft.location.longitude = "19.945"
+            draft.location.name = "Krakow"
+        }
         var update = draft.changes(from: NodeOptionsDraft(before))
         update.set("description", "ProxFleet **live** test")
         _ = try await session.send(PVE.updateNodeOptions(node, update))
@@ -899,7 +911,7 @@ struct LiveServerTests {
         #expect(saved.notes == "ProxFleet **live** test")
         #expect(saved.values["wakeonlan"] == "AA:BB:CC:DD:EE:01,broadcast-address=10.10.100.255")
         #expect(NodeOptionsDraft(saved).serialized() == draft.serialized())
-        #expect(NodeOptionsDraft(saved).location.name == "Krakow")
+        #expect(NodeOptionsDraft(saved).location.name == (hasLocation ? "Krakow" : ""))
 
         var stale = GuestConfigUpdate(digest: String(repeating: "0", count: 40))
         stale.set("startall-onboot-delay", "6")
@@ -1254,15 +1266,17 @@ struct LiveServerTests {
         #expect((decompressed.size ?? 0) > 3_000_000)
         #expect(try await finish(try await session.send(PVE.deleteVolume(node: node, storage: "local", volume: decompressed.volumeID)))?.succeeded == true)
 
-        var oci = OCIPullDraft()
-        oci.reference = "docker.io/library/alpine"
-        let tags = try await session.send(PVE.ociTags(node: node, reference: oci.reference))
-        #expect(tags.contains("latest"))
-        oci.fileName = "proxfleet-live-alpine"
-        #expect(oci.problems.isEmpty)
-        #expect(try await finish(try await session.send(PVE.pullOCIImage(node: node, storage: "local", oci)))?.succeeded == true)
-        let template = try #require(try await session.send(PVE.storageVolumes(node: node, storage: "local", content: .vztmpl)).first { $0.fileName.hasPrefix("proxfleet-live-alpine") })
-        #expect(try await finish(try await session.send(PVE.deleteVolume(node: node, storage: "local", volume: template.volumeID)))?.succeeded == true)
+        if try await version(session).supports(.applicationContainers) {
+            var oci = OCIPullDraft()
+            oci.reference = "docker.io/library/alpine"
+            let tags = try await session.send(PVE.ociTags(node: node, reference: oci.reference))
+            #expect(tags.contains("latest"))
+            oci.fileName = "proxfleet-live-alpine"
+            #expect(oci.problems.isEmpty)
+            #expect(try await finish(try await session.send(PVE.pullOCIImage(node: node, storage: "local", oci)))?.succeeded == true)
+            let template = try #require(try await session.send(PVE.storageVolumes(node: node, storage: "local", content: .vztmpl)).first { $0.fileName.hasPrefix("proxfleet-live-alpine") })
+            #expect(try await finish(try await session.send(PVE.deleteVolume(node: node, storage: "local", volume: template.volumeID)))?.succeeded == true)
+        }
 
         // Two backups of container 202; keeping the last one prunes the older.
         let container = GuestReference(node: node, vmid: 202, kind: .container)
@@ -2048,32 +2062,35 @@ struct LiveServerTests {
         let changed = try await session.send(PVE.metricServer("pflive-influx"))
         #expect(changed.values["bucket"] == nil && changed.port == "8087" && changed.values["organization"] == "lab")
 
-        // A throwaway OTLP endpoint on the node itself.
-        let collector = try await runOnNode(session, node: node, """
-            setsid nohup python3 -c 'import http.server as h
-            class R(h.BaseHTTPRequestHandler):
-                def do_POST(s):
-                    s.rfile.read(int(s.headers.get("Content-Length") or 0)); s.send_response(200); s.end_headers()
-            h.HTTPServer(("127.0.0.1", 14318), R).serve_forever()' >/dev/null 2>&1 < /dev/null & sleep 1; echo started
-            """)
-        #expect(collector.output.contains("started"))
-        var otel = MetricServerDraft(type: .opentelemetry)
-        otel.id = "pflive-otel"
-        otel.server = "127.0.0.1"
-        otel.port = "14318"
-        otel.otelProtocol = "http"
-        otel.otelHeaders = #"{"X-Test": "proxfleet"}"#
-        otel.otelResourceAttributes = #"{"cluster": "lab"}"#
-        otel.otelCompression = "none"
-        otel.otelTimeout = "3"
-        #expect(otel.problems(isNew: true).isEmpty)
-        _ = try await session.send(PVE.createMetricServer(otel))
-        var savedOtel = try #require(MetricServerDraft(try await session.send(PVE.metricServer("pflive-otel"))))
-        savedOtel.id = "pflive-otel"
-        #expect(savedOtel == otel)
-        _ = try await runOnNode(session, node: node, "pkill -f 'HTTPServer((\"127.0.0.1\", 14318)' ; true")
+        // A throwaway OTLP endpoint on the node itself. OpenTelemetry came with PVE 9.
+        let hasOpenTelemetry = try await version(session).supports(.metricServerOpenTelemetry)
+        if hasOpenTelemetry {
+            let collector = try await runOnNode(session, node: node, """
+                setsid nohup python3 -c 'import http.server as h
+                class R(h.BaseHTTPRequestHandler):
+                    def do_POST(s):
+                        s.rfile.read(int(s.headers.get("Content-Length") or 0)); s.send_response(200); s.end_headers()
+                h.HTTPServer(("127.0.0.1", 14318), R).serve_forever()' >/dev/null 2>&1 < /dev/null & sleep 1; echo started
+                """)
+            #expect(collector.output.contains("started"))
+            var otel = MetricServerDraft(type: .opentelemetry)
+            otel.id = "pflive-otel"
+            otel.server = "127.0.0.1"
+            otel.port = "14318"
+            otel.otelProtocol = "http"
+            otel.otelHeaders = #"{"X-Test": "proxfleet"}"#
+            otel.otelResourceAttributes = #"{"cluster": "lab"}"#
+            otel.otelCompression = "none"
+            otel.otelTimeout = "3"
+            #expect(otel.problems(isNew: true).isEmpty)
+            _ = try await session.send(PVE.createMetricServer(otel))
+            var savedOtel = try #require(MetricServerDraft(try await session.send(PVE.metricServer("pflive-otel"))))
+            savedOtel.id = "pflive-otel"
+            #expect(savedOtel == otel)
+            _ = try await runOnNode(session, node: node, "pkill -f 'HTTPServer((\"127.0.0.1\", 14318)' ; true")
+        }
 
-        for id in ["pflive-graphite", "pflive-influxudp", "pflive-influx", "pflive-otel"] {
+        for id in ["pflive-graphite", "pflive-influxudp", "pflive-influx"] + (hasOpenTelemetry ? ["pflive-otel"] : []) {
             _ = try await session.send(PVE.deleteMetricServer(id))
         }
         #expect(try await !session.send(PVE.metricServers()).contains { $0.id.hasPrefix("pflive") })
@@ -2271,7 +2288,13 @@ struct LiveServerTests {
         let pendingVLAN = try #require(try await session.send(PVE.sdnZones()).first { $0.id == "pfvlan" })
         #expect(pendingVLAN.state == .new && pendingVLAN["bridge"] == "vmbr0" && pendingVLAN.running["bridge"] == nil)
         #expect(try await session.send(PVE.sdnVNets()).first { $0.id == "pfvlnet" }?["tag"] == "30")
-        _ = try await session.send(PVE.rollbackSDN())
+        if try await version(session).supports(.sdnRevert) {
+            _ = try await session.send(PVE.rollbackSDN())
+        } else {
+            // Older servers cannot revert; deleting what was never applied drops it.
+            _ = try await session.send(PVE.deleteSDNVNet("pfvlnet"))
+            _ = try await session.send(PVE.deleteSDNZone("pfvlan"))
+        }
         #expect(try await !session.send(PVE.sdnZones()).contains { $0.id == "pfvlan" })
         #expect(try await !session.send(PVE.sdnVNets()).contains { $0.id == "pfvlnet" })
 
@@ -2601,33 +2624,43 @@ struct LiveServerTests {
     @Test func datacenterOptionsExtras() async throws {
         let (session, _) = try await rootSession()
         let options = DatacenterOptionsDraft(try await session.send(PVE.datacenterOptions()))
+        let release = try await version(session)
         var edited = options
         edited.tagColors = [TagColor(tag: "prod", background: "C62828"), TagColor(tag: "web", background: "2E7D32", text: "FFFFFF")]
         edited.fillWebauthn(host: "pve.example.com", port: 8006)
         edited.webauthnAllowsSubdomains = false
         edited.u2fAppID = "https://pve.example.com"
         edited.u2fOrigin = "https://pve.example.com:8006"
-        edited.replicationType = "insecure"
-        edited.replicationNetwork = "10.10.0.0/24"
+        if release.supports(.replicationOptions) {
+            edited.replicationType = "insecure"
+            edited.replicationNetwork = "10.10.0.0/24"
+        }
         edited.fencing = "both"
-        edited.location = Location()
-        edited.location.latitude = "52.2297"
-        edited.location.longitude = "21.0122"
-        edited.location.name = "Warsaw rack"
-        edited.haScheduler = "dynamic"
+        if release.supports(.locations) {
+            edited.location = Location()
+            edited.location.latitude = "52.2297"
+            edited.location.longitude = "21.0122"
+            edited.location.name = "Warsaw rack"
+        }
         edited.haRebalanceOnStart = true
-        edited.haAutoRebalance = true
-        edited.haRebalanceThreshold = "40"
-        edited.haRebalanceMethod = "topsis"
+        if release.supports(.haLoadBalancing) {
+            edited.haScheduler = "dynamic"
+            edited.haAutoRebalance = true
+            edited.haRebalanceThreshold = "40"
+            edited.haRebalanceMethod = "topsis"
+        } else {
+            edited.haScheduler = "static"
+        }
         #expect(edited.problems.isEmpty, "\(edited.problems)")
         _ = try await session.send(PVE.updateDatacenterOptions(edited.changes(from: options)))
         let config = try await session.send(PVE.datacenterOptions())
         let saved = DatacenterOptionsDraft(config)
         #expect(saved.tagColors == edited.tagColors, "\(config.values["tag-style"] ?? "")")
         #expect(saved.webauthnOrigin == "https://pve.example.com:8006" && saved.webauthnID == "pve.example.com" && !saved.webauthnAllowsSubdomains)
-        #expect(saved.u2fAppID == "https://pve.example.com" && saved.replicationType == "insecure" && saved.replicationNetwork == "10.10.0.0/24")
+        #expect(saved.u2fAppID == "https://pve.example.com" && saved.replicationType == edited.replicationType && saved.replicationNetwork == edited.replicationNetwork)
         #expect(saved.fencing == "both" && saved.location == edited.location)
-        #expect(saved.haScheduler == "dynamic" && saved.haRebalanceOnStart && saved.haAutoRebalance && saved.haRebalanceThreshold == "40" && saved.haRebalanceMethod == "topsis")
+        #expect(saved.haScheduler == edited.haScheduler && saved.haRebalanceOnStart && saved.haAutoRebalance == edited.haAutoRebalance)
+        #expect(saved.haRebalanceThreshold == edited.haRebalanceThreshold && saved.haRebalanceMethod == edited.haRebalanceMethod)
         #expect(saved.changes(from: saved).isEmpty)
         _ = try await session.send(PVE.updateDatacenterOptions(options.changes(from: saved)))
         #expect(DatacenterOptionsDraft(try await session.send(PVE.datacenterOptions())) == options)
@@ -2641,21 +2674,28 @@ struct LiveServerTests {
         let vm = GuestReference(node: node, vmid: 102, kind: .virtualMachine)
         try #require(try await session.send(PVE.guestStatus(container)).powerState == .stopped, "CT 202 should be stopped")
         try #require(try await session.send(PVE.guestStatus(vm)).powerState == .running, "VM 102 should be running")
+        // Older servers have bulk actions per node only.
+        let release = try await self.version(session)
+        func bulk(_ draft: NodeBulkActionDraft) async throws -> String {
+            try await session.send(release.supports(.datacenterBulkActions)
+                ? PVE.clusterBulkAction(draft)
+                : PVE.bulkAction(node: node, draft, legacyWorkers: !release.supports(.bulkActionParallelJobs)))
+        }
 
-        let start = try await session.send(PVE.clusterBulkAction(NodeBulkActionDraft(action: .start, vmids: [202])))
+        let start = try await bulk(NodeBulkActionDraft(action: .start, vmids: [202]))
         #expect(try await finishTask(session, node: node, start)?.succeeded == true)
         #expect(try await session.send(PVE.guestStatus(container)).powerState == .running)
         var shutdown = NodeBulkActionDraft(action: .shutdown, vmids: [202])
         shutdown.timeout = 30
-        let stop = try await session.send(PVE.clusterBulkAction(shutdown))
+        let stop = try await bulk(shutdown)
         #expect(try await finishTask(session, node: node, stop)?.succeeded == true)
         #expect(try await session.send(PVE.guestStatus(container)).powerState == .stopped)
 
-        let hibernate = try await session.send(PVE.clusterBulkAction(NodeBulkActionDraft(action: .hibernate, vmids: [102])))
+        let hibernate = try await bulk(NodeBulkActionDraft(action: .hibernate, vmids: [102]))
         #expect(try await finishTask(session, node: node, hibernate)?.succeeded == true)
         let hibernated = try await session.send(PVE.guestConfig(vm))
         #expect(hibernated.values["vmstate"] != nil && hibernated.values["lock"] == "suspended")
-        let resume = try await session.send(PVE.clusterBulkAction(NodeBulkActionDraft(action: .start, vmids: [102])))
+        let resume = try await bulk(NodeBulkActionDraft(action: .start, vmids: [102]))
         #expect(try await finishTask(session, node: node, resume)?.succeeded == true)
         #expect(try await session.send(PVE.guestStatus(vm)).powerState == .running)
 
