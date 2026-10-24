@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PBSKit
 import ProxmoxCore
 import PVEKit
 
@@ -12,7 +13,7 @@ public final class ServerOnboarding {
         case certificate(CertificateDetails)
         case credentials
         case secondFactor(SecondFactorChallenge)
-        /// The server runs a Proxmox VE release older than ProxFleet supports; the user may add it anyway.
+        /// The server runs a release older than ProxFleet supports; the user may add it anyway.
         case unsupportedRelease(version: String)
         /// The server belongs to a cluster that is already saved under another entry.
         case duplicateCluster(existing: ServerProfile)
@@ -29,10 +30,15 @@ public final class ServerOnboarding {
     public var username = "root"
     public var password = ""
     public var rememberPassword = true
+    /// The kind of server the user expects. It sets the default port, and changes when the address turns out to be
+    /// the other product.
+    public var product: ProxmoxProduct = .virtualEnvironment
+    /// True when the address answered as the other product than the one chosen, which the flow switched to.
+    public private(set) var switchedProduct = false
 
     private let fleet: Fleet
-    private let product: ProxmoxProduct = .virtualEnvironment
     private var address: ServerAddress?
+    private var sessionProduct: ProxmoxProduct?
     private var transport: (any HTTPTransport)?
     private var session: ProxmoxSession?
     private var trustedFingerprints: [String] = []
@@ -61,18 +67,33 @@ public final class ServerOnboarding {
             return
         }
         if parsed.host.lowercased() == Fleet.demoHost {
-            step = .finished(fleet.addDemoServer())
+            // Both demo servers, so App Review sees the backup server too; the cluster opens.
+            let cluster = fleet.addDemoServer()
+            fleet.addDemoBackupServer()
+            step = .finished(product == .backupServer ? fleet.addDemoBackupServer() : cluster)
             return
         }
-        if parsed != address {
+        switchedProduct = false
+        if parsed != address || product != sessionProduct {
             address = parsed
             trustedFingerprints = []
-            let draft = draftProfile(address: parsed)
-            let transport = fleet.environment.makeTransport(draft)
+            let transport = fleet.environment.makeTransport(draftProfile(address: parsed))
             self.transport = transport
-            session = ProxmoxSession(address: parsed, product: product, transport: transport)
+            makeSession(parsed)
         }
         await loadRealms()
+    }
+
+    /// Whether the address names a port; without one, the default ports of both products are tried.
+    private var hasTypedPort: Bool {
+        // Without a port the default is used, and 0 is no valid default, so parsing fails.
+        ServerAddress(parsing: addressText, defaultPort: 0) != nil
+    }
+
+    private func makeSession(_ address: ServerAddress) {
+        guard let transport else { return }
+        session = ProxmoxSession(address: address, product: product, transport: transport)
+        sessionProduct = product
     }
 
     public func trustCertificate(_ certificate: CertificateDetails) async {
@@ -141,10 +162,10 @@ public final class ServerOnboarding {
     // MARK: - Internals
 
     private func loadRealms() async {
-        guard let session else { return }
+        guard session != nil else { return }
         await run {
             do {
-                let realms = try await session.sendUnauthenticated(ProxmoxAccess.realms())
+                let realms = try await self.probe()
                 self.realms = realms
                 if !realms.contains(where: { $0.realm == self.realm }) {
                     self.realm = realms.first(where: \.isDefault)?.realm ?? realms.first?.realm ?? "pam"
@@ -154,10 +175,10 @@ public final class ServerOnboarding {
                 self.step = .certificate(details)
             } catch ProxmoxError.api(let status, _, _) where status == 404 || status == 501 {
                 self.step = .address
-                throw ProxmoxError.invalidResponse("no Proxmox VE API at this address, check the port")
+                throw ProxmoxError.invalidResponse("no Proxmox API at this address, check the port")
             } catch ProxmoxError.invalidResponse {
                 self.step = .address
-                throw ProxmoxError.invalidResponse("no Proxmox VE API at this address, check the port")
+                throw ProxmoxError.invalidResponse("no Proxmox API at this address, check the port")
             } catch {
                 // Errors are shown on the address step, where the user can correct the input.
                 self.step = .address
@@ -166,8 +187,53 @@ public final class ServerOnboarding {
         }
     }
 
+    /// Finds out which product answers and lists its login realms. Without a typed port, a server that cannot be
+    /// reached at the chosen product's port is tried at the other product's, so both work with the defaults.
+    private func probe() async throws -> [Realm] {
+        do {
+            return try await recognizeProductAndListRealms()
+        } catch ProxmoxError.transport(let message) {
+            guard !hasTypedPort, let address else { throw ProxmoxError.transport(message) }
+            let chosen = product
+            product = chosen == .virtualEnvironment ? .backupServer : .virtualEnvironment
+            self.address = ServerAddress(host: address.host, port: product.defaultPort)
+            makeSession(self.address!)
+            do {
+                let realms = try await recognizeProductAndListRealms()
+                switchedProduct = true
+                return realms
+            } catch ProxmoxError.transport {
+                // Nothing there either: report the address as the user typed it.
+                product = chosen
+                self.address = address
+                makeSession(address)
+                throw ProxmoxError.transport(message)
+            }
+        }
+    }
+
+    private func recognizeProductAndListRealms() async throws -> [Realm] {
+        guard let session, let address else { throw ProxmoxError.notAuthenticated }
+        let answering = try await session.detectProduct()
+        if answering != product {
+            product = answering
+            switchedProduct = true
+            makeSession(address)
+        }
+        return try await self.session!.sendUnauthenticated(ProxmoxAccess.realms())
+    }
+
     private func didAuthenticate(_ ticket: AuthTicket) async {
         self.ticket = ticket
+        if product == .backupServer {
+            nodeName = try? await session?.send(PBS.nodes()).first?.name
+            if let version = try? await session?.send(PBS.version()), !version.isSupported {
+                step = .unsupportedRelease(version: version.displayVersion)
+                return
+            }
+            save(ticket)
+            return
+        }
         if ticket.clusterName == nil, let session {
             let status = try? await session.send(PVE.clusterStatus())
             nodeName = status?.first { $0.kind == .node && $0.isLocal == true }?.name

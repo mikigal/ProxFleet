@@ -242,7 +242,10 @@ struct ConnectionTests {
             return
         }
         #expect(profile.isDemo)
-        #expect(fleet.profiles == [profile])
+        #expect(profile.product == .virtualEnvironment)
+        // The demo backup server comes along.
+        #expect(fleet.profiles.first == profile)
+        #expect(fleet.profiles.count == 2)
     }
 
     @Test func removingServerDeletesSecrets() async throws {

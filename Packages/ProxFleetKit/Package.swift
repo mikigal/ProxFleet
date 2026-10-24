@@ -24,7 +24,7 @@ let package = Package(
         // PVEKit, which both products share.
         .target(name: "PBSKit", dependencies: ["ProxmoxCore", "PVEKit"]),
         // App domain: saved servers, credentials, live connections.
-        .target(name: "FleetCore", dependencies: ["ProxmoxCore", "ProxmoxURLSession", "PVEKit", "DemoServer"]),
+        .target(name: "FleetCore", dependencies: ["ProxmoxCore", "ProxmoxURLSession", "PVEKit", "PBSKit", "DemoServer"]),
         // The system zlib, which every platform the app may run on has.
         .systemLibrary(name: "CZlib", path: "Sources/CZlib"),
         // Console protocols: terminal (termproxy) and VNC (RFB) over WebSockets. Portable; JPEG decoding uses
@@ -36,7 +36,7 @@ let package = Package(
         .testTarget(name: "ProxmoxCoreTests", dependencies: ["ProxmoxCore"]),
         .testTarget(name: "PVEKitTests", dependencies: ["PVEKit", "DemoServer"], resources: [.copy("Fixtures")]),
         .testTarget(name: "PBSKitTests", dependencies: ["PBSKit"], resources: [.copy("Fixtures")]),
-        .testTarget(name: "FleetCoreTests", dependencies: ["FleetCore", "DemoServer"]),
+        .testTarget(name: "FleetCoreTests", dependencies: ["FleetCore", "PBSKit", "DemoServer"]),
         // Runs against real servers only when PROXFLEET_TEST_SERVER_ENV (Proxmox VE) or PROXFLEET_PBS_TEST_SERVER_ENV
         // (Proxmox Backup Server) points to an env file, see CONTRIBUTING.md.
         .testTarget(name: "LiveServerTests", dependencies: ["ProxmoxCore", "ProxmoxURLSession", "PVEKit", "PBSKit", "ProxmoxConsole"]),

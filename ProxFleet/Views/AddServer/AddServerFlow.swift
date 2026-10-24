@@ -1,7 +1,17 @@
 import FleetCore
+import PBSKit
 import ProxmoxCore
 import PVEKit
 import SwiftUI
+
+extension ProxmoxProduct {
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .virtualEnvironment: "Proxmox VE"
+        case .backupServer: "Proxmox Backup Server"
+        }
+    }
+}
 
 /// Sheet that walks through adding a server.
 struct AddServerFlow: View {
@@ -75,6 +85,16 @@ private struct AddressStep: View {
     var body: some View {
         Form {
             Section {
+                Picker("Server", selection: $onboarding.product) {
+                    Text("Proxmox VE").tag(ProxmoxProduct.virtualEnvironment)
+                    Text("Backup Server").tag(ProxmoxProduct.backupServer)
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                .accessibilityIdentifier("product")
+            }
+            Section {
                 TextField("Host or IP address", text: $onboarding.addressText)
                     .keyboardType(.URL)
                     .textContentType(.URL)
@@ -85,7 +105,12 @@ private struct AddressStep: View {
                     .onSubmit(submit)
                     .accessibilityIdentifier("address")
             } footer: {
-                Text("For example 192.168.1.10 or pve.home.lan. Port 8006 is used unless you add another, like pve.lan:443. For a cluster, any node works.")
+                switch onboarding.product {
+                case .virtualEnvironment:
+                    Text("For example 192.168.1.10 or pve.home.lan. Port 8006 is used unless you add another, like pve.lan:443. For a cluster, any node works.")
+                case .backupServer:
+                    Text("For example 192.168.1.20 or pbs.home.lan. Port 8007 is used unless you add another, like pbs.lan:443.")
+                }
             }
             ErrorSection(message: onboarding.errorMessage)
         }
@@ -137,6 +162,20 @@ private struct CredentialsStep: View {
             } header: {
                 Text(onboarding.addressText)
             }
+            if onboarding.switchedProduct {
+                Section {
+                    Label {
+                        switch onboarding.product {
+                        case .virtualEnvironment: Text("This address belongs to a Proxmox VE server.")
+                        case .backupServer: Text("This address belongs to a Proxmox Backup Server.")
+                        }
+                    } icon: {
+                        Image(systemName: onboarding.product == .backupServer ? "externaldrive.badge.timemachine" : "server.rack")
+                            .foregroundStyle(.tint)
+                    }
+                    .accessibilityIdentifier("switchedProduct")
+                }
+            }
             Section {
                 Toggle("Remember Password", isOn: $onboarding.rememberPassword)
             } footer: {
@@ -144,7 +183,7 @@ private struct CredentialsStep: View {
             }
             ErrorSection(message: onboarding.errorMessage)
         }
-        .navigationTitle(isCovered ? "Two-Factor Authentication" : "Sign In")
+        .navigationTitle(isCovered ? "Two-Factor Authentication" : onboarding.product == .backupServer ? "Sign In to Backup Server" : "Sign In")
         .toolbar {
             if !isCovered {
                 ToolbarItem(placement: .confirmationAction) {
@@ -203,13 +242,23 @@ private struct UnsupportedReleaseStep: View {
         Form {
             Section {
                 Label {
-                    Text("This server runs Proxmox VE \(version), which ProxFleet does not officially support. Some features may not work correctly.")
+                    switch onboarding.product {
+                    case .virtualEnvironment:
+                        Text("This server runs Proxmox VE \(version), which ProxFleet does not officially support. Some features may not work correctly.")
+                    case .backupServer:
+                        Text("This server runs Proxmox Backup Server \(version), which ProxFleet does not officially support. Some features may not work correctly.")
+                    }
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 }
             } footer: {
-                Text("ProxFleet supports Proxmox VE \(String(PVEVersionNumber.oldestSupported.major)) and newer.")
+                switch onboarding.product {
+                case .virtualEnvironment:
+                    Text("ProxFleet supports Proxmox VE \(String(PVEVersionNumber.oldestSupported.major)) and newer.")
+                case .backupServer:
+                    Text("ProxFleet supports Proxmox Backup Server \(String(PBSVersion.oldestSupported.major)) and newer.")
+                }
             }
             Section {
                 Button("Add Anyway") { onboarding.addUnsupportedRelease() }

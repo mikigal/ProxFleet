@@ -5,18 +5,22 @@ import ProxmoxCore
 /// Launch arguments and environment used by UI tests, screenshots and development.
 ///
 /// - `-demo`: add the demo cluster and open it.
+/// - `-demoBackupServer`: add the demo backup server and open it.
 /// - `-inMemory`: do not read or write saved servers or the app lock.
 /// - `-demoVersion 8.4.0`: the demo cluster reports this Proxmox VE version.
 /// - DEBUG builds only: `PROXFLEET_DEBUG_ADDRESS`, `PROXFLEET_DEBUG_USER`, `PROXFLEET_DEBUG_REALM`,
-///   `PROXFLEET_DEBUG_PASSWORD` and optionally `PROXFLEET_DEBUG_FINGERPRINT` add a test server and open it.
+///   `PROXFLEET_DEBUG_PASSWORD` and optionally `PROXFLEET_DEBUG_FINGERPRINT` add a test server and open it;
+///   `PROXFLEET_DEBUG_PRODUCT=backupServer` makes it a Proxmox Backup Server.
 ///   See `scripts/run-simulator.sh`.
 struct LaunchOptions {
     var demo: Bool
+    var demoBackupServer: Bool
     var inMemory: Bool
     var demoVersion: String?
     var debugServer: DebugServer?
 
     struct DebugServer {
+        var product: ProxmoxProduct
         var address: ServerAddress
         var username: String
         var realm: String
@@ -26,15 +30,18 @@ struct LaunchOptions {
 
     init(arguments: [String], environment: [String: String]) {
         demo = arguments.contains("-demo")
+        demoBackupServer = arguments.contains("-demoBackupServer")
         inMemory = arguments.contains("-inMemory")
         if let index = arguments.firstIndex(of: "-demoVersion"), arguments.indices.contains(index + 1) {
             demoVersion = arguments[index + 1]
         }
         #if DEBUG
+        let product = environment["PROXFLEET_DEBUG_PRODUCT"].flatMap(ProxmoxProduct.init) ?? .virtualEnvironment
         if let text = environment["PROXFLEET_DEBUG_ADDRESS"],
-           let address = ServerAddress(parsing: text, defaultPort: ProxmoxProduct.virtualEnvironment.defaultPort),
+           let address = ServerAddress(parsing: text, defaultPort: product.defaultPort),
            let password = environment["PROXFLEET_DEBUG_PASSWORD"] {
             debugServer = DebugServer(
+                product: product,
                 address: address,
                 username: environment["PROXFLEET_DEBUG_USER"] ?? "root",
                 realm: environment["PROXFLEET_DEBUG_REALM"] ?? "pam",
@@ -56,6 +63,9 @@ struct LaunchOptions {
         if let debugServer {
             return fleet.addDebugServer(debugServer)
         }
+        if demoBackupServer {
+            return fleet.addDemoBackupServer().id
+        }
         if demo {
             return fleet.addDemoServer().id
         }
@@ -70,6 +80,7 @@ extension Fleet {
         }
         let profile = ServerProfile(
             name: server.address.host,
+            product: server.product,
             addresses: [server.address],
             username: server.username,
             realm: server.realm,

@@ -1,4 +1,5 @@
 import FleetCore
+import PBSKit
 import PVEKit
 import SwiftUI
 
@@ -29,7 +30,8 @@ struct TasksView: View {
             Section("Recent") {
                 ForEach(recent) { task in
                     NavigationLink(value: ServerRoute.task(node: task.node, upid: task.upid)) {
-                        ClusterTaskRow(task: task, showsGuest: true)
+                        // A backup server is a single node, which its tasks call `localhost`.
+                        ClusterTaskRow(task: task, showsGuest: true, showsNode: !connection.isBackupServer)
                     }
                     .swipeActions {
                         if task.isRunning {
@@ -72,7 +74,7 @@ struct TasksView: View {
 
     private func load() async {
         do {
-            recent = try await connection.send(PVE.clusterTasks())
+            recent = try await connection.isBackupServer ? connection.send(PBS.tasks()) : connection.send(PVE.clusterTasks())
             error = nil
         } catch is CancellationError {
         } catch {
@@ -94,6 +96,7 @@ struct TasksView: View {
 struct ClusterTaskRow: View {
     let task: ClusterTask
     let showsGuest: Bool
+    var showsNode = true
 
     var body: some View {
         HStack(spacing: 12) {
@@ -102,7 +105,7 @@ struct ClusterTaskRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(showsGuest ? TaskDescription.title(type: task.type, objectID: task.objectID) : TaskDescription.title(type: task.type, objectID: nil))
                     .font(.body)
-                Text("\(task.startTime, format: .relative(presentation: .named)) · \(task.user) · \(task.node)")
+                Text(showsNode ? "\(task.startTime, format: .relative(presentation: .named)) · \(task.user) · \(task.node)" : "\(task.startTime, format: .relative(presentation: .named)) · \(task.user)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

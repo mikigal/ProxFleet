@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A1F000000000000000000101 /* FleetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000201 /* FleetCore */; };
 		A1F000000000000000000102 /* PVEKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000202 /* PVEKit */; };
+		A1F000000000000000000106 /* PBSKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000206 /* PBSKit */; };
 		A1F000000000000000000103 /* ProxmoxCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000203 /* ProxmoxCore */; };
 		A1F000000000000000000104 /* ProxmoxConsole in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000204 /* ProxmoxConsole */; };
 		A1F000000000000000000105 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = A1F000000000000000000205 /* SwiftTerm */; };
@@ -50,6 +51,7 @@
 			files = (
 				A1F000000000000000000101 /* FleetCore in Frameworks */,
 				A1F000000000000000000102 /* PVEKit in Frameworks */,
+				A1F000000000000000000106 /* PBSKit in Frameworks */,
 				A1F000000000000000000103 /* ProxmoxCore in Frameworks */,
 				A1F000000000000000000104 /* ProxmoxConsole in Frameworks */,
 				A1F000000000000000000105 /* SwiftTerm in Frameworks */,
@@ -115,6 +117,7 @@
 			packageProductDependencies = (
 				A1F000000000000000000201 /* FleetCore */,
 				A1F000000000000000000202 /* PVEKit */,
+				A1F000000000000000000206 /* PBSKit */,
 				A1F000000000000000000203 /* ProxmoxCore */,
 				A1F000000000000000000204 /* ProxmoxConsole */,
 				A1F000000000000000000205 /* SwiftTerm */,
@@ -386,6 +389,10 @@
 		A1F000000000000000000203 /* ProxmoxCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ProxmoxCore;
+		};
+		A1F000000000000000000206 /* PBSKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PBSKit;
 		};
 		A1F000000000000000000204 /* ProxmoxConsole */ = {
 			isa = XCSwiftPackageProductDependency;

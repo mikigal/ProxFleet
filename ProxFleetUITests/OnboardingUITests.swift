@@ -51,7 +51,7 @@ final class OnboardingUITests: XCTestCase {
         // Not a Proxmox server: the request now passes TLS but finds no API, and the user is sent back to the address.
         let error = app.descendants(matching: .any).matching(identifier: "errorMessage").firstMatch
         XCTAssertTrue(error.waitForExistence(timeout: 15))
-        XCTAssertTrue(error.label.contains("no Proxmox VE API"), error.label)
+        XCTAssertTrue(error.label.contains("no Proxmox API"), error.label)
         XCTAssertTrue(app.textFields["address"].exists)
         snapshot("06-after-trust")
     }

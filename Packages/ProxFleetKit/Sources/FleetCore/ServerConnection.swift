@@ -25,6 +25,8 @@ public final class ServerConnection: Identifiable {
     public private(set) var snapshot: ClusterSnapshot?
     /// Proxmox VE version of the node the app talks to, loaded with the first snapshot.
     public private(set) var version: PVEVersion?
+    /// The state of a Proxmox Backup Server, which has no cluster snapshot.
+    public internal(set) var backupServer: BackupServerSnapshot?
     /// Error of the most recent background refresh, while older data is still shown.
     public private(set) var refreshError: String?
     public private(set) var isRefreshing = false
@@ -39,6 +41,7 @@ public final class ServerConnection: Identifiable {
     /// Tasks started from the app on this server.
     public let tasks: TaskCenter
     private var addressIndex = 0
+    @ObservationIgnored private var connectAttempt: Task<Void, Never>?
 
     init(profile: ServerProfile, environment: FleetEnvironment, session: ProxmoxSession? = nil, transport: (any HTTPTransport)? = nil, onProfileChange: @escaping @MainActor (ServerProfile) -> Void) {
         self.id = profile.id
@@ -67,13 +70,23 @@ public final class ServerConnection: Identifiable {
     // MARK: - Connecting
 
     /// Loads data using the saved ticket or password. Does nothing when already connected.
+    ///
+    /// The attempt runs on its own and callers wait for it, also a second caller while it runs: a screen that
+    /// appears twice in a row (as navigation sometimes does) would otherwise cancel the first attempt, which ends
+    /// disconnected, while the second caller already returned because a connection was in progress.
     public func connect() async {
-        switch state {
-        case .connected, .connecting: return
-        default: break
+        if state == .connected { return }
+        if let attempt = connectAttempt {
+            await attempt.value
+            return
         }
+        // Signing in with a password or a trusted certificate is under way.
+        if state == .connecting { return }
         state = .connecting
-        await establish()
+        let attempt = Task { await establish() }
+        connectAttempt = attempt
+        await attempt.value
+        connectAttempt = nil
     }
 
     /// Signs in with a password typed by the user.
@@ -129,6 +142,7 @@ public final class ServerConnection: Identifiable {
         environment.credentials.setTicket(nil, for: profile.id)
         snapshot = nil
         version = nil
+        backupServer = nil
         state = .disconnected
     }
 
@@ -240,7 +254,7 @@ public final class ServerConnection: Identifiable {
     /// Refreshes periodically until the calling task is cancelled, e.g. when a view disappears.
     public func keepRefreshing(every interval: Duration = .seconds(5)) async {
         // Catch up right away when the data is older than one interval, e.g. after coming back from another screen.
-        if let fetchedAt = snapshot?.fetchedAt, Date().timeIntervalSince(fetchedAt) > Double(interval.components.seconds) {
+        if let fetchedAt = snapshot?.fetchedAt ?? backupServer?.fetchedAt, Date().timeIntervalSince(fetchedAt) > Double(interval.components.seconds) {
             await refresh()
         }
         while !Task.isCancelled {
@@ -251,16 +265,23 @@ public final class ServerConnection: Identifiable {
     }
 
     private func loadSnapshot() async throws {
-        let session = session
-        let needsVersion = version == nil
-        // Optional: without it, the app offers everything, as servers refuse what they lack anyway.
-        async let loadedVersion = needsVersion ? try? await session.send(PVE.version()) : nil
-        let snapshot = try await session.fetchClusterSnapshot()
-        if let loadedVersion = await loadedVersion { version = loadedVersion }
-        self.snapshot = snapshot
+        let name: String?
+        if isBackupServer {
+            let backupServer = try await fetchBackupServerSnapshot(previous: backupServer)
+            self.backupServer = backupServer
+            name = backupServer.nodeName
+        } else {
+            let session = session
+            let needsVersion = version == nil
+            // Optional: without it, the app offers everything, as servers refuse what they lack anyway.
+            async let loadedVersion = needsVersion ? try? await session.send(PVE.version()) : nil
+            let snapshot = try await session.fetchClusterSnapshot()
+            if let loadedVersion = await loadedVersion { version = loadedVersion }
+            self.snapshot = snapshot
+            name = snapshot.clusterName ?? snapshot.nodes.first(where: \.isLocal)?.name
+        }
         // Servers added by address alone get a meaningful name once we know what they are.
-        if profile.name == profile.primaryAddress?.host,
-           let name = snapshot.clusterName ?? snapshot.nodes.first(where: \.isLocal)?.name {
+        if profile.name == profile.primaryAddress?.host, let name {
             profile.name = name
             onProfileChange(profile)
         }
@@ -303,10 +324,11 @@ public final class ServerConnection: Identifiable {
         _ = try await session.send(PVE.stopTask(node: node, upid: upid))
     }
 
-    /// Whether the user may stop a task: their own tasks always, others with `Sys.Modify` on the node.
+    /// Whether the user may stop a task: their own tasks always, others with `Sys.Modify` on the node, or on
+    /// `/system/tasks` of a backup server.
     public func canStopTask(startedBy user: String, node: String) async -> Bool {
         if user == profile.userID { return true }
-        return (try? await session.privileges(on: "/nodes/\(node)"))?.contains("Sys.Modify") ?? true
+        return (try? await session.privileges(on: isBackupServer ? "/system/tasks" : "/nodes/\(node)"))?.contains("Sys.Modify") ?? true
     }
 
     /// Whether the server's Proxmox VE release has a feature; true while its version is unknown.
