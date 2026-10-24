@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "filename": "proxy.pem",
+      "fingerprint": "8e:58:18:00:a8:a2:0d:e5:26:dc:69:a9:0a:ca:8d:8f:3f:22:af:f7:fe:be:3c:ee:ee:09:02:86:f1:c8:27:a5",
+      "issuer": "O = Proxmox Backup Server, OU = 528F49A4-04AB-4AF7-BFE0-263D834C0EAC, CN = pbs-claude.local",
+      "notafter": 33328833928,
+      "notbefore": 1792833928,
+      "pem": "-----BEGIN CERTIFICATE-----\n(shortened)\n-----END CERTIFICATE-----\n",
+      "public-key-bits": 4096,
+      "public-key-type": "rsaEncryption",
+      "san": [
+        "localhost",
+        "pbs-claude",
+        "pbs-claude.local"
+      ],
+      "subject": "O = Proxmox Backup Server, OU = 528F49A4-04AB-4AF7-BFE0-263D834C0EAC, CN = pbs-claude.local"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "data": [
+    {
+      "devpath": "/dev/sda",
+      "disk-type": "hdd",
+      "gpt": true,
+      "model": "QEMU_HARDDISK",
+      "name": "sda",
+      "partitions": null,
+      "rpm": null,
+      "serial": "drive-scsi0",
+      "size": 34359738368,
+      "status": "passed",
+      "used": "mounted",
+      "vendor": "QEMU",
+      "wearout": null,
+      "wwn": null
+    },
+    {
+      "devpath": "/dev/sdb",
+      "disk-type": "hdd",
+      "gpt": false,
+      "model": "QEMU_HARDDISK",
+      "name": "sdb",
+      "partitions": null,
+      "rpm": null,
+      "serial": "drive-scsi1",
+      "size": 34359738368,
+      "status": "passed",
+      "used": "unused",
+      "vendor": "QEMU",
+      "wearout": null,
+      "wwn": null
+    }
+  ]
+}

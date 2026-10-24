@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "crypt-mode": "none",
+      "filename": "qemu-server.conf.blob",
+      "size": 327
+    },
+    {
+      "crypt-mode": "none",
+      "filename": "drive-scsi0.img.fidx",
+      "size": 4294967296
+    },
+    {
+      "crypt-mode": "none",
+      "filename": "index.json.blob",
+      "size": 501
+    },
+    {
+      "filename": "client.log.blob"
+    }
+  ]
+}

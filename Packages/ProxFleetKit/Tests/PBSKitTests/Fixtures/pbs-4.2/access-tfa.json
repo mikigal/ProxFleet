@@ -1,0 +1,15 @@
+{
+  "data": [
+    {
+      "entries": [
+        {
+          "created": 1792850928,
+          "description": "ProxFleet tests",
+          "id": "400ad329-4226-4a30-8793-495158921914",
+          "type": "totp"
+        }
+      ],
+      "userid": "tfa@pbs"
+    }
+  ]
+}

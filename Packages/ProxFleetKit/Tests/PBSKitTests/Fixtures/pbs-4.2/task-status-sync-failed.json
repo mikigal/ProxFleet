@@ -1,0 +1,14 @@
+{
+  "data": {
+    "exitstatus": "Querying namespaces failed - HTTP error 400 Bad Request - no such datastore 'missing'",
+    "id": "self:missing:store2::pf-broken",
+    "node": "pbs-claude",
+    "pid": 715,
+    "pstart": 536,
+    "starttime": 1792851145,
+    "status": "stopped",
+    "type": "syncjob",
+    "upid": "UPID:pbs-claude:000002CB:00000218:00000013:6ADCBCC9:syncjob:self\\x3amissing\\x3astore2\\x3a\\x3apf\\x2dbroken:root@pam:",
+    "user": "root@pam"
+  }
+}

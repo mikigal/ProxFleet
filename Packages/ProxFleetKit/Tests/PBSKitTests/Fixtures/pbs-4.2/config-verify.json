@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "comment": "Daily verification",
+      "id": "pf-verify",
+      "ignore-verified": true,
+      "outdated-after": 30,
+      "schedule": "daily",
+      "store": "store1"
+    }
+  ],
+  "digest": "29b0638851c242efcc6968ba4c34c6fd25ccafde83c70efc9daa655ba350819f"
+}

@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "auth-id": "root@pam!seed",
+      "comment": "This server, for sync tests",
+      "fingerprint": "8e:58:18:00:a8:a2:0d:e5:26:dc:69:a9:0a:ca:8d:8f:3f:22:af:f7:fe:be:3c:ee:ee:09:02:86:f1:c8:27:a5",
+      "host": "127.0.0.1",
+      "name": "self"
+    }
+  ],
+  "digest": "268a8b565f29e6ed46c67be121d0552aac261da15a9a3fcc21842a072df3a933"
+}

@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "comment": "Keep a week",
+      "id": "pf-prune",
+      "keep-daily": 7,
+      "keep-last": 3,
+      "keep-weekly": 4,
+      "last-run-endtime": 1792851109,
+      "last-run-state": "OK",
+      "last-run-upid": "UPID:pbs-claude:000002CB:00000218:00000012:6ADCBCA5:prunejob:store1:root@pam:",
+      "next-run": 1792879200,
+      "schedule": "daily",
+      "store": "store1"
+    }
+  ],
+  "digest": "f55d9698b283e8e39d0569e00456e4407d0c00ed297514814decf9b6d57cdec6"
+}

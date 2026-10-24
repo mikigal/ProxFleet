@@ -1,0 +1,222 @@
+{
+  "data": [
+    {
+      "n": 1,
+      "t": "2026-10-24T16:11:48+02:00: Starting datastore sync job 'self:store1:store2::pf-sync-pull'"
+    },
+    {
+      "n": 2,
+      "t": "2026-10-24T16:11:48+02:00: sync datastore 'store2' from 'self/store1'"
+    },
+    {
+      "n": 3,
+      "t": "2026-10-24T16:11:48+02:00: ----"
+    },
+    {
+      "n": 4,
+      "t": "2026-10-24T16:11:48+02:00: Syncing datastore 'store1', namespace 'pve' into datastore 'store2', root namespace"
+    },
+    {
+      "n": 5,
+      "t": "2026-10-24T16:11:48+02:00: Found 2 groups to sync (out of 2 total)"
+    },
+    {
+      "n": 6,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:49Z: start sync"
+    },
+    {
+      "n": 7,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:49Z/pct.conf.blob: sync archive"
+    },
+    {
+      "n": 8,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:49Z/root.pxar.didx: sync archive"
+    },
+    {
+      "n": 9,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:49Z/root.pxar.didx: downloaded 4.419 MiB (132.546 MiB/s)"
+    },
+    {
+      "n": 10,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:49Z/catalog.pcat1.didx: sync archive"
+    },
+    {
+      "n": 11,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:49Z/catalog.pcat1.didx: downloaded 5.568 KiB (8.902 MiB/s)"
+    },
+    {
+      "n": 12,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: Snapshot ct/200/2026-10-24T14:09:49Z: got backup log file client.log.blob"
+    },
+    {
+      "n": 13,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:49Z: sync done"
+    },
+    {
+      "n": 14,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: percentage done: 25.00% (0/2 groups, 1/2 snapshots in group #1)"
+    },
+    {
+      "n": 15,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:51Z: start sync"
+    },
+    {
+      "n": 16,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:51Z/pct.conf.blob: sync archive"
+    },
+    {
+      "n": 17,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:51Z/root.pxar.didx: sync archive"
+    },
+    {
+      "n": 18,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:51Z/root.pxar.didx: downloaded 0 B (0 B/s)"
+    },
+    {
+      "n": 19,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:51Z/catalog.pcat1.didx: sync archive"
+    },
+    {
+      "n": 20,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:51Z/catalog.pcat1.didx: downloaded 0 B (0 B/s)"
+    },
+    {
+      "n": 21,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: Snapshot ct/200/2026-10-24T14:09:51Z: got backup log file client.log.blob"
+    },
+    {
+      "n": 22,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: 2026-10-24T14:09:51Z: sync done"
+    },
+    {
+      "n": 23,
+      "t": "2026-10-24T16:11:48+02:00: [ct/200]: percentage done: 50.00% (1/2 groups)"
+    },
+    {
+      "n": 24,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:09:52Z: start sync"
+    },
+    {
+      "n": 25,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:09:52Z/qemu-server.conf.blob: sync archive"
+    },
+    {
+      "n": 26,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:09:52Z/drive-scsi0.img.fidx: sync archive"
+    },
+    {
+      "n": 27,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:09:52Z/drive-scsi0.img.fidx: downloaded 159 B (10.454 KiB/s)"
+    },
+    {
+      "n": 28,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: Snapshot vm/102/2026-10-24T14:09:52Z: got backup log file client.log.blob"
+    },
+    {
+      "n": 29,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:09:52Z: sync done"
+    },
+    {
+      "n": 30,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: percentage done: 75.00% (1/2 groups, 1/2 snapshots in group #2)"
+    },
+    {
+      "n": 31,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:10:01Z: start sync"
+    },
+    {
+      "n": 32,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:10:01Z/qemu-server.conf.blob: sync archive"
+    },
+    {
+      "n": 33,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:10:01Z/drive-scsi0.img.fidx: sync archive"
+    },
+    {
+      "n": 34,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:10:01Z/drive-scsi0.img.fidx: downloaded 0 B (0 B/s)"
+    },
+    {
+      "n": 35,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: Snapshot vm/102/2026-10-24T14:10:01Z: got backup log file client.log.blob"
+    },
+    {
+      "n": 36,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: 2026-10-24T14:10:01Z: sync done"
+    },
+    {
+      "n": 37,
+      "t": "2026-10-24T16:11:48+02:00: [vm/102]: percentage done: 100.00% (2/2 groups)"
+    },
+    {
+      "n": 38,
+      "t": "2026-10-24T16:11:48+02:00: Finished syncing namespace pve, current progress: 2 groups, 0 snapshots"
+    },
+    {
+      "n": 39,
+      "t": "2026-10-24T16:11:48+02:00: ----"
+    },
+    {
+      "n": 40,
+      "t": "2026-10-24T16:11:48+02:00: Syncing datastore 'store1', namespace 'pve/nested' into datastore 'store2', namespace 'nested'"
+    },
+    {
+      "n": 41,
+      "t": "2026-10-24T16:11:48+02:00: Created namespace nested"
+    },
+    {
+      "n": 42,
+      "t": "2026-10-24T16:11:48+02:00: Found 1 groups to sync (out of 1 total)"
+    },
+    {
+      "n": 43,
+      "t": "2026-10-24T16:11:48+02:00: [host/nested-host]: 2026-10-24T14:10:58Z: start sync"
+    },
+    {
+      "n": 44,
+      "t": "2026-10-24T16:11:48+02:00: [host/nested-host]: 2026-10-24T14:10:58Z/etc.pxar.didx: sync archive"
+    },
+    {
+      "n": 45,
+      "t": "2026-10-24T16:11:48+02:00: [host/nested-host]: 2026-10-24T14:10:58Z/etc.pxar.didx: downloaded 542.122 KiB (60.743 MiB/s)"
+    },
+    {
+      "n": 46,
+      "t": "2026-10-24T16:11:48+02:00: [host/nested-host]: 2026-10-24T14:10:58Z/catalog.pcat1.didx: sync archive"
+    },
+    {
+      "n": 47,
+      "t": "2026-10-24T16:11:48+02:00: [host/nested-host]: 2026-10-24T14:10:58Z/catalog.pcat1.didx: downloaded 10.636 KiB (17.114 MiB/s)"
+    },
+    {
+      "n": 48,
+      "t": "2026-10-24T16:11:48+02:00: [host/nested-host]: 2026-10-24T14:10:58Z: sync done"
+    },
+    {
+      "n": 49,
+      "t": "2026-10-24T16:11:48+02:00: [host/nested-host]: percentage done: 100.00% (1/1 snapshots)"
+    },
+    {
+      "n": 50,
+      "t": "2026-10-24T16:11:48+02:00: Finished syncing namespace pve/nested, current progress: 3 groups, 0 snapshots"
+    },
+    {
+      "n": 51,
+      "t": "2026-10-24T16:11:48+02:00: Summary: sync job pulled 4.964 MiB in 9 chunks (average rate: 84.436 MiB/s)"
+    },
+    {
+      "n": 52,
+      "t": "2026-10-24T16:11:48+02:00: sync job 'self:store1:store2::pf-sync-pull' end"
+    },
+    {
+      "n": 53,
+      "t": "2026-10-24T16:11:48+02:00: queued notification (id=36fa4e8f-00f4-43c6-8407-7802f3d3543f)"
+    },
+    {
+      "n": 54,
+      "t": "2026-10-24T16:11:48+02:00: TASK OK"
+    }
+  ],
+  "success": 1,
+  "total": 54
+}

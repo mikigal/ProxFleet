@@ -1,0 +1,14 @@
+{
+  "data": {
+    "exitstatus": "OK",
+    "id": "store1:pf-verify",
+    "node": "pbs-claude",
+    "pid": 715,
+    "pstart": 536,
+    "starttime": 1792851105,
+    "status": "stopped",
+    "type": "verificationjob",
+    "upid": "UPID:pbs-claude:000002CB:00000218:00000009:6ADCBCA1:verificationjob:store1\\x3apf\\x2dverify:root@pam:",
+    "user": "root@pam"
+  }
+}

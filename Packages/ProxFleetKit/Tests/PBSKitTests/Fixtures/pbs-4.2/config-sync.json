@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "comment": "Pull from remote",
+      "id": "pf-sync-pull",
+      "remote": "self",
+      "remote-ns": "pve",
+      "remote-store": "store1",
+      "remove-vanished": false,
+      "schedule": "weekly",
+      "store": "store2"
+    },
+    {
+      "comment": "Local pull",
+      "id": "pf-sync-local",
+      "remote-store": "store1",
+      "schedule": "hourly",
+      "store": "store2"
+    }
+  ],
+  "digest": "dfec5c676fd7d1264f05ae30138b01857214daf521dfc940bcd4913b5496e3a2"
+}

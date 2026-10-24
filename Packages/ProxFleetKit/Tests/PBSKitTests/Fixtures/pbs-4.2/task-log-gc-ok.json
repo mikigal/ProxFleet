@@ -1,0 +1,150 @@
+{
+  "data": [
+    {
+      "n": 1,
+      "t": "2026-10-24T16:11:25+02:00: starting garbage collection on store store1"
+    },
+    {
+      "n": 2,
+      "t": "2026-10-24T16:11:26+02:00: Access time update check successful, proceeding with GC."
+    },
+    {
+      "n": 3,
+      "t": "2026-10-24T16:11:26+02:00: Using access time cutoff 1d 5m, minimum access time is 2026-10-23T14:06:25Z"
+    },
+    {
+      "n": 4,
+      "t": "2026-10-24T16:11:26+02:00: Start GC phase1 (mark used chunks)"
+    },
+    {
+      "n": 5,
+      "t": "2026-10-24T16:11:26+02:00: marked 8% (1 of 12 index files)"
+    },
+    {
+      "n": 6,
+      "t": "2026-10-24T16:11:26+02:00: marked 16% (2 of 12 index files)"
+    },
+    {
+      "n": 7,
+      "t": "2026-10-24T16:11:26+02:00: marked 25% (3 of 12 index files)"
+    },
+    {
+      "n": 8,
+      "t": "2026-10-24T16:11:26+02:00: marked 33% (4 of 12 index files)"
+    },
+    {
+      "n": 9,
+      "t": "2026-10-24T16:11:26+02:00: marked 41% (5 of 12 index files)"
+    },
+    {
+      "n": 10,
+      "t": "2026-10-24T16:11:26+02:00: marked 50% (6 of 12 index files)"
+    },
+    {
+      "n": 11,
+      "t": "2026-10-24T16:11:26+02:00: marked 58% (7 of 12 index files)"
+    },
+    {
+      "n": 12,
+      "t": "2026-10-24T16:11:26+02:00: marked 66% (8 of 12 index files)"
+    },
+    {
+      "n": 13,
+      "t": "2026-10-24T16:11:26+02:00: marked 75% (9 of 12 index files)"
+    },
+    {
+      "n": 14,
+      "t": "2026-10-24T16:11:26+02:00: marked 83% (10 of 12 index files)"
+    },
+    {
+      "n": 15,
+      "t": "2026-10-24T16:11:26+02:00: marked 91% (11 of 12 index files)"
+    },
+    {
+      "n": 16,
+      "t": "2026-10-24T16:11:26+02:00: marked 100% (12 of 12 index files)"
+    },
+    {
+      "n": 17,
+      "t": "2026-10-24T16:11:26+02:00: Start GC phase2 (sweep unused chunks)"
+    },
+    {
+      "n": 18,
+      "t": "2026-10-24T16:11:26+02:00: processed 9% (0 chunks)"
+    },
+    {
+      "n": 19,
+      "t": "2026-10-24T16:11:27+02:00: processed 35% (1 chunks)"
+    },
+    {
+      "n": 20,
+      "t": "2026-10-24T16:11:27+02:00: processed 55% (2 chunks)"
+    },
+    {
+      "n": 21,
+      "t": "2026-10-24T16:11:27+02:00: processed 62% (3 chunks)"
+    },
+    {
+      "n": 22,
+      "t": "2026-10-24T16:11:27+02:00: processed 73% (4 chunks)"
+    },
+    {
+      "n": 23,
+      "t": "2026-10-24T16:11:27+02:00: processed 78% (5 chunks)"
+    },
+    {
+      "n": 24,
+      "t": "2026-10-24T16:11:27+02:00: processed 82% (6 chunks)"
+    },
+    {
+      "n": 25,
+      "t": "2026-10-24T16:11:27+02:00: processed 84% (7 chunks)"
+    },
+    {
+      "n": 26,
+      "t": "2026-10-24T16:11:27+02:00: processed 96% (8 chunks)"
+    },
+    {
+      "n": 27,
+      "t": "2026-10-24T16:11:27+02:00: Chunk cache: hits 2057, misses 9 (hit ratio 99.56%)"
+    },
+    {
+      "n": 28,
+      "t": "2026-10-24T16:11:27+02:00: Removed garbage: 0 B"
+    },
+    {
+      "n": 29,
+      "t": "2026-10-24T16:11:27+02:00: Removed chunks: 0"
+    },
+    {
+      "n": 30,
+      "t": "2026-10-24T16:11:27+02:00: Original data usage: 8.025 GiB"
+    },
+    {
+      "n": 31,
+      "t": "2026-10-24T16:11:27+02:00: On-Disk usage: 4.964 MiB (0.06%)"
+    },
+    {
+      "n": 32,
+      "t": "2026-10-24T16:11:27+02:00: On-Disk chunks: 9"
+    },
+    {
+      "n": 33,
+      "t": "2026-10-24T16:11:27+02:00: Deduplication factor: 1655.52"
+    },
+    {
+      "n": 34,
+      "t": "2026-10-24T16:11:27+02:00: Average chunk size: 564.794 KiB"
+    },
+    {
+      "n": 35,
+      "t": "2026-10-24T16:11:27+02:00: queued notification (id=568c6613-47d1-492c-8e2f-24650d5f2cdf)"
+    },
+    {
+      "n": 36,
+      "t": "2026-10-24T16:11:27+02:00: TASK OK"
+    }
+  ],
+  "success": 1,
+  "total": 36
+}

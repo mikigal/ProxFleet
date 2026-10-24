@@ -1,0 +1,40 @@
+{
+  "data": {
+    "avail": 26208993280,
+    "backend-type": "filesystem",
+    "counts": {
+      "ct": {
+        "groups": 1,
+        "snapshots": 2
+      },
+      "host": {
+        "groups": 2,
+        "snapshots": 3
+      },
+      "other": null,
+      "vm": {
+        "groups": 1,
+        "snapshots": 2
+      }
+    },
+    "gc-status": {
+      "cache-stats": {
+        "hits": 2057,
+        "misses": 9
+      },
+      "disk-bytes": 5205142,
+      "disk-chunks": 9,
+      "index-data-bytes": 8617204369,
+      "index-file-count": 12,
+      "pending-bytes": 0,
+      "pending-chunks": 0,
+      "removed-bad": 0,
+      "removed-bytes": 0,
+      "removed-chunks": 0,
+      "still-bad": 0,
+      "upid": "UPID:pbs-claude:000002CB:00000218:00000008:6ADCBC8D:garbage_collection:store1:root@pam:"
+    },
+    "total": 31145701376,
+    "used": 3328614400
+  }
+}

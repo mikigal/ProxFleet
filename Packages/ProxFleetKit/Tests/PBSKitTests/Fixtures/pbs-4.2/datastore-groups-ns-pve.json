@@ -1,0 +1,32 @@
+{
+  "data": [
+    {
+      "backup-count": 2,
+      "backup-id": "102",
+      "backup-type": "vm",
+      "files": [
+        "qemu-server.conf.blob",
+        "drive-scsi0.img.fidx",
+        "index.json.blob",
+        "client.log.blob"
+      ],
+      "last-backup": 1792851001,
+      "owner": "pvebackup@pbs"
+    },
+    {
+      "backup-count": 2,
+      "backup-id": "200",
+      "backup-type": "ct",
+      "comment": "Alpine test container\n",
+      "files": [
+        "catalog.pcat1.didx",
+        "root.pxar.didx",
+        "pct.conf.blob",
+        "index.json.blob",
+        "client.log.blob"
+      ],
+      "last-backup": 1792850991,
+      "owner": "pvebackup@pbs"
+    }
+  ]
+}

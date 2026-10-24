@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "comment": "Send mails to root@pam's email address",
+      "mailto-user": [
+        "root@pam"
+      ],
+      "name": "mail-to-root",
+      "origin": "builtin"
+    }
+  ]
+}

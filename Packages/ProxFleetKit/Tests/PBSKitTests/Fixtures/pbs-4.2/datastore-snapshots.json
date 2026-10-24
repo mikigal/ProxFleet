@@ -1,0 +1,63 @@
+{
+  "data": [
+    {
+      "backup-id": "pbs-claude",
+      "backup-time": 1792851056,
+      "backup-type": "host",
+      "files": [
+        {
+          "crypt-mode": "none",
+          "filename": "etc.pxar.didx",
+          "size": 2014084
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "catalog.pcat1.didx",
+          "size": 21591
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "index.json.blob",
+          "size": 471
+        }
+      ],
+      "owner": "root@pam!seed",
+      "protected": false,
+      "size": 2036146,
+      "verification": {
+        "state": "ok",
+        "upid": "UPID:pbs-claude:000002CB:00000218:00000009:6ADCBCA1:verificationjob:store1\\x3apf\\x2dverify:root@pam:"
+      }
+    },
+    {
+      "backup-id": "pbs-claude",
+      "backup-time": 1792851054,
+      "backup-type": "host",
+      "comment": "First host backup",
+      "files": [
+        {
+          "crypt-mode": "none",
+          "filename": "etc.pxar.didx",
+          "size": 2014084
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "catalog.pcat1.didx",
+          "size": 21591
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "index.json.blob",
+          "size": 494
+        }
+      ],
+      "owner": "root@pam!seed",
+      "protected": false,
+      "size": 2036169,
+      "verification": {
+        "state": "ok",
+        "upid": "UPID:pbs-claude:000002CB:00000218:00000009:6ADCBCA1:verificationjob:store1\\x3apf\\x2dverify:root@pam:"
+      }
+    }
+  ]
+}

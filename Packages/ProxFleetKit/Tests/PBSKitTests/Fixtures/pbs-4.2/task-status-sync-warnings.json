@@ -1,0 +1,14 @@
+{
+  "data": {
+    "exitstatus": "WARNINGS: 2",
+    "id": "self:store2:store1::pf-sync-push",
+    "node": "pbs-claude",
+    "pid": 715,
+    "pstart": 536,
+    "starttime": 1792851109,
+    "status": "stopped",
+    "type": "syncjob",
+    "upid": "UPID:pbs-claude:000002CB:00000218:00000011:6ADCBCA5:syncjob:self\\x3astore2\\x3astore1\\x3a\\x3apf\\x2dsync\\x2dpush:root@pam:",
+    "user": "root@pam"
+  }
+}

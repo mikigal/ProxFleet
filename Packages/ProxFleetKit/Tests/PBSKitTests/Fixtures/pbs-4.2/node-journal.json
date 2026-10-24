@@ -1,0 +1,16 @@
+{
+  "data": [
+    "s=2d37224e335745018405d05dbf4ec07f;i=685;b=3a27057d5b9346569a67479e55f75f10;m=40128661a;t=65e96ae4641c9;x=44ac36fdaa322242",
+    "Oct 24 16:12:02 pbs-claude postfix/smtp[1777]: 2EA591A3648: to=<asdf@gmail.com>, relay=none, delay=10, delays=0/0.01/10/0, dsn=4.4.3, status=deferred (Host or domain name not found. Name service error for name=gmail.com type=MX: Host not found, try again)",
+    "Oct 24 16:12:02 pbs-claude postfix/smtp[1779]: 306961A364B: to=<asdf@gmail.com>, relay=none, delay=10, delays=0/0.01/10/0, dsn=4.4.3, status=deferred (Host or domain name not found. Name service error for name=gmail.com type=MX: Host not found, try again)",
+    "Oct 24 16:12:25 pbs-claude proxmox-backup-proxy[715]: GET /api2/json/admin/datastore/missing/namespace?: 400 Bad Request: [client [::ffff:127.0.0.1]:37184] no such datastore 'missing'",
+    "Oct 24 16:12:25 pbs-claude proxmox-backup-proxy[715]: TASK ERROR: Querying namespaces failed - HTTP error 400 Bad Request - no such datastore 'missing'",
+    "Oct 24 16:12:27 pbs-claude postfix/pickup[1326]: 31D821A364D: uid=0 from=<root>",
+    "Oct 24 16:12:27 pbs-claude proxmox-backup-api[584]: notified via target `mail-to-root`",
+    "Oct 24 16:12:27 pbs-claude postfix/cleanup[1613]: 31D821A364D: message-id=<20261024141227.31D821A364D@pbs-claude.local>",
+    "Oct 24 16:12:27 pbs-claude postfix/qmgr[711]: 31D821A364D: from=<root@pbs-claude.local>, size=1560, nrcpt=1 (queue active)",
+    "Oct 24 16:12:27 pbs-claude postfix/error[1785]: 31D821A364D: to=<asdf@gmail.com>, relay=none, delay=0.01, delays=0/0.01/0/0, dsn=4.4.3, status=deferred (delivery temporarily suspended: Host or domain name not found. Name service error for name=gmail.com type=MX: Host not found, try again)",
+    "Oct 24 16:13:02 pbs-claude proxmox-backup-proxy[715]: GET /api2/json/admin/datastore/store1/catalog?backup-type=host&backup-id=pbs-claude&backup-time=1792851056&filepath=L2V0Yy5weGFyLmRpZHgvZXRj: 400 Bad Request: [client [::ffff:10.10.10.110]:50574] path \"/etc.pxar.didx/etc\" not found in catalog",
+    "s=2d37224e335745018405d05dbf4ec07f;i=68e;b=3a27057d5b9346569a67479e55f75f10;m=404bfaf64;t=65e96b1dd8b13;x=3c7fa4f734d2d4d6"
+  ]
+}

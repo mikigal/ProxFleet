@@ -1,0 +1,95 @@
+{
+  "data": [
+    {
+      "comment": "Main test datastore",
+      "field": "datastore",
+      "value": "store1"
+    },
+    {
+      "comment": "Sync target",
+      "field": "datastore",
+      "value": "store2"
+    },
+    {
+      "comment": null,
+      "field": "hostname",
+      "value": "pbs-claude"
+    },
+    {
+      "comment": "Keep a week",
+      "field": "job-id",
+      "value": "pf-prune"
+    },
+    {
+      "comment": "Local pull",
+      "field": "job-id",
+      "value": "pf-sync-local"
+    },
+    {
+      "comment": "Pull from remote",
+      "field": "job-id",
+      "value": "pf-sync-pull"
+    },
+    {
+      "comment": "Push host backups",
+      "field": "job-id",
+      "value": "pf-sync-push"
+    },
+    {
+      "comment": "Daily verification",
+      "field": "job-id",
+      "value": "pf-verify"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "acme"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "gc"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "package-updates"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "prune"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "sync"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "system-mail"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "tape-backup"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "tape-load"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "thresholds"
+    },
+    {
+      "comment": null,
+      "field": "type",
+      "value": "verify"
+    }
+  ],
+  "digest": "29b0638851c242efcc6968ba4c34c6fd25ccafde83c70efc9daa655ba350819f"
+}
