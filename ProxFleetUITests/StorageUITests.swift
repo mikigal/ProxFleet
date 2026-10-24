@@ -108,13 +108,14 @@ final class StorageUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
 
         // Disabled storages are not on any node; they are listed from the definitions.
-        let disabled = app.buttons["storageconfig.media"]
-        XCTAssertTrue(disabled.waitForExistence(timeout: 10))
+        // They come last, below the storages in use.
+        let disabled = reveal(app.buttons["storageconfig.media"])
+        XCTAssertTrue(disabled.exists)
         XCTAssertFalse(media.exists)
-        reveal(disabled).tap()
+        disabled.tap()
         reveal(app.buttons["storageconfig.remove"]).tap()
         app.buttons["storageconfig.remove.confirm"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["storage.pve1.nas"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["storageconfig.add"].waitForExistence(timeout: 10))
         XCTAssertFalse(disabled.exists)
     }
 

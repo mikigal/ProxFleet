@@ -54,17 +54,20 @@ private struct StorageSummaryRow: View {
                 .foregroundStyle(storage.isAvailable ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 .frame(width: 30)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+                // Only a short percentage shares the line, so the type and node fit; the sizes go below the bar.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(storage.name)
                         .font(.body.weight(.medium))
+                        .lineLimit(1)
+                        .layoutPriority(1)
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    Spacer()
-                    if storage.isAvailable, storage.total > 0 {
-                        Text("\(Format.bytes(storage.used)) of \(Format.bytes(storage.total))")
-                            .font(.caption)
+                    Spacer(minLength: 4)
+                    if showsUsage {
+                        Text(fraction, format: .percent.precision(.fractionLength(0)))
+                            .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     } else if !storage.isAvailable {
                         Text("Unavailable")
@@ -72,15 +75,20 @@ private struct StorageSummaryRow: View {
                             .foregroundStyle(.orange)
                     }
                 }
-                if storage.isAvailable, storage.total > 0 {
-                    let fraction = Format.fraction(storage.used, of: storage.total)
+                if showsUsage {
                     ProgressView(value: fraction)
                         .tint(fraction > 0.9 ? .red : .accentColor)
+                    Text("\(Format.bytes(storage.used)) of \(Format.bytes(storage.total))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
         .accessibilityElement(children: .combine)
     }
+
+    private var showsUsage: Bool { storage.isAvailable && storage.total > 0 }
+    private var fraction: Double { Format.fraction(storage.used, of: storage.total) }
 
     private var subtitle: String {
         var parts = [StorageSummaryRow.typeTitle(storage.pluginType ?? "")]
