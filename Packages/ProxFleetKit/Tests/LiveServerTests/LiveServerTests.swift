@@ -2412,7 +2412,7 @@ struct LiveServerTests {
 
     /// A prefix list and a route map used by an EVPN controller, an EVPN zone with a VNet, a BGP controller and an
     /// OpenFabric fabric on a port-less bridge, applied to the node and checked in FRR's running configuration.
-    /// Needs frr on the node.
+    /// Needs frr on the node. Older servers leave out route filters and fabrics, and then the bridge too.
     @Test(.timeLimit(.minutes(3))) func sdnRouting() async throws {
         let (session, node) = try await rootSession()
         try #require(try await session.send(PVE.sdnZones()).allSatisfy { $0.state == nil }, "the server has pending SDN changes")
@@ -2421,129 +2421,185 @@ struct LiveServerTests {
         try #require(frr.output.contains("install ok installed"), "install frr on the node")
         let network = try await session.send(PVE.network(node: node))
         try #require(network.pendingChanges == nil, "the test server has unapplied network changes")
+        try #require(!network.interfaces.contains { $0.name == "vmbr94" }, "left over from an earlier run")
         let address = try #require(network.interfaces.first { $0.gateway != nil }?.cidr?.split(separator: "/").first.map(String.init))
+        let release = try await version(session)
+        let hasRouteFilters = release.supports(.sdnRouteFilters)
+        let hasFabrics = release.supports(.sdnFabrics)
 
-        // A bridge without ports carries the fabric, so the node's own uplink is never touched.
-        var bridge = NetworkInterfaceDraft(creating: .bridge, existing: network.interfaces)
-        bridge.name = "vmbr94"
-        _ = try await session.send(PVE.createInterface(node: node, bridge))
-        #expect(try await finishTask(session, node: node, try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+        var failure: (any Error)?
+        do {
+            if hasFabrics {
+                // A bridge without ports carries the fabric, so the node's own uplink is never touched.
+                var bridge = NetworkInterfaceDraft(creating: .bridge, existing: network.interfaces)
+                bridge.name = "vmbr94"
+                _ = try await session.send(PVE.createInterface(node: node, bridge))
+                #expect(try await finishTask(session, node: node, try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+            }
 
-        _ = try await session.send(PVE.createSDNPrefixList("pflst"))
-        var entry = SDNPrefixListEntryDraft()
-        entry.prefix = "10.0.0.0/8"
-        entry.le = "24"
-        _ = try await session.send(PVE.createSDNPrefixListEntry(list: "pflst", entry))
-        let entries = try await session.send(PVE.sdnPrefixListEntries("pflst"))
-        #expect(entries.count == 1 && entries.first?.le == 24 && entries.first?.sequence == 5)
-        var route = SDNRouteMapEntryDraft(routeMap: "pfrmap", order: "10")
-        route.match = [SDNRouteMapClause(key: "ip-address-prefix-list", value: "pflst")]
-        route.set = [SDNRouteMapClause(key: "local-preference", value: "200")]
-        route.exitAction = .next
-        #expect(route.problems(isNew: true).isEmpty)
-        _ = try await session.send(PVE.createSDNRouteMapEntry(route))
-        let savedRoute = try #require(try await session.send(PVE.sdnRouteMapEntries()).map(SDNRouteMapEntry.init).first { $0.routeMap == "pfrmap" })
-        #expect(savedRoute.state == .new && SDNRouteMapEntryDraft(savedRoute) == route)
+            if hasRouteFilters {
+                _ = try await session.send(PVE.createSDNPrefixList("pflst"))
+                var entry = SDNPrefixListEntryDraft()
+                entry.prefix = "10.0.0.0/8"
+                entry.le = "24"
+                _ = try await session.send(PVE.createSDNPrefixListEntry(list: "pflst", entry))
+                let entries = try await session.send(PVE.sdnPrefixListEntries("pflst"))
+                #expect(entries.count == 1 && entries.first?.le == 24 && entries.first?.sequence == 5)
+                var route = SDNRouteMapEntryDraft(routeMap: "pfrmap", order: "10")
+                route.match = [SDNRouteMapClause(key: "ip-address-prefix-list", value: "pflst")]
+                route.set = [SDNRouteMapClause(key: "local-preference", value: "200")]
+                route.exitAction = .next
+                #expect(route.problems(isNew: true).isEmpty)
+                _ = try await session.send(PVE.createSDNRouteMapEntry(route))
+                let savedRoute = try #require(try await session.send(PVE.sdnRouteMapEntries()).map(SDNRouteMapEntry.init).first { $0.routeMap == "pfrmap" })
+                #expect(savedRoute.state == .new && SDNRouteMapEntryDraft(savedRoute) == route)
+            }
 
-        var evpn = SDNControllerDraft()
-        evpn.id = "pfevpn"
-        evpn.peers = address
-        evpn.routeMapIn = "pfrmap"
-        _ = try await session.send(PVE.createSDNController(evpn))
-        var bgp = SDNControllerDraft(type: .bgp)
-        bgp.node = node
-        bgp.asn = "65001"
-        bgp.peers = "192.0.2.1"
-        bgp.ebgp = true
-        #expect(bgp.problems(isNew: true).isEmpty)
-        _ = try await session.send(PVE.createSDNController(bgp))
-        var isis = SDNControllerDraft(type: .isis)
-        isis.node = node
-        isis.isisDomain = "pflive"
-        isis.isisNet = "49.0001.1720.1600.1001.00"
-        isis.isisInterfaces = "vmbr94"
-        #expect(isis.problems(isNew: true).isEmpty)
-        _ = try await session.send(PVE.createSDNController(isis))
-        let controllers = try await session.send(PVE.sdnControllers())
-        #expect(Set(controllers.map(\.id)) == ["pfevpn", "bgp\(node)", "isis\(node)"])
-        #expect(SDNControllerDraft(try #require(controllers.first { $0.id == "pfevpn" })) == evpn)
-        // IS-IS is only checked as configuration; it is removed before Apply.
-        _ = try await session.send(PVE.deleteSDNController("isis\(node)"))
+            var evpn = SDNControllerDraft()
+            evpn.id = "pfevpn"
+            evpn.peers = address
+            if hasRouteFilters { evpn.routeMapIn = "pfrmap" }
+            _ = try await session.send(PVE.createSDNController(evpn))
+            var bgp = SDNControllerDraft(type: .bgp)
+            bgp.node = node
+            bgp.asn = "65001"
+            bgp.peers = "192.0.2.1"
+            bgp.ebgp = true
+            #expect(bgp.problems(isNew: true).isEmpty)
+            _ = try await session.send(PVE.createSDNController(bgp))
+            var isis = SDNControllerDraft(type: .isis)
+            isis.node = node
+            isis.isisDomain = "pflive"
+            isis.isisNet = "49.0001.1720.1600.1001.00"
+            isis.isisInterfaces = "vmbr94"
+            #expect(isis.problems(isNew: true).isEmpty)
+            _ = try await session.send(PVE.createSDNController(isis))
+            let controllers = try await session.send(PVE.sdnControllers())
+            #expect(Set(controllers.map(\.id)) == ["pfevpn", "bgp\(node)", "isis\(node)"])
+            #expect(SDNControllerDraft(try #require(controllers.first { $0.id == "pfevpn" })) == evpn)
+            // IS-IS is only checked as configuration; it is removed before Apply.
+            _ = try await session.send(PVE.deleteSDNController("isis\(node)"))
 
-        var zone = SDNZoneDraft()
-        zone.id = "pfevz"
-        zone.type = .evpn
-        zone.controller = "pfevpn"
-        zone.vrfVXLAN = "10000"
-        zone.exitNodes = [node]
-        zone.advertisesSubnets = true
-        #expect(zone.problems(isNew: true).isEmpty)
-        _ = try await session.send(PVE.createSDNZone(zone))
-        var vnet = SDNVNetDraft()
-        vnet.id = "pfevnet"
-        vnet.zone = "pfevz"
-        vnet.tag = "11000"
-        _ = try await session.send(PVE.createSDNVNet(vnet, zoneType: .evpn))
-        let savedZone = SDNZoneDraft(try #require(try await session.send(PVE.sdnZones()).first { $0.id == "pfevz" }))
-        #expect(savedZone.controller == "pfevpn" && savedZone.exitNodes == [node] && savedZone.advertisesSubnets && !savedZone.mac.isEmpty)
+            var zone = SDNZoneDraft()
+            zone.id = "pfevz"
+            zone.type = .evpn
+            zone.controller = "pfevpn"
+            zone.vrfVXLAN = "10000"
+            zone.exitNodes = [node]
+            zone.advertisesSubnets = true
+            #expect(zone.problems(isNew: true).isEmpty)
+            _ = try await session.send(PVE.createSDNZone(zone))
+            var vnet = SDNVNetDraft()
+            vnet.id = "pfevnet"
+            vnet.zone = "pfevz"
+            vnet.tag = "11000"
+            _ = try await session.send(PVE.createSDNVNet(vnet, zoneType: .evpn))
+            let savedZone = SDNZoneDraft(try #require(try await session.send(PVE.sdnZones()).first { $0.id == "pfevz" }))
+            #expect(savedZone.controller == "pfevpn" && savedZone.exitNodes == [node] && savedZone.advertisesSubnets && !savedZone.mac.isEmpty)
 
-        var fabric = SDNFabricDraft(protocol: .openfabric)
-        fabric.id = "pffab"
-        fabric.ipPrefix = "10.250.0.0/24"
-        fabric.routeFilter = "pflst"
-        _ = try await session.send(PVE.createSDNFabric(fabric))
-        var fabricNode = SDNFabricNodeDraft(protocol: .openfabric)
-        fabricNode.node = node
-        fabricNode.ip = "10.250.0.1"
-        fabricNode.interfaces = [SDNFabricInterface(name: "vmbr94")]
-        _ = try await session.send(PVE.addSDNFabricNode(fabric: "pffab", fabricNode))
-        let fabrics = try await session.send(PVE.sdnFabrics())
-        #expect(SDNFabricDraft(try #require(fabrics.fabrics.first { $0.id == "pffab" })) == fabric)
-        let savedNode = try #require(fabrics.nodes.first { $0.fabricID == "pffab" })
-        #expect(SDNFabricNodeDraft(savedNode) == fabricNode && savedNode.state == .new)
-        var editedFabric = fabric
-        editedFabric.helloInterval = "5"
-        _ = try await session.send(PVE.updateSDNFabric("pffab", protocol: .openfabric, editedFabric.changes(from: fabric)))
+            if hasFabrics {
+                var fabric = SDNFabricDraft(protocol: .openfabric)
+                fabric.id = "pffab"
+                fabric.ipPrefix = "10.250.0.0/24"
+                if hasRouteFilters { fabric.routeFilter = "pflst" }
+                _ = try await session.send(PVE.createSDNFabric(fabric))
+                var fabricNode = SDNFabricNodeDraft(protocol: .openfabric)
+                fabricNode.node = node
+                fabricNode.ip = "10.250.0.1"
+                fabricNode.interfaces = [SDNFabricInterface(name: "vmbr94")]
+                _ = try await session.send(PVE.addSDNFabricNode(fabric: "pffab", fabricNode))
+                let fabrics = try await session.send(PVE.sdnFabrics())
+                #expect(SDNFabricDraft(try #require(fabrics.fabrics.first { $0.id == "pffab" })) == fabric)
+                let savedNode = try #require(fabrics.nodes.first { $0.fabricID == "pffab" })
+                #expect(SDNFabricNodeDraft(savedNode) == fabricNode && savedNode.state == .new)
+                var editedFabric = fabric
+                editedFabric.helloInterval = "5"
+                _ = try await session.send(PVE.updateSDNFabric("pffab", protocol: .openfabric, editedFabric.changes(from: fabric)))
+            }
 
-        #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
-        #expect(try await session.send(PVE.sdnZoneStatus(node: node)).first { $0.zone == "pfevz" }?.status == "available")
-        let config = try await runOnNode(session, node: node, "vtysh -c 'show running-config' | grep -E '^(router|route-map|ip prefix-list)'")
-        // The node's BGP controller sets the node's AS number for EVPN too.
-        for line in ["router bgp 65001", "router bgp 65001 vrf vrf_pfevz", "route-map pfrmap permit 10", "ip prefix-list pflst seq 5 permit 10.0.0.0/8 le 24", "router openfabric pffab"] {
-            #expect(config.output.contains(line), "\(line) missing in \(config.output)")
+            #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
+            #expect(try await session.send(PVE.sdnZoneStatus(node: node)).first { $0.zone == "pfevz" }?.status == "available")
+            let config = try await runOnNode(session, node: node, "vtysh -c 'show running-config' | grep -E '^(router|route-map|ip prefix-list)'")
+            // The node's BGP controller sets the node's AS number for EVPN too.
+            var lines = ["router bgp 65001", "router bgp 65001 vrf vrf_pfevz"]
+            if hasRouteFilters { lines += ["route-map pfrmap permit 10", "ip prefix-list pflst seq 5 permit 10.0.0.0/8 le 24"] }
+            if hasFabrics { lines.append("router openfabric pffab") }
+            for line in lines {
+                #expect(config.output.contains(line), "\(line) missing in \(config.output)")
+            }
+            if hasFabrics {
+                #expect(try await session.send(PVE.sdnFabrics()).fabrics.first { $0.id == "pffab" }?["hello_interval"] == "5")
+            }
+            #expect(try await session.send(PVE.sdnZoneContent(node: node, zone: "pfevz")).contains { $0.vnet == "pfevnet" })
+
+            // The node's view of it, as the resource tree shows it.
+            if release.supports(.sdnNodeStatus) {
+                let networks = try await session.send(PVE.sdnNodeNetworks()).filter { $0.kind != nil && $0.node == node }
+                #expect(networks.contains { $0.isLocalNetwork } && networks.contains { $0.name == "pfevz" && $0.zoneType == "evpn" })
+                #expect(networks.contains { $0.name == "pffab" && $0.kind == .fabric && $0.fabricProtocol == "openfabric" })
+                #expect(try await session.send(PVE.sdnZoneBridges(node: node, zone: "pfevz")).contains { $0.name == "pfevnet" })
+                #expect(try await session.send(PVE.sdnZoneBridges(node: node, zone: "localnetwork")).contains { bridge in bridge.ports.contains { $0.vmid != nil } })
+                // A lone node has no BGP peers, so the VRFs and the fabric's neighbors may be empty, but the requests work.
+                _ = try await session.send(PVE.sdnIPVRF(node: node, zone: "pfevz"))
+                _ = try await session.send(PVE.sdnMACVRF(node: node, vnet: "pfevnet"))
+                _ = try await session.send(PVE.sdnFabricRoutes(node: node, fabric: "pffab"))
+                _ = try await session.send(PVE.sdnFabricNeighbors(node: node, fabric: "pffab"))
+                #expect(try await session.send(PVE.sdnFabricInterfaces(node: node, fabric: "pffab")).contains { $0.name == "vmbr94" })
+            }
+        } catch {
+            failure = error
         }
-        #expect(try await session.send(PVE.sdnFabrics()).fabrics.first { $0.id == "pffab" }?["hello_interval"] == "5")
 
-        // The node's view of it, as the resource tree shows it.
-        let networks = try await session.send(PVE.sdnNodeNetworks()).filter { $0.kind != nil && $0.node == node }
-        #expect(networks.contains { $0.isLocalNetwork } && networks.contains { $0.name == "pfevz" && $0.zoneType == "evpn" })
-        #expect(networks.contains { $0.name == "pffab" && $0.kind == .fabric && $0.fabricProtocol == "openfabric" })
-        #expect(try await session.send(PVE.sdnZoneContent(node: node, zone: "pfevz")).contains { $0.vnet == "pfevnet" })
-        #expect(try await session.send(PVE.sdnZoneBridges(node: node, zone: "pfevz")).contains { $0.name == "pfevnet" })
-        #expect(try await session.send(PVE.sdnZoneBridges(node: node, zone: "localnetwork")).contains { bridge in bridge.ports.contains { $0.vmid != nil } })
-        // A lone node has no BGP peers, so the VRFs and the fabric's neighbors may be empty, but the requests work.
-        _ = try await session.send(PVE.sdnIPVRF(node: node, zone: "pfevz"))
-        _ = try await session.send(PVE.sdnMACVRF(node: node, vnet: "pfevnet"))
-        _ = try await session.send(PVE.sdnFabricRoutes(node: node, fabric: "pffab"))
-        _ = try await session.send(PVE.sdnFabricNeighbors(node: node, fabric: "pffab"))
-        #expect(try await session.send(PVE.sdnFabricInterfaces(node: node, fabric: "pffab")).contains { $0.name == "vmbr94" })
-
-        // Removed in dependency order and applied.
-        _ = try await session.send(PVE.removeSDNFabricNode(fabric: "pffab", node: node))
-        _ = try await session.send(PVE.deleteSDNFabric("pffab"))
-        _ = try await session.send(PVE.deleteSDNVNet("pfevnet"))
-        _ = try await session.send(PVE.deleteSDNZone("pfevz"))
-        _ = try await session.send(PVE.deleteSDNController("pfevpn"))
-        _ = try await session.send(PVE.deleteSDNController("bgp\(node)"))
-        _ = try await session.send(PVE.deleteSDNRouteMapEntry(routeMap: "pfrmap", order: 10))
-        _ = try await session.send(PVE.deleteSDNPrefixList("pflst"))
-        #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
-        #expect(try await session.send(PVE.sdnControllers()).isEmpty)
-        #expect(try await session.send(PVE.sdnFabrics()).fabrics.isEmpty)
-        #expect(try await session.send(PVE.sdnRouteMapEntries()).isEmpty)
-        #expect(try await session.send(PVE.sdnPrefixLists()).isEmpty)
-        _ = try await session.send(PVE.deleteInterface(node: node, name: "vmbr94"))
-        #expect(try await finishTask(session, node: node, try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+        // Removed in dependency order and applied, also after a failed check; only what exists is deleted.
+        do {
+            func exists(_ objects: [SDNObject], _ matches: (SDNObject) -> Bool) -> Bool {
+                objects.contains { $0.state != .deleted && matches($0) }
+            }
+            if hasFabrics {
+                let fabrics = try await session.send(PVE.sdnFabrics())
+                if exists(fabrics.nodes, { $0.fabricID == "pffab" }) {
+                    _ = try await session.send(PVE.removeSDNFabricNode(fabric: "pffab", node: node))
+                }
+                if exists(fabrics.fabrics, { $0.id == "pffab" }) {
+                    _ = try await session.send(PVE.deleteSDNFabric("pffab"))
+                }
+            }
+            if exists(try await session.send(PVE.sdnVNets()), { $0.id == "pfevnet" }) {
+                _ = try await session.send(PVE.deleteSDNVNet("pfevnet"))
+            }
+            if exists(try await session.send(PVE.sdnZones()), { $0.id == "pfevz" }) {
+                _ = try await session.send(PVE.deleteSDNZone("pfevz"))
+            }
+            let controllers = try await session.send(PVE.sdnControllers())
+            for id in ["pfevpn", "bgp\(node)", "isis\(node)"] where exists(controllers, { $0.id == id }) {
+                _ = try await session.send(PVE.deleteSDNController(id))
+            }
+            if hasRouteFilters {
+                if exists(try await session.send(PVE.sdnRouteMapEntries()), { SDNRouteMapEntry($0).routeMap == "pfrmap" }) {
+                    _ = try await session.send(PVE.deleteSDNRouteMapEntry(routeMap: "pfrmap", order: 10))
+                }
+                if exists(try await session.send(PVE.sdnPrefixLists()), { $0.id == "pflst" }) {
+                    _ = try await session.send(PVE.deleteSDNPrefixList("pflst"))
+                }
+            }
+            #expect(try await finishTask(session, node: node, try await session.send(PVE.applySDN()))?.succeeded == true)
+            #expect(try await session.send(PVE.sdnControllers()).isEmpty)
+            #expect(try await !session.send(PVE.sdnZones()).contains { $0.id == "pfevz" })
+            if hasFabrics {
+                #expect(try await session.send(PVE.sdnFabrics()).fabrics.isEmpty)
+            }
+            if hasRouteFilters {
+                #expect(try await session.send(PVE.sdnRouteMapEntries()).isEmpty)
+                #expect(try await session.send(PVE.sdnPrefixLists()).isEmpty)
+            }
+        } catch {
+            failure = failure ?? error
+        }
+        if try await session.send(PVE.network(node: node)).interfaces.contains(where: { $0.name == "vmbr94" }) {
+            _ = try await session.send(PVE.deleteInterface(node: node, name: "vmbr94"))
+            #expect(try await finishTask(session, node: node, try await session.send(PVE.applyNetwork(node: node)))?.succeeded == true)
+        }
+        if let failure { throw failure }
     }
 
     /// PCI, USB and directory mappings built from the node's devices, checked, changed, used by a VM and removed.
