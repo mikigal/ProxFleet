@@ -191,6 +191,82 @@ final class LifecycleUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["VM 106 · pve1"].exists)
     }
 
+    /// Backups on the backup server storage `pbs` can be browsed: a container's files, and a VM's disk once the
+    /// restore VM is up.
+    @MainActor
+    func testBrowseFilesOfBackupServerBackups() {
+        app.launch()
+        openGuest(200)
+        app.buttons["tab.more"].tap()
+        app.buttons["more.backups"].tap()
+        let backupServerRow = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'backup.20'")).firstMatch
+        XCTAssertTrue(backupServerRow.waitForExistence(timeout: 10))
+        backupServerRow.tap()
+        app.buttons["backup.files"].tap()
+        let archive = app.buttons["catalog.root.pxar.didx"]
+        XCTAssertTrue(archive.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["catalog.downloadFolder"].exists)
+        archive.tap()
+        app.buttons["catalog.etc"].tap()
+        let hostname = app.buttons["catalog.hostname"]
+        XCTAssertTrue(hostname.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["catalog.downloadFolder"].exists)
+        snapshot("46-backup-files")
+        hostname.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'ct-200-hostname'")).firstMatch.waitForExistence(timeout: 15))
+    }
+
+    @MainActor
+    func testBrowseVMDiskOfBackupServerBackup() {
+        app.launch()
+        openGuest(100)
+        app.buttons["tab.more"].tap()
+        app.buttons["more.backups"].tap()
+        let backupServerRow = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'backup.20'")).firstMatch
+        XCTAssertTrue(backupServerRow.waitForExistence(timeout: 10))
+        backupServerRow.tap()
+        app.buttons["backup.files"].tap()
+        let disk = app.buttons["catalog.drive-scsi0.img.fidx"]
+        XCTAssertTrue(disk.waitForExistence(timeout: 10))
+        disk.tap()
+        // The demo's restore VM takes a few seconds to start, like a real one.
+        XCTAssertTrue(element(containing: "the node starts a small restore VM first").waitForExistence(timeout: 5))
+        let partitions = app.buttons["catalog.part"]
+        XCTAssertTrue(partitions.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["catalog.downloadFolder"].exists)
+        partitions.tap()
+        app.buttons["catalog.2"].tap()
+        XCTAssertTrue(app.buttons["catalog.etc"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["catalog.home"].exists)
+    }
+
+    /// Containers backed up to the backup server can choose the change detection mode.
+    @MainActor
+    func testBackUpContainerToBackupServerWithChangeDetection() {
+        app.launch()
+        openGuest(200)
+        app.buttons["tab.more"].tap()
+        app.buttons["more.backups"].tap()
+        let backupServerRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'backup.20'"))
+        XCTAssertTrue(backupServerRows.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(backupServerRows.count, 1)
+        app.buttons["backup.now"].tap()
+        XCTAssertTrue(app.buttons["backup.mode"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["backup.changeDetection"].exists)
+        app.buttons["backup.storage"].tap()
+        let pbs = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'pbs'")).firstMatch
+        XCTAssertTrue(pbs.waitForExistence(timeout: 5))
+        pbs.tap()
+        let changeDetection = app.buttons["backup.changeDetection"]
+        XCTAssertTrue(changeDetection.waitForExistence(timeout: 5))
+        changeDetection.tap()
+        app.buttons["Metadata"].tap()
+        XCTAssertTrue(changeDetection.label.contains("Metadata"), changeDetection.label)
+        app.buttons["create"].tap()
+        expectation(for: NSPredicate(format: "count == 2"), evaluatedWith: backupServerRows)
+        waitForExpectations(timeout: 15)
+    }
+
     /// Opens a guest from the server's list, scrolling to it if needed.
     @MainActor
     func testMigrateRunningVM() {

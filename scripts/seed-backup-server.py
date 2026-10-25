@@ -215,7 +215,8 @@ if PVE_ENV_PATH:
             "username": env["PVE_BACKUP_USER"], "password": env["PVE_BACKUP_PASSWORD"],
             "fingerprint": fingerprint, "content": "backup",
         })
-        # Proxmox VE 9.2 refuses a namespace when the storage is created ("Cannot find datastore"), but takes it later.
+        # The namespace goes in a second call: on a freshly seeded server, creating the storage with it once failed
+        # with "Cannot find datastore", although Proxmox VE 9.2 normally takes it in the first call.
         pve.request("PUT", "/storage/pbs-test", {"namespace": "pve"})
         print("added storage pbs-test to Proxmox VE")
     guests = {int(guest["vmid"]): guest["node"] for guest in pve.request("GET", "/cluster/resources", {"type": "vm"})}

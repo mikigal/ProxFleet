@@ -265,11 +265,7 @@ public final class SnapshotDetail {
 
     /// Entries of a directory in a file archive. `filePath` is `/` for the archives, then the entries' own paths.
     public func catalog(_ filePath: String, archive: String?) async throws -> [CatalogEntry] {
-        // Directories first, then by name, like a file manager.
-        try await connection.send(PBS.catalog(store, reference, filePath: filePath, archive: archive)).sorted { lhs, rhs in
-            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-        }
+        try await connection.send(PBS.catalog(store, reference, filePath: filePath, archive: archive)).sortedForBrowsing()
     }
 
     /// Downloads a file, or a directory as zip or `tar.zst`, named like the web interface names it:

@@ -83,6 +83,9 @@ public struct BackupDraft: Sendable, Equatable {
     /// Mail with sendmail instead of the datacenter's notification targets and matchers.
     public var usesLegacySendmail = false
     public var mailto = ""
+    /// Containers on a Proxmox Backup Server: `legacy`, `data` or `metadata`; empty for the storage's default.
+    /// Metadata compares files with the previous backup and only reads changed ones.
+    public var pbsChangeDetection = ""
     /// False before PVE 8.1, see `useSendmailOnly()`.
     public private(set) var hasNotificationSystem = true
 
@@ -116,6 +119,7 @@ public struct BackupDraft: Sendable, Equatable {
         let notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if !notes.isEmpty { parameters["notes-template"] = .string(notes) }
         if isProtected { parameters["protected"] = true }
+        if guest.kind == .container, !pbsChangeDetection.isEmpty { parameters["pbs-change-detection-mode"] = .string(pbsChangeDetection) }
         let recipients = mailto.trimmingCharacters(in: .whitespaces)
         if usesLegacySendmail, !recipients.isEmpty { parameters["mailto"] = .string(recipients) }
         return parameters

@@ -211,7 +211,7 @@ public actor ProxmoxSession {
         }
 
         guard let url = components.url else { throw ProxmoxError.invalidResponse("invalid path \(request.path)") }
-        return HTTPRequest(method: request.method, url: url, headers: headers, body: body)
+        return HTTPRequest(method: request.method, url: url, headers: headers, body: body, timeout: request.timeout)
     }
 
     private func makeTicket(from response: TicketResponse) throws -> AuthTicket {

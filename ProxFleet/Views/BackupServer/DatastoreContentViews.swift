@@ -1,7 +1,6 @@
 import FleetCore
 import PBSKit
 import ProxmoxCore
-import QuickLook
 import SwiftUI
 
 // MARK: - Namespace
@@ -945,7 +944,7 @@ private struct SnapshotFileRow: View {
         switch file.kind {
         case .fileArchive where file.cryptMode != .encrypt:
             NavigationLink {
-                CatalogView(detail: detail, archive: file, filePath: Data("/\(file.name)".utf8).base64EncodedString(), title: file.displayName)
+                BackupFilesView(files: SnapshotArchiveFiles(detail: detail, archive: file), title: file.displayName)
             } label: {
                 label
             }
@@ -1022,153 +1021,6 @@ private struct FileTextView: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
-        }
-    }
-}
-
-/// Browses a file archive of a snapshot, like the web interface's file browser: open folders, download files, or
-/// whole folders as zip.
-private struct CatalogView: View {
-    let detail: SnapshotDetail
-    let archive: SnapshotFile
-    let filePath: String
-    let title: String
-    @State private var entries: [CatalogEntry]?
-    @State private var errorMessage: String?
-    @State private var downloading: String?
-    @State private var downloadedFile: URL?
-    @State private var downloadError: String?
-
-    /// Split archives are listed through their metadata half.
-    private var archiveName: String? { archive.name.hasSuffix(".mpxar.didx") ? archive.name : nil }
-
-    var body: some View {
-        List {
-            if let entries {
-                ForEach(entries) { entry in
-                    if entry.isDirectory {
-                        NavigationLink {
-                            CatalogView(detail: detail, archive: archive, filePath: entry.filePath, title: entry.name)
-                        } label: {
-                            CatalogEntryRow(entry: entry, isDownloading: downloading == entry.id)
-                        }
-                        .swipeActions {
-                            Button("Download", systemImage: "arrow.down.circle") { download(entry) }
-                                .tint(.blue)
-                        }
-                        .accessibilityIdentifier("catalog.\(entry.name)")
-                    } else {
-                        Button {
-                            download(entry)
-                        } label: {
-                            CatalogEntryRow(entry: entry, isDownloading: downloading == entry.id)
-                        }
-                        .foregroundStyle(.primary)
-                        .disabled(downloading != nil || entry.kind != .file)
-                        .accessibilityIdentifier("catalog.\(entry.name)")
-                    }
-                }
-            }
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .overlay {
-            if let errorMessage {
-                ContentUnavailableView("Cannot Open the Folder", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
-            } else if entries == nil {
-                ProgressView()
-            } else if entries?.isEmpty == true {
-                ContentUnavailableView("Empty Folder", systemImage: "folder")
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Download Folder", systemImage: "arrow.down.circle") {
-                    download(CatalogEntryFolder.entry(path: filePath, name: title))
-                }
-                .disabled(downloading != nil)
-                .accessibilityIdentifier("catalog.downloadFolder")
-            }
-        }
-        .quickLookPreview($downloadedFile)
-        .onChange(of: downloadedFile) { old, new in
-            // The preview's share button exports the file; afterwards the copy is not needed anymore.
-            if new == nil, let old { try? FileManager.default.removeItem(at: old.deletingLastPathComponent()) }
-        }
-        .alert("Download Failed", isPresented: Binding(get: { downloadError != nil }, set: { if !$0 { downloadError = nil } })) {
-            Button("OK") {}
-        } message: {
-            Text(downloadError ?? "")
-        }
-        .task {
-            do {
-                entries = try await detail.catalog(filePath, archive: archiveName)
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func download(_ entry: CatalogEntry) {
-        downloading = entry.id
-        Task {
-            defer { downloading = nil }
-            do {
-                downloadedFile = try await detail.download(entry, archive: archiveName)
-            } catch is CancellationError {
-            } catch {
-                downloadError = error.localizedDescription
-            }
-        }
-    }
-}
-
-/// The current folder as a catalog entry, for Download Folder.
-private enum CatalogEntryFolder {
-    static func entry(path: String, name: String) -> CatalogEntry {
-        let json = #"{"filepath":"\#(path)","text":"\#(name.replacingOccurrences(of: "\"", with: ""))","type":"d","leaf":false}"#
-        // Built from known values; decoding cannot fail.
-        return try! JSONDecoder().decode(CatalogEntry.self, from: Data(json.utf8))
-    }
-}
-
-private struct CatalogEntryRow: View {
-    let entry: CatalogEntry
-    let isDownloading: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(entry.isDirectory ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                    .lineLimit(1)
-                if !entry.isDirectory {
-                    HStack(spacing: 4) {
-                        if let size = entry.size { Text(Format.bytes(size)) }
-                        if let modified = entry.modified {
-                            Text(verbatim: "·")
-                            Text(modified, format: .dateTime.day().month(.abbreviated).year().hour().minute())
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            if isDownloading { ProgressView() }
-        }
-    }
-
-    private var icon: String {
-        switch entry.kind {
-        case .directory, .virtual: "folder.fill"
-        case .symlink: "arrow.turn.up.right"
-        case .hardlink: "link"
-        case .characterDevice, .blockDevice: "cpu"
-        case .fifo, .socket: "point.3.connected.trianglepath.dotted"
-        case .file, nil: "doc"
         }
     }
 }

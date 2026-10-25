@@ -283,7 +283,8 @@ actor DemoBackupServerState {
         let midnight = calendar.startOfDay(for: now)
         func add(_ type: String, _ id: String, day: Int, minutes: Double, duration: TimeInterval, user: String = "root@pam", result: String = "OK") {
             let start = midnight.addingTimeInterval(Double(-day) * 86_400 + minutes * 60)
-            guard start < now else { return }
+            // Only finished ones, so the verification below is the one running task at any time of day.
+            guard start.addingTimeInterval(duration) < now else { return }
             tasks.append(DemoBackupTask(number: 0, type: type, workerID: id, user: user, startedAt: start, duration: duration, result: result))
         }
         for day in 0..<30 {

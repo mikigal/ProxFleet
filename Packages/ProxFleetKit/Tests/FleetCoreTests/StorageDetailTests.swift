@@ -232,8 +232,8 @@ struct StorageDetailTests {
         #expect(await connection.tasks.result(of: tasks[0].id) == .succeeded)
         let pbs = StorageDetail(node: "pve1", storage: "pbs", connection: connection)
         await pbs.load()
-        // The sample backup of VM 100 and the three of the job.
-        #expect(pbs.volumes(of: .backup).map(\.vmid) == [100, 100, 101, 200])
+        // The sample backups of VM 100 and CT 200, and the three of the job.
+        #expect(pbs.volumes(of: .backup).map(\.vmid) == [100, 100, 101, 200, 200])
 
         try await list.delete(created.id)
         #expect(list.jobs?.count == 2)

@@ -228,6 +228,14 @@ struct BackupDetailView: View {
                 NavigationLink("Show Configuration") {
                     BackupConfigurationView(node: node, backup: backup, connection: source.connection)
                 }
+                if current.isOnBackupServer {
+                    NavigationLink("Browse Files") {
+                        BackupFilesView(files: GuestBackupFiles(connection: source.connection, node: node, backup: current), title: String(localized: "Files"),
+                                        slowLoadingHint: current.guestKind == .virtualMachine
+                                            ? String(localized: "To read the disks of a VM, the node starts a small restore VM first. This can take a minute.") : nil)
+                    }
+                    .accessibilityIdentifier("backup.files")
+                }
                 if canRestore {
                     Button("Restore…") { showsRestore = true }
                         .accessibilityIdentifier("backup.restore")
@@ -237,7 +245,11 @@ struct BackupDetailView: View {
                         .accessibilityIdentifier("backup.prune")
                 }
             } footer: {
-                if current.vmid != nil {
+                if current.isOnBackupServer, current.vmid != nil {
+                    Text("Browse Files downloads single files or folders without restoring the backup. Pruning removes older backups of this guest on \(current.storage) by retention rules.")
+                } else if current.isOnBackupServer {
+                    Text("Browse Files downloads single files or folders without restoring the backup.")
+                } else if current.vmid != nil {
                     Text("Pruning removes older backups of this guest on \(current.storage) by retention rules.")
                 }
             }
@@ -367,6 +379,12 @@ private struct BackupNowView: View {
 
     private var kindName: String { detail.reference.kind == .virtualMachine ? "VM" : "CT" }
 
+    /// Containers backed up to a Proxmox Backup Server can skip unchanged files.
+    private var offersChangeDetection: Bool {
+        detail.reference.kind == .container && detail.connection.supports(.backupChangeDetection)
+            && detail.connection.snapshot?.storages.first { $0.name == draft.storage }?.pluginType == "pbs"
+    }
+
     var body: some View {
         CreationWizard<SinglePageStep, _>(
             title: "Back Up Now",
@@ -380,6 +398,10 @@ private struct BackupNowView: View {
         ) { _, errors in
             Section {
                 NodeStoragePicker(title: "Storage", connection: detail.connection, node: detail.reference.node, content: "backup", selection: $draft.storage)
+                    .accessibilityIdentifier("backup.storage")
+                    .onChange(of: draft.storage) {
+                        if !offersChangeDetection { draft.pbsChangeDetection = "" }
+                    }
                 FieldError(message: errors["storage"])
             }
             Section {
@@ -401,6 +423,20 @@ private struct BackupNowView: View {
                 case .snapshot: Text("The guest keeps running. Containers need a storage that supports snapshots.")
                 case .suspend: Text("The guest is paused or suspended briefly to get a consistent state.")
                 case .stop: Text("The guest is shut down for the backup and started again afterwards. Most consistent, but with downtime.")
+                }
+            }
+            if offersChangeDetection {
+                Section {
+                    Picker("Change Detection", selection: $draft.pbsChangeDetection) {
+                        Text("Default").tag("")
+                        Text("Legacy").tag("legacy")
+                        Text("Data").tag("data")
+                        Text("Metadata").tag("metadata")
+                    }
+                    .accessibilityIdentifier("backup.changeDetection")
+                    FieldError(message: errors["pbs-change-detection-mode"])
+                } footer: {
+                    Text("Legacy reads all files into one archive. Data and Metadata split the archive in two; Metadata compares files with the previous backup and reads only those that changed, which is much faster.")
                 }
             }
             Section {

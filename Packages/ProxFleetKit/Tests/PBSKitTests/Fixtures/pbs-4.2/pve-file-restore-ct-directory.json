@@ -1,0 +1,332 @@
+{
+ "data": [
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2FjcGk=",
+   "leaf": 0,
+   "text": "acpi",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2FscGluZS1yZWxlYXNl",
+   "leaf": 1,
+   "mtime": 1781363875,
+   "size": 7,
+   "text": "alpine-release",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2Fwaw==",
+   "leaf": 0,
+   "text": "apk",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2J1c3lib3gtcGF0aHMuZA==",
+   "leaf": 0,
+   "text": "busybox-paths.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2NvbmYuZA==",
+   "leaf": 0,
+   "text": "conf.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2Nyb250YWJz",
+   "leaf": 0,
+   "text": "crontabs",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2RvYXMuY29uZg==",
+   "leaf": 1,
+   "mtime": 1728635393,
+   "size": 213,
+   "text": "doas.conf",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2RvYXMuZA==",
+   "leaf": 0,
+   "text": "doas.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2ZzdGFi",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 89,
+   "text": "fstab",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2dyb3Vw",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 510,
+   "text": "group",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2hvc3RuYW1l",
+   "leaf": 1,
+   "mtime": 1792591761,
+   "size": 11,
+   "text": "hostname",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2hvc3Rz",
+   "leaf": 1,
+   "mtime": 1792591761,
+   "size": 155,
+   "text": "hosts",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2luaXQuZA==",
+   "leaf": 0,
+   "text": "init.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2luaXR0YWI=",
+   "leaf": 1,
+   "mtime": 1792591761,
+   "size": 372,
+   "text": "inittab",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2lzc3Vl",
+   "leaf": 1,
+   "mtime": 1781363875,
+   "size": 51,
+   "text": "issue",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2xidQ==",
+   "leaf": 0,
+   "text": "lbu",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2xvY2FsLmQ=",
+   "leaf": 0,
+   "text": "local.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2xvZ3JvdGF0ZS5jb25m",
+   "leaf": 1,
+   "mtime": 1750329812,
+   "size": 481,
+   "text": "logrotate.conf",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL2xvZ3JvdGF0ZS5k",
+   "leaf": 0,
+   "text": "logrotate.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL21kZXYuY29uZg==",
+   "leaf": 1,
+   "mtime": 1780759567,
+   "size": 4257,
+   "text": "mdev.conf",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL21vZHByb2JlLmQ=",
+   "leaf": 0,
+   "text": "modprobe.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL21vZHVsZXM=",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 15,
+   "text": "modules",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL21vZHVsZXMtbG9hZC5k",
+   "leaf": 0,
+   "text": "modules-load.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL21vdGQ=",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 284,
+   "text": "motd",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL210YWI=",
+   "leaf": 1,
+   "text": "mtab",
+   "type": "l"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL25ldHdvcms=",
+   "leaf": 0,
+   "text": "network",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL25zc3dpdGNoLmNvbmY=",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 205,
+   "text": "nsswitch.conf",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL29wdA==",
+   "leaf": 0,
+   "text": "opt",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL29zLXJlbGVhc2U=",
+   "leaf": 1,
+   "text": "os-release",
+   "type": "l"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3Bhc3N3ZA==",
+   "leaf": 1,
+   "mtime": 1792538136,
+   "size": 702,
+   "text": "passwd",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3BlcmlvZGlj",
+   "leaf": 0,
+   "text": "periodic",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3Byb2ZpbGU=",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 547,
+   "text": "profile",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3Byb2ZpbGUuZA==",
+   "leaf": 0,
+   "text": "profile.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3Byb3RvY29scw==",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 3144,
+   "text": "protocols",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3JjLmNvbmY=",
+   "leaf": 1,
+   "mtime": 1784034037,
+   "size": 13523,
+   "text": "rc.conf",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3Jlc29sdi5jb25m",
+   "leaf": 1,
+   "mtime": 1792850984,
+   "size": 48,
+   "text": "resolv.conf",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3J1bmxldmVscw==",
+   "leaf": 0,
+   "text": "runlevels",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3NlY2ZpeGVzLmQ=",
+   "leaf": 0,
+   "text": "secfixes.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3NlY3VyZXR0eQ==",
+   "leaf": 1,
+   "mtime": 1792538136,
+   "size": 156,
+   "text": "securetty",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3NlcnZpY2Vz",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 12813,
+   "text": "services",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3NoYWRvdw==",
+   "leaf": 1,
+   "mtime": 1792538136,
+   "size": 362,
+   "text": "shadow",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3NoZWxscw==",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 38,
+   "text": "shells",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3NzbA==",
+   "leaf": 0,
+   "text": "ssl",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3NzbDEuMQ==",
+   "leaf": 0,
+   "text": "ssl1.1",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3N5c2N0bC5jb25m",
+   "leaf": 1,
+   "mtime": 1774381254,
+   "size": 53,
+   "text": "sysctl.conf",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3N5c2N0bC5k",
+   "leaf": 0,
+   "text": "sysctl.d",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRjL3VkaGNwYw==",
+   "leaf": 0,
+   "text": "udhcpc",
+   "type": "d"
+  }
+ ]
+}

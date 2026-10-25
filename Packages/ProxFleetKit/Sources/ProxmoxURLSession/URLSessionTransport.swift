@@ -46,6 +46,7 @@ public final class URLSessionTransport: WebSocketTransport, CertificatePinning {
         for (name, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: name)
         }
+        if let timeout = request.timeout { urlRequest.timeoutInterval = timeout }
 
         let host = request.url.host ?? ""
         do {
@@ -292,6 +293,7 @@ extension URLSessionTransport: FileDownloadTransport {
         for (name, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: name)
         }
+        if let timeout = request.timeout { urlRequest.timeoutInterval = timeout }
         let host = request.url.host ?? ""
         let delegate = DownloadDelegate(directory: directory, progress: progress)
         let task = session.downloadTask(with: urlRequest)

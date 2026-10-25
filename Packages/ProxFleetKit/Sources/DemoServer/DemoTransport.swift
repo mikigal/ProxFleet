@@ -6,7 +6,7 @@ import ProxmoxCore
 /// Any username and password are accepted, except the password `wrong`. Usernames containing `tfa`
 /// require a second factor; the TOTP code `123456` and any recovery key are accepted.
 public final class DemoTransport: HTTPTransport {
-    private let state: DemoState
+    let state: DemoState
 
     public init(cluster: DemoCluster = .homelab) {
         state = DemoState(cluster: cluster)
@@ -48,6 +48,8 @@ actor DemoState {
     var snapshots: [Int: [DemoSnapshot]] = [:]
     var currentSnapshot: [Int: String] = [:]
     var backups: [DemoBackup]
+    /// When file restore started reading a VM backup's disks, by volume, like a restore VM that boots first.
+    var restoreVMStarts: [String: Date] = [:]
     /// ISO images, templates, snippets and uploads on `local`.
     var files: [DemoFile]
     /// Services started or stopped in demo mode, by `node/service`.
