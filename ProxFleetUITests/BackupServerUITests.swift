@@ -186,10 +186,8 @@ final class BackupServerUITests: XCTestCase {
 
         // A remote's connection check lists what its user sees there.
         app.buttons["tab.more"].tap()
-        let remotes = app.buttons["more.remotes"]
         XCTAssertTrue(app.buttons["more.services"].waitForExistence(timeout: 5))
-        for _ in 0..<8 where !remotes.exists || !remotes.isHittable { app.swipeUp() }
-        remotes.tap()
+        openMoreRow("more.remotes")
         let cloud = app.buttons["remote.cloud"]
         XCTAssertTrue(cloud.waitForExistence(timeout: 10))
         cloud.tap()
@@ -213,7 +211,7 @@ final class BackupServerUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
 
         // A directory with a datastore on the unused disk.
-        app.buttons["more.disks"].tap()
+        openMoreRow("more.disks")
         XCTAssertTrue(app.buttons["disk.sdd"].waitForExistence(timeout: 10))
         snapshot("pbs-disks")
         app.buttons["disks.add"].tap()
@@ -229,7 +227,7 @@ final class BackupServerUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
 
         // A bridge, applied.
-        app.buttons["more.network"].tap()
+        openMoreRow("more.network")
         XCTAssertTrue(app.buttons["interface.vmbr0"].waitForExistence(timeout: 10))
         app.buttons["network.add"].tap()
         // A backup server has no Open vSwitch.
@@ -253,19 +251,74 @@ final class BackupServerUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
 
         // The server's options.
-        let options = app.buttons["more.options"]
-        for _ in 0..<6 where !options.isHittable { app.swipeUp() }
-        options.tap()
+        openMoreRow("more.options")
         let proxy = app.textFields["options.httpProxy"]
         XCTAssertTrue(proxy.waitForExistence(timeout: 10))
         proxy.tap()
         proxy.typeText("http://proxy.home.arpa:3128")
         snapshot("pbs-options")
         app.buttons["save"].tap()
-        XCTAssertTrue(options.waitForExistence(timeout: 10))
-        options.tap()
+        XCTAssertTrue(app.buttons["more.options"].waitForExistence(timeout: 10))
+        openMoreRow("more.options")
         XCTAssertTrue(proxy.waitForExistence(timeout: 10))
         XCTAssertEqual(proxy.value as? String, "http://proxy.home.arpa:3128")
+    }
+
+    /// Every screen of the backup server opens in demo mode, which App Review uses: no request the demo cannot answer,
+    /// no error view and no alert.
+    @MainActor
+    func testEveryScreenOpensInDemoMode() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        let problems = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'demo mode' OR label BEGINSWITH 'Cannot '"))
+        func check(_ screen: String) {
+            // Loading spinners go away once the screen has its data.
+            let loading = app.activityIndicators.firstMatch
+            for _ in 0..<10 where loading.exists { usleep(500_000) }
+            XCTAssertFalse(problems.firstMatch.exists, "\(screen): \(problems.firstMatch.label)")
+            XCTAssertEqual(app.alerts.count, 0, screen)
+        }
+        // A tap right after a screen opened is sometimes lost; go back again until the list shows.
+        func back(to element: XCUIElement) {
+            for _ in 0..<3 where !element.waitForExistence(timeout: 2) || !element.isHittable {
+                app.navigationBars.buttons.firstMatch.tap()
+            }
+        }
+        check("dashboard")
+
+        app.buttons["tab.more"].tap()
+        let rows = ["more.updates", "more.services", "more.log", "more.report", "more.network", "more.disks", "more.dns", "more.time",
+                    "more.certificates", "more.options", "more.users", "more.permissions", "more.tfa", "more.realms", "more.remotes",
+                    "more.traffic", "more.notifications", "more.metrics", "more.s3", "more.keys"]
+        for identifier in rows {
+            openMoreRow(identifier)
+            check(identifier)
+        }
+        back(to: app.buttons["tab.more"])
+
+        app.buttons["tab.jobs"].tap()
+        check("jobs")
+        for job in ["offsite-copy", "cloud-push", "weekly-verify", "main"] {
+            let row = app.buttons.matching(NSPredicate(format: "identifier ENDSWITH %@", ".\(job)")).firstMatch
+            guard row.waitForExistence(timeout: 5) else { XCTFail("job \(job)"); continue }
+            row.tap()
+            check("job \(job)")
+            back(to: app.buttons["tab.jobs"])
+        }
+
+        app.buttons["tab.datastores"].tap()
+        for store in ["main", "offsite"] {
+            let row = app.buttons["datastore.\(store)"]
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            row.tap()
+            for tab in ["summary", "content", "jobs", "options", "permissions"] {
+                let button = app.buttons["tab.\(tab)"]
+                XCTAssertTrue(button.waitForExistence(timeout: 5))
+                button.tap()
+                check("\(store) \(tab)")
+            }
+            back(to: app.buttons["datastore.offsite"])
+        }
     }
 
     @MainActor
@@ -273,14 +326,7 @@ final class BackupServerUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
         app.buttons["tab.more"].tap()
-        // The More list may be scrolled anywhere after coming back: look below, then above.
-        func open(_ identifier: String) {
-            let row = app.buttons[identifier]
-            XCTAssertTrue(app.buttons["tab.more"].waitForExistence(timeout: 5))
-            for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeUp() }
-            for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeDown() }
-            row.tap()
-        }
+        func open(_ identifier: String) { openMoreRow(identifier) }
         func back() { app.navigationBars.buttons.firstMatch.tap() }
 
         // A new user with a password, then an API token whose secret shows once.
@@ -387,6 +433,24 @@ final class BackupServerUITests: XCTestCase {
     }
 
     /// Opens the content of the main datastore's homelab namespace.
+    /// Opens a row of the More tab. Taps right after a screen changed are sometimes lost, so it goes back until the
+    /// list shows, and taps the row again when nothing opened. The list may be scrolled anywhere after coming back:
+    /// it looks below, then above. The floating tab bar covers the rows below its top edge, where a tap would switch
+    /// tabs instead.
+    private func openMoreRow(_ identifier: String) {
+        let more = app.buttons["tab.more"]
+        for _ in 0..<3 where !more.waitForExistence(timeout: 2) { app.navigationBars.buttons.firstMatch.tap() }
+        XCTAssertTrue(more.exists, "the More list before \(identifier)")
+        let row = app.buttons[identifier]
+        func belowTabBar() -> Bool { row.frame.maxY > more.frame.minY }
+        for _ in 0..<8 where !row.exists || !row.isHittable || belowTabBar() { app.swipeUp() }
+        for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeDown() }
+        for _ in 0..<3 where belowTabBar() { app.swipeUp() }
+        row.tap()
+        sleep(1)
+        if more.exists, more.isHittable, row.exists, row.isHittable { row.tap() }
+    }
+
     private func openHomelabContent() {
         app.launch()
         XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))

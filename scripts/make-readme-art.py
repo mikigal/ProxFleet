@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Builds the images of the README: docs/readme/hero.svg (the banner, from the screenshots in docs/screenshots),
-# docs/readme/why.svg (the Why ProxFleet card), docs/readme/features.svg (the feature tiles) and
-# docs/readme/roadmap.svg (the Coming next tiles).
+# docs/readme/why.svg (the Why ProxFleet card), docs/readme/features.svg and docs/readme/backup-server.svg (the
+# feature tiles of Proxmox VE and Proxmox Backup Server) and docs/readme/roadmap.svg (the Coming next tiles, only
+# while ROADMAP has items).
 # All of them share one background and the same glass cards, so they read as one set.
 # The screenshots are embedded as JPEG, because an SVG shown as an image cannot load other files.
 #
@@ -38,6 +39,7 @@ GLYPHS = {
     "phone": '<rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 5.5h3M10 18.5h4"/>',
     "grid": '<rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/>',
     "lock": '<rect x="4.5" y="10.5" width="15" height="10.5" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5M12 14.5v2.5"/>',
+    "restore": '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6l2 2.2h7.4A2.5 2.5 0 0 1 21 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M12 10.5v5.5M9.5 13.5L12 16l2.5-2.5"/>',
 }
 
 WHY = [
@@ -57,9 +59,15 @@ FEATURES = [
     ("shield", "Firewall and", "permissions"),
 ]
 
-ROADMAP = [
-    ("archive", "Backup Server", "Datastores, sync jobs and", "file-level restore"),
+BACKUP_SERVER = [
+    ("archive", "Datastores and", "namespaces"),
+    ("sync", "Sync, verify", "and prune jobs"),
+    ("restore", "File-level", "restore"),
+    ("lock", "Users, keys", "and S3"),
 ]
+
+# Tiles of the Coming next card: glyph, title and two lines. Without items, the card is not built.
+ROADMAP: list = []
 
 # Phones of the banner, from left to right: screenshot, center x, center y, scale, rotation, dimming.
 # The middle one stands in front; the others fan out behind it, smaller, tilted and darker.
@@ -297,25 +305,33 @@ def why() -> str:
     return svg(height, f"Why ProxFleet: {summary}", background_defs(height, 0.38, 460) + TILE_GRADIENT, body)
 
 
-def features() -> str:
+def tile_grid(title: str, items: list) -> str:
     columns, tile_w, tile_h, gap, margin = 4, 340, 236, 32, 72
-    rows = (len(FEATURES) + columns - 1) // columns
+    rows = (len(items) + columns - 1) // columns
     height = 2 * margin + TITLE_HEIGHT + rows * tile_h + (rows - 1) * gap
     left = (WIDTH - (columns * tile_w + (columns - 1) * gap)) // 2
     icon = 76
 
     tiles = []
-    for i, (glyph, line1, line2) in enumerate(FEATURES):
+    for i, (glyph, line1, line2) in enumerate(items):
         x = left + (i % columns) * (tile_w + gap)
         y = margin + TITLE_HEIGHT + (i // columns) * (tile_h + gap)
         tiles.append(f"""{glass(x, y, tile_w, tile_h, 30, 0.72)}{tile_icon(glyph, x + 36, y + 36, icon)}
     <text x="{x + 36}" y="{y + 162}" font-family="{FONT}" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">{line1}</text>
     <text x="{x + 36}" y="{y + 202}" font-family="{FONT}" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">{line2}</text>""")
 
-    names = ", ".join(f"{a} {b}".lower() for _, a, b in FEATURES)
+    names = ", ".join(f"{a} {b}".lower() for _, a, b in items)
     defs = background_defs(height, 0.4, 520) + TILE_GRADIENT
-    body = background(height, CARD_NETWORK) + section_title("Features", margin) + "".join(tiles)
-    return svg(height, f"Features: {names}", defs, body)
+    body = background(height, CARD_NETWORK) + section_title(title, margin) + "".join(tiles)
+    return svg(height, f"{title}: {names}", defs, body)
+
+
+def features() -> str:
+    return tile_grid("Features", FEATURES)
+
+
+def backup_server() -> str:
+    return tile_grid("Proxmox Backup Server", BACKUP_SERVER)
 
 
 def roadmap() -> str:
@@ -348,7 +364,12 @@ def roadmap() -> str:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for name, build in [("hero.svg", hero), ("why.svg", why), ("features.svg", features), ("roadmap.svg", roadmap)]:
+    images = [("hero.svg", hero), ("why.svg", why), ("features.svg", features), ("backup-server.svg", backup_server)]
+    if ROADMAP:
+        images.append(("roadmap.svg", roadmap))
+    else:
+        (OUT / "roadmap.svg").unlink(missing_ok=True)
+    for name, build in images:
         path = OUT / name
         path.write_text(build())
         print(f"{path.relative_to(ROOT)}: {path.stat().st_size // 1024} KB")
