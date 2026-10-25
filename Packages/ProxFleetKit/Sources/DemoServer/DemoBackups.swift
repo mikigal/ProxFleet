@@ -24,7 +24,7 @@ extension DemoState {
             (101, 2, "truenas", false), (200, 1, "pihole", false), (202, 3, "jellyfin", false),
         ]
         // Clusters also back up to the Proxmox Backup Server, which allows live restores.
-        let backupServerSamples: [(vmid: Int, daysAgo: Double, notes: String, isProtected: Bool)] = cluster.clusterName == nil ? [] : [(100, 0.5, "home-assistant", false)]
+        let backupServerSamples: [(vmid: Int, daysAgo: Double, notes: String, isProtected: Bool)] = cluster.clusterName == nil ? [] : [(100, 0.5, "home-assistant", false), (200, 0.5, "pihole", false)]
         return (samples.map { ($0, "local") } + backupServerSamples.map { ($0, "pbs") }).compactMap { sample, storage in
             guard let guest = cluster.guests.first(where: { $0.vmid == sample.vmid }) else { return nil }
             let date = now.addingTimeInterval(-sample.daysAgo * 86_400 - 3 * 3600)
@@ -85,6 +85,9 @@ extension DemoState {
             default:
                 return nil
             }
+
+        case (.get, let path) where path.count == 4 && path[0] == "storage" && path[2] == "file-restore" && path[3] == "list":
+            return fileRestoreList(storage: path[1], parameters: parameters)
 
         case (.get, ["vzdump", "extractconfig"]):
             guard let backup = backups.first(where: { $0.volume == parameters["volume"] }) else { return failure(500, "volume does not exist") }

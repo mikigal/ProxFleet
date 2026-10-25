@@ -27,7 +27,8 @@ public struct FleetEnvironment: Sendable {
     }
 
     @Sendable public static func defaultTransport(for profile: ServerProfile) -> any HTTPTransport {
-        profile.isDemo ? DemoTransport() : URLSessionTransport(pinnedFingerprints: Set(profile.trustedFingerprints))
+        guard profile.isDemo else { return URLSessionTransport(pinnedFingerprints: Set(profile.trustedFingerprints)) }
+        return profile.product == .backupServer ? DemoBackupServerTransport() : DemoTransport()
     }
 
     /// The demo cluster reports another Proxmox VE version, to see how the app adapts to older releases.
@@ -35,7 +36,7 @@ public struct FleetEnvironment: Sendable {
         var environment = self
         let makeTransport = makeTransport
         environment.makeTransport = { profile in
-            guard profile.isDemo else { return makeTransport(profile) }
+            guard profile.isDemo, profile.product == .virtualEnvironment else { return makeTransport(profile) }
             var cluster = DemoCluster.homelab
             cluster.version = version
             return DemoTransport(cluster: cluster)
@@ -132,13 +133,28 @@ public final class Fleet {
     /// Adds the built-in demo cluster, or returns it when it already exists.
     @discardableResult
     public func addDemoServer() -> ServerProfile {
-        if let existing = profiles.first(where: \.isDemo) { return existing }
+        if let existing = profiles.first(where: { $0.isDemo && $0.product == .virtualEnvironment }) { return existing }
         let profile = ServerProfile(
             name: "Demo Cluster",
             addresses: [ServerAddress(host: Self.demoHost, port: 8006)],
             username: "demo",
             realm: "pve",
             clusterName: "homelab",
+            isDemo: true
+        )
+        return addSaved(profile, password: "demo")
+    }
+
+    /// Adds the built-in demo backup server, which the demo cluster backs up to, or returns it when it already exists.
+    @discardableResult
+    public func addDemoBackupServer() -> ServerProfile {
+        if let existing = profiles.first(where: { $0.isDemo && $0.product == .backupServer }) { return existing }
+        let profile = ServerProfile(
+            name: "Demo Backup Server",
+            product: .backupServer,
+            addresses: [ServerAddress(host: Self.demoHost, port: ProxmoxProduct.backupServer.defaultPort)],
+            username: "demo",
+            realm: "pbs",
             isDemo: true
         )
         return addSaved(profile, password: "demo")

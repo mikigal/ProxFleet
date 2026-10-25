@@ -1,0 +1,33 @@
+{
+  "data": [
+    {
+      "path": "/",
+      "propagate": true,
+      "roleid": "Admin",
+      "ugid": "tfa@pbs",
+      "ugid_type": "user"
+    },
+    {
+      "path": "/",
+      "propagate": true,
+      "roleid": "Admin",
+      "ugid": "root@pam!seed",
+      "ugid_type": "user"
+    },
+    {
+      "path": "/datastore/store1",
+      "propagate": true,
+      "roleid": "DatastoreAudit",
+      "ugid": "limited@pbs",
+      "ugid_type": "user"
+    },
+    {
+      "path": "/datastore/store1",
+      "propagate": true,
+      "roleid": "DatastoreAdmin",
+      "ugid": "pvebackup@pbs",
+      "ugid_type": "user"
+    }
+  ],
+  "digest": "6d63f1b43acd99ae1f94608be2fcd73f7725131eadbcf67035e51454271509e7"
+}

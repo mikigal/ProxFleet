@@ -1,9 +1,13 @@
 import Foundation
 import Observation
+import PBSKit
 import ProxmoxCore
 import PVEKit
 
 /// Notification targets and matchers, and the datacenter options (`datacenter.cfg`).
+///
+/// A backup server has the same notification API under `/config/notifications`, checked by `Sys.Modify` on
+/// `/system/notifications`.
 @MainActor
 @Observable
 public final class DatacenterSettings {
@@ -23,20 +27,28 @@ public final class DatacenterSettings {
     }
 
     /// Changing notifications needs `Mapping.Modify`; endpoints also need `Sys.Modify` or `Sys.AccessNetwork` on `/`.
-    public var canModifyNotifications: Bool { notificationPrivileges?.contains("Mapping.Modify") ?? true }
+    public var canModifyNotifications: Bool {
+        notificationPrivileges?.contains(connection.isBackupServer ? "Sys.Modify" : "Mapping.Modify") ?? true
+    }
     public var canModifyEndpoints: Bool {
-        canModifyNotifications && (rootPrivileges.map { $0.contains("Sys.Modify") || $0.contains("Sys.AccessNetwork") } ?? true)
+        guard !connection.isBackupServer else { return canModifyNotifications }
+        return canModifyNotifications && (rootPrivileges.map { $0.contains("Sys.Modify") || $0.contains("Sys.AccessNetwork") } ?? true)
+    }
+
+    /// The request for this server: Proxmox VE's as is, or rewritten for a backup server.
+    private func notifications<Value>(_ request: APIRequest<Value>) -> APIRequest<Value> {
+        connection.isBackupServer ? PBS.notificationRequest(request) : request
     }
     /// Changing options needs `Sys.Modify` on `/`.
     public var canModifyOptions: Bool { rootPrivileges?.contains("Sys.Modify") ?? true }
 
     public func loadNotifications() async {
-        async let privileges = try? connection.session.privileges(on: "/mapping/notifications")
+        async let privileges = try? connection.session.privileges(on: connection.isBackupServer ? "/system/notifications" : "/mapping/notifications")
         async let root = try? connection.session.privileges(on: "/")
         do {
-            targets = try await connection.session.send(PVE.notificationTargets()).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            matchers = try await connection.session.send(PVE.notificationMatchers()).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            fieldValues = (try? await connection.session.send(PVE.matcherFieldValues())) ?? []
+            targets = try await connection.session.send(notifications(PVE.notificationTargets())).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            matchers = try await connection.session.send(notifications(PVE.notificationMatchers())).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            fieldValues = (try? await connection.session.send(notifications(PVE.matcherFieldValues()))) ?? []
             loadError = nil
         } catch is CancellationError {
         } catch {
@@ -62,7 +74,7 @@ public final class DatacenterSettings {
 
     public func endpointConfig(_ type: NotificationEndpointType, name: String) async throws(ConfigUpdateError) -> NotificationConfig {
         do {
-            return try await connection.session.send(PVE.notificationEndpoint(type, name: name))
+            return try await connection.session.send(notifications(PVE.notificationEndpoint(type, name: name)))
         } catch {
             throw ConfigUpdateError(error)
         }
@@ -114,7 +126,7 @@ public final class DatacenterSettings {
 
     private func perform(_ request: APIRequest<Nothing>, reload: Bool = true) async throws(ConfigUpdateError) {
         do {
-            _ = try await connection.session.send(request)
+            _ = try await connection.session.send(notifications(request))
         } catch {
             throw ConfigUpdateError(error)
         }

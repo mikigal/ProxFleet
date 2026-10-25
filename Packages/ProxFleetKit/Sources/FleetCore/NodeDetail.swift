@@ -1,9 +1,13 @@
 import Foundation
 import Observation
+import PBSKit
 import ProxmoxCore
 import PVEKit
 
 /// Everything the node screen shows: status, history, services, updates, journal and tasks.
+///
+/// Also serves a backup server, a single node the API calls `localhost`: most of its node API is the same, and the
+/// differences (privileges on `/system`, disks, network lists, options) are handled here.
 @MainActor
 @Observable
 public final class NodeDetail {
@@ -34,6 +38,10 @@ public final class NodeDetail {
     public private(set) var subscription: NodeSubscription?
     public private(set) var certificates: [NodeCertificate]?
     public private(set) var options: NodeOptions?
+    /// A backup server's options and the directories mounted for its datastores.
+    public private(set) var backupServerOptions: BackupServerNodeOptions?
+    private var backupServerOptionsDigest: String?
+    public private(set) var backupServerDirectories: [BackupServerDirectory]?
 
     public var timeframe: RRDTimeframe = .hour {
         didSet {
@@ -56,9 +64,19 @@ public final class NodeDetail {
     /// The node is listed as online, but its status cannot be read right now, e.g. while it reboots.
     public var isNotResponding: Bool { isOnline && loadError != nil }
 
-    /// Whether the user holds a privilege on `/nodes/{node}`. Unknown privileges count as granted.
+    public var isBackupServer: Bool { connection.isBackupServer }
+
+    /// Where the node's privileges are checked: `/nodes/{node}`, or `/system` on a backup server.
+    public var privilegePath: String { isBackupServer ? "/system" : "/nodes/\(node)" }
+
+    /// The privilege's name on this product: the backup server calls `Sys.PowerMgmt` `Sys.PowerManagement`.
+    public func privilegeName(_ privilege: String) -> String {
+        isBackupServer && privilege == "Sys.PowerMgmt" ? "Sys.PowerManagement" : privilege
+    }
+
+    /// Whether the user holds a privilege on `privilegePath`. Unknown privileges count as granted.
     public func can(_ privilege: String) -> Bool {
-        privileges?.contains(privilege) ?? true
+        privileges?.contains(privilegeName(privilege)) ?? true
     }
 
     // MARK: - Loading
@@ -66,7 +84,7 @@ public final class NodeDetail {
     public func load() async {
         async let status: Void = loadStatus()
         async let history: Void = loadHistory()
-        async let privileges = try? connection.session.privileges(on: "/nodes/\(node)")
+        async let privileges = try? connection.session.privileges(on: privilegePath)
         _ = await (status, history)
         if let privileges = await privileges { self.privileges = privileges }
         hasLoaded = true
@@ -95,7 +113,8 @@ public final class NodeDetail {
     }
 
     private func loadHistory() async {
-        if let points = try? await connection.session.send(PVE.nodeRRD(node, timeframe: timeframe)) {
+        let request = isBackupServer ? PBS.nodeRRD(timeframe: timeframe) : PVE.nodeRRD(node, timeframe: timeframe)
+        if let points = try? await connection.session.send(request) {
             history = points.filter(\.hasData)
         }
     }
@@ -139,14 +158,21 @@ public final class NodeDetail {
     @discardableResult
     public func loadSystemSettings() async -> String? {
         let dns = await fetch(PVE.nodeDNS(node)) { self.dns = $0 }
-        let hosts = await fetch(PVE.nodeHosts(node)) { self.hosts = $0 }
+        // A backup server does not edit /etc/hosts.
+        let hosts = isBackupServer ? nil : await fetch(PVE.nodeHosts(node)) { self.hosts = $0 }
         let time = await fetch(PVE.nodeTime(node)) { self.time = $0 }
         return dns ?? hosts ?? time
     }
 
     @discardableResult
     public func loadOptions() async -> String? {
-        await fetch(PVE.nodeOptions(node)) { options = $0 }
+        if isBackupServer {
+            return await fetch(PBS.nodeOptions()) {
+                backupServerOptions = $0.value
+                backupServerOptionsDigest = $0.digest
+            }
+        }
+        return await fetch(PVE.nodeOptions(node)) { options = $0 }
     }
 
     @discardableResult
@@ -157,6 +183,18 @@ public final class NodeDetail {
     /// Loads the disks and what is built on them: LVM, thin pools, ZFS pools and directories.
     @discardableResult
     public func loadDisks() async -> String? {
+        if isBackupServer {
+            // No LVM screens on a backup server: its directories and ZFS pools hold datastores.
+            let disks = await fetch(PBS.nodeDisks()) { self.disks = $0.flatMap(\.nodeDisks) }
+            volumeGroups = []
+            thinPools = []
+            await fetch(PBS.zfsPools()) { zfsPools = $0 }
+            await fetch(PBS.directories()) { found in
+                backupServerDirectories = found
+                directories = found.map(\.mount)
+            }
+            return disks
+        }
         let disks = await fetch(PVE.disks(node: node)) { self.disks = $0 }
         await fetch(PVE.volumeGroups(node: node)) { volumeGroups = $0.groups }
         await fetch(PVE.thinPools(node: node)) { thinPools = $0 }
@@ -178,7 +216,12 @@ public final class NodeDetail {
     }
 
     public func smart(of disk: String) async throws -> SMARTReport {
-        try await connection.session.send(PVE.smart(node: node, disk: disk))
+        try await connection.session.send(PVE.smart(node: node, disk: diskArgument(disk)))
+    }
+
+    /// The backup server takes disks by name (`sdb`), Proxmox VE by path.
+    private func diskArgument(_ disk: String) -> String {
+        isBackupServer ? PBS.diskName(disk) : disk
     }
 
     public func zfsStatus(of pool: String) async throws -> ZFSPoolStatus {
@@ -265,12 +308,12 @@ public final class NodeDetail {
 
     /// Adds an interface to the pending configuration. Nothing changes on the node until `applyNetwork`.
     public func createInterface(_ draft: NetworkInterfaceDraft) async throws(ConfigUpdateError) {
-        try await perform(PVE.createInterface(node: node, draft))
+        try await perform(isBackupServer ? PBS.createInterface(draft) : PVE.createInterface(node: node, draft))
         await loadNetwork()
     }
 
     public func updateInterface(_ name: String, type: String, _ update: GuestConfigUpdate) async throws(ConfigUpdateError) {
-        try await perform(PVE.updateInterface(node: node, name: name, type: type, update))
+        try await perform(isBackupServer ? PBS.updateInterface(name, update) : PVE.updateInterface(node: node, name: name, type: type, update))
         await loadNetwork()
     }
 
@@ -293,23 +336,34 @@ public final class NodeDetail {
     // MARK: - Disks
 
     public func initializeGPT(_ disk: String) async throws(ConfigUpdateError) {
-        try await runTask(PVE.initializeGPT(node: node, disk: disk))
+        try await runTask(PVE.initializeGPT(node: node, disk: diskArgument(disk)))
         await loadDisks()
     }
 
     public func wipe(_ disk: String) async throws(ConfigUpdateError) {
-        try await runTask(PVE.wipeDisk(node: node, disk: disk))
+        try await runTask(PVE.wipeDisk(node: node, disk: diskArgument(disk)))
         await loadDisks()
     }
 
     /// Creates an LVM volume group, thin pool, ZFS pool or directory and waits for its task.
-    public func createDiskStorage(_ draft: DiskStorageDraft) async throws(ConfigUpdateError) {
-        try await runTask(PVE.createDiskStorage(node: node, draft))
+    /// On a backup server `addStorage` adds a datastore, and `removableDatastore` makes a directory's one removable.
+    public func createDiskStorage(_ draft: DiskStorageDraft, removableDatastore: Bool = false) async throws(ConfigUpdateError) {
+        if isBackupServer {
+            try await runTask(PBS.createDiskStorage(draft, removable: removableDatastore))
+            await connection.refresh()
+        } else {
+            try await runTask(PVE.createDiskStorage(node: node, draft))
+        }
         await loadDisks()
     }
 
+    /// On a backup server only directories can be removed: the mount goes, the data and any datastore stay.
     public func deleteDiskStorage(_ kind: DiskStorageKind, name: String, volumeGroup: String? = nil, cleanupConfig: Bool, wipeDisks: Bool) async throws(ConfigUpdateError) {
-        try await runTask(PVE.deleteDiskStorage(node: node, kind: kind, name: name, volumeGroup: volumeGroup, cleanupConfig: cleanupConfig, wipeDisks: wipeDisks))
+        if isBackupServer {
+            try await runTask(PBS.deleteDirectory(name))
+        } else {
+            try await runTask(PVE.deleteDiskStorage(node: node, kind: kind, name: name, volumeGroup: volumeGroup, cleanupConfig: cleanupConfig, wipeDisks: wipeDisks))
+        }
         await loadDisks()
     }
 
@@ -328,23 +382,47 @@ public final class NodeDetail {
     /// Uploads a custom certificate. pveproxy restarts with it, so its fingerprint is trusted first: the
     /// server reported it over the connection that is already trusted.
     public func uploadCertificate(_ draft: CustomCertificateDraft) async throws(ConfigUpdateError) {
-        let certificate: NodeCertificate
+        let certificate: NodeCertificate?
         do {
-            certificate = try await connection.session.send(PVE.uploadCertificate(node: node, draft))
+            certificate = isBackupServer
+                ? try await connection.session.send(PBS.uploadCertificate(draft)).first { $0.fileName == "proxy.pem" }
+                : try await connection.session.send(PVE.uploadCertificate(node: node, draft))
         } catch {
             throw ConfigUpdateError(error)
         }
-        if let fingerprint = certificate.fingerprint { connection.trustFingerprint(fingerprint) }
+        if let fingerprint = certificate?.fingerprint { connection.trustFingerprint(fingerprint) }
         await reloadCertificatesAfterRestart()
     }
 
     /// Removes the custom certificate; pveproxy goes back to `pve-ssl.pem`, whose fingerprint is trusted first.
+    ///
+    /// A backup server makes a new self-signed certificate instead, whose fingerprint is not known beforehand: the
+    /// app asks to trust it on the next connection.
     public func deleteCustomCertificate() async throws(ConfigUpdateError) {
+        if isBackupServer {
+            try await perform(PBS.deleteCustomCertificate())
+            await reloadCertificatesAfterRestart()
+            return
+        }
         if let fingerprint = certificates?.first(where: { $0.fileName == "pve-ssl.pem" })?.fingerprint {
             connection.trustFingerprint(fingerprint)
         }
         try await perform(PVE.deleteCustomCertificate(node: node))
         await reloadCertificatesAfterRestart()
+    }
+
+    /// Saves a backup server's options, refused when they changed since they were loaded.
+    public func saveBackupServerOptions(_ update: BackupServerConfigUpdate) async throws(ConfigUpdateError) {
+        guard !update.isEmpty else { return }
+        var update = update
+        if update.digest == nil { update.digest = backupServerOptionsDigest }
+        do {
+            try await perform(PBS.updateNodeOptions(update))
+        } catch .conflict {
+            await loadOptions()
+            throw .conflict
+        }
+        await loadOptions()
     }
 
     /// pveproxy needs a moment to restart; requests fail until then.

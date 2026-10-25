@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "comment": "Read-only test user",
+      "userid": "limited@pbs"
+    },
+    {
+      "comment": "Test user with TOTP",
+      "userid": "tfa@pbs"
+    },
+    {
+      "email": "asdf@gmail.com",
+      "tokens": [
+        {
+          "comment": "ProxFleet seed",
+          "tokenid": "root@pam!seed"
+        }
+      ],
+      "userid": "root@pam"
+    },
+    {
+      "comment": "Proxmox VE test cluster",
+      "userid": "pvebackup@pbs"
+    }
+  ],
+  "digest": "dfd9c0aedcc1e5dc3901b3556b4f35d4d505c492b39dd91761ee0e8ea6bcb706"
+}

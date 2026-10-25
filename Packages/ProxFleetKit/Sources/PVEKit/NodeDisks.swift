@@ -35,6 +35,25 @@ public struct NodeDisk: Decodable, Sendable, Equatable, Identifiable {
         return !["OK", "PASSED", "UNKNOWN", ""].contains(health)
     }
 
+    public init(path: String, parent: String? = nil, model: String? = nil, vendor: String? = nil, serial: String? = nil, size: Int64,
+                type: String, health: String? = nil, wearout: Int? = nil, usage: String? = nil, hasGPT: Bool = false,
+                isMounted: Bool = false, rpm: Int? = nil, wwn: String? = nil) {
+        self.path = path
+        self.parent = parent
+        self.model = model
+        self.vendor = vendor
+        self.serial = serial
+        self.size = size
+        self.type = type
+        self.health = health
+        self.wearout = wearout
+        self.usage = usage
+        self.hasGPT = hasGPT
+        self.isMounted = isMounted
+        self.rpm = rpm
+        self.wwn = wwn
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
         func string(_ key: String) -> String? {
@@ -105,7 +124,8 @@ public struct SMARTReport: Decodable, Sendable, Equatable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        health = container.lossyString(AnyCodingKey("health")) ?? "UNKNOWN"
+        // Proxmox Backup Server calls it `status`, in lowercase.
+        health = (container.lossyString(AnyCodingKey("health")) ?? container.lossyString(AnyCodingKey("status"))?.uppercased()) ?? "UNKNOWN"
         attributes = (try? container.decodeIfPresent([Attribute].self, forKey: AnyCodingKey("attributes"))) ?? []
         text = container.lossyString(AnyCodingKey("text"))?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
@@ -281,6 +301,13 @@ public struct DirectoryMount: Decodable, Sendable, Equatable, Identifiable {
     public var id: String { path }
     /// `/mnt/pve/backup` → `backup`, the name the delete call takes.
     public var name: String { path.split(separator: "/").last.map(String.init) ?? path }
+
+    public init(path: String, device: String, fileSystem: String, options: String? = nil) {
+        self.path = path
+        self.device = device
+        self.fileSystem = fileSystem
+        self.options = options
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)

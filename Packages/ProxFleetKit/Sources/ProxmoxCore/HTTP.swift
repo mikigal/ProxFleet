@@ -12,12 +12,15 @@ public struct HTTPRequest: Sendable, Equatable {
     public var url: URL
     public var headers: [String: String]
     public var body: Data?
+    /// Overrides the transport's timeout when set.
+    public var timeout: TimeInterval?
 
-    public init(method: HTTPMethod, url: URL, headers: [String: String] = [:], body: Data? = nil) {
+    public init(method: HTTPMethod, url: URL, headers: [String: String] = [:], body: Data? = nil, timeout: TimeInterval? = nil) {
         self.method = method
         self.url = url
         self.headers = headers
         self.body = body
+        self.timeout = timeout
     }
 }
 

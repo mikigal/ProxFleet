@@ -1,0 +1,86 @@
+{
+  "data": [
+    {
+      "n": 1,
+      "t": "2026-10-24T16:11:49+02:00: Starting datastore sync job 'self:store2:store1::pf-sync-push'"
+    },
+    {
+      "n": 2,
+      "t": "2026-10-24T16:11:49+02:00: sync datastore 'store1' to 'self/store2'"
+    },
+    {
+      "n": 3,
+      "t": "2026-10-24T16:11:49+02:00: ----"
+    },
+    {
+      "n": 4,
+      "t": "2026-10-24T16:11:49+02:00: Syncing datastore 'store1', root namespace into datastore 'store2', root namespace"
+    },
+    {
+      "n": 5,
+      "t": "2026-10-24T16:11:49+02:00: Found 1 groups to sync (out of 1 total)"
+    },
+    {
+      "n": 6,
+      "t": "2026-10-24T16:11:49+02:00: [host/pbs-claude]: Group 'host/pbs-claude' not owned by remote user 'root@pam!seed' on target, skipping upload"
+    },
+    {
+      "n": 7,
+      "t": "2026-10-24T16:11:49+02:00: Finished syncing root namespace, current progress: 1 groups, 0 snapshots"
+    },
+    {
+      "n": 8,
+      "t": "2026-10-24T16:11:49+02:00: ----"
+    },
+    {
+      "n": 9,
+      "t": "2026-10-24T16:11:49+02:00: Syncing datastore 'store1', namespace 'pve' into datastore 'store2', namespace 'pve'"
+    },
+    {
+      "n": 10,
+      "t": "2026-10-24T16:11:49+02:00: Found 0 groups to sync (out of 2 total)"
+    },
+    {
+      "n": 11,
+      "t": "2026-10-24T16:11:49+02:00: Finished syncing namespace pve, current progress: 1 groups, 0 snapshots"
+    },
+    {
+      "n": 12,
+      "t": "2026-10-24T16:11:49+02:00: ----"
+    },
+    {
+      "n": 13,
+      "t": "2026-10-24T16:11:49+02:00: Syncing datastore 'store1', namespace 'pve/nested' into datastore 'store2', namespace 'pve/nested'"
+    },
+    {
+      "n": 14,
+      "t": "2026-10-24T16:11:49+02:00: Found 1 groups to sync (out of 1 total)"
+    },
+    {
+      "n": 15,
+      "t": "2026-10-24T16:11:49+02:00: [host/nested-host]: Group 'host/nested-host' not owned by remote user 'root@pam!seed' on target, skipping upload"
+    },
+    {
+      "n": 16,
+      "t": "2026-10-24T16:11:49+02:00: Finished syncing namespace pve/nested, current progress: 2 groups, 0 snapshots"
+    },
+    {
+      "n": 17,
+      "t": "2026-10-24T16:11:49+02:00: Summary: sync job found no new data to push"
+    },
+    {
+      "n": 18,
+      "t": "2026-10-24T16:11:49+02:00: sync job 'self:store2:store1::pf-sync-push' end"
+    },
+    {
+      "n": 19,
+      "t": "2026-10-24T16:11:49+02:00: queued notification (id=40b45496-f850-44aa-9d76-6b0a98a676de)"
+    },
+    {
+      "n": 20,
+      "t": "2026-10-24T16:11:49+02:00: TASK WARNINGS: 2"
+    }
+  ],
+  "success": 1,
+  "total": 20
+}

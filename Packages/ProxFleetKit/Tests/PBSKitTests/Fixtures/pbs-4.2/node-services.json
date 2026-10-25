@@ -1,0 +1,53 @@
+{
+  "data": [
+    {
+      "desc": "Proxmox Backup API Server",
+      "name": "proxmox-backup",
+      "service": "proxmox-backup",
+      "state": "running",
+      "unit-state": "enabled"
+    },
+    {
+      "desc": "Proxmox Backup API Proxy Server",
+      "name": "proxmox-backup-proxy",
+      "service": "proxmox-backup-proxy",
+      "state": "running",
+      "unit-state": "enabled"
+    },
+    {
+      "desc": "OpenBSD Secure Shell server",
+      "name": "sshd",
+      "service": "sshd",
+      "state": "running",
+      "unit-state": "enabled"
+    },
+    {
+      "desc": "Journal Service",
+      "name": "systemd-journald",
+      "service": "systemd-journald",
+      "state": "running",
+      "unit-state": "static"
+    },
+    {
+      "desc": "Regular background program processing daemon",
+      "name": "cron",
+      "service": "cron",
+      "state": "running",
+      "unit-state": "enabled"
+    },
+    {
+      "desc": "Postfix Mail Transport Agent (main/default instance)",
+      "name": "postfix",
+      "service": "postfix",
+      "state": "running",
+      "unit-state": "enabled"
+    },
+    {
+      "desc": "chrony, an NTP client/server",
+      "name": "chrony",
+      "service": "chrony",
+      "state": "running",
+      "unit-state": "enabled"
+    }
+  ]
+}

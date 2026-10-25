@@ -39,6 +39,19 @@ struct BackupTests {
             == "vmid=202&storage=local&mode=stop&compress=0&remove=1&notification-mode=legacy-sendmail&protected=1&mailto=ops%40example.com")
     }
 
+    /// Containers on a Proxmox Backup Server can choose how changes are found; VMs always use dirty bitmaps.
+    @Test func backupNowWithChangeDetection() {
+        var draft = BackupDraft(guest: container)
+        draft.storage = "pbs"
+        #expect(PVE.backupNow(draft).parameters["pbs-change-detection-mode"] == nil)
+        draft.pbsChangeDetection = "metadata"
+        #expect(PVE.backupNow(draft).parameters["pbs-change-detection-mode"] == "metadata")
+        var vmDraft = BackupDraft(guest: vm)
+        vmDraft.storage = "pbs"
+        vmDraft.pbsChangeDetection = "data"
+        #expect(PVE.backupNow(vmDraft).parameters["pbs-change-detection-mode"] == nil)
+    }
+
     /// PVE 8.0 knows no `notification-mode` and mails only when recipients are given.
     @Test func backupNowBeforeTheNotificationSystem() {
         var draft = BackupDraft(guest: container)

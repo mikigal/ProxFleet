@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 480" width="1600" height="480">
+  <title>Proxmox Backup Server: datastores and namespaces, sync, verify and prune jobs, file-level restore, users, keys and s3</title>
+  <defs>
+    <clipPath id="card"><rect width="1600" height="480" rx="44"/></clipPath>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1b21"/>
+      <stop offset="1" stop-color="#09090b"/>
+    </linearGradient>
+    <radialGradient id="violet" cx="180" cy="80" r="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c4dff" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#7c4dff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blue" cx="1460" cy="120" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f6bff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#2f6bff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="amber" cx="1180" cy="326.40000000000003" r="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9a3c" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#ff9a3c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="titleGlow" cx="800" cy="140" r="340" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8a1f" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#ff8a1f" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="800" cy="460.79999999999995" r="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E57000" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#E57000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.08"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-30%" y="-60%" width="160%" height="240%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFA640"/>
+      <stop offset="1" stop-color="#E35D00"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#card)">
+    <rect width="1600" height="480" fill="url(#background)"/><rect width="1600" height="480" fill="url(#violet)"/><rect width="1600" height="480" fill="url(#blue)"/><rect width="1600" height="480" fill="url(#amber)"/><rect width="1600" height="480" fill="url(#titleGlow)"/><rect width="1600" height="480" fill="url(#glow)"/>
+    <path d="M64 58L176 34M64 58L140 140M176 34L290 96M176 34L140 140M290 96L402 40M290 96L452 128M402 40L452 128M1148 52L1262 104M1148 52L1320 150M1262 104L1320 150M1376 36L1468 118M1376 36L1540 58M1376 36L1320 150M1468 118L1540 58" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="1.5"/>
+    <circle cx="64" cy="58" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="176" cy="34" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="290" cy="96" r="14" fill="#ff8a1f" fill-opacity="0.16"/><circle cx="290" cy="96" r="5" fill="#ff9f40"/><circle cx="140" cy="140" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="402" cy="40" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="452" cy="128" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1148" cy="52" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1262" cy="104" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1376" cy="36" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1468" cy="118" r="14" fill="#ff8a1f" fill-opacity="0.16"/><circle cx="1468" cy="118" r="5" fill="#ff9f40"/><circle cx="1540" cy="58" r="3.5" fill="#fff" fill-opacity="0.28"/><circle cx="1320" cy="150" r="3.5" fill="#fff" fill-opacity="0.28"/>
+    <text x="800.0" y="124" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="58" font-weight="800" letter-spacing="-1.5" fill="#fff">Proxmox Backup Server</text>
+    <g filter="url(#cardShadow)">
+      <rect x="72" y="172" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="72" y="172" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="72.75" y="172.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(108 208)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4"/></g>
+    </g>
+    <text x="108" y="334" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Datastores and</text>
+    <text x="108" y="374" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">namespaces</text>
+    <g filter="url(#cardShadow)">
+      <rect x="444" y="172" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="444" y="172" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="444.75" y="172.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(480 208)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-13.7 5.7M4 12a8 8 0 0 1 13.7-5.7"/><path d="M17.7 2.5v3.8h-3.8M6.3 21.5v-3.8h3.8"/></g>
+    </g>
+    <text x="480" y="334" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Sync, verify</text>
+    <text x="480" y="374" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">and prune jobs</text>
+    <g filter="url(#cardShadow)">
+      <rect x="816" y="172" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="816" y="172" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="816.75" y="172.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(852 208)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6l2 2.2h7.4A2.5 2.5 0 0 1 21 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M12 10.5v5.5M9.5 13.5L12 16l2.5-2.5"/></g>
+    </g>
+    <text x="852" y="334" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">File-level</text>
+    <text x="852" y="374" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">restore</text>
+    <g filter="url(#cardShadow)">
+      <rect x="1188" y="172" width="340" height="236" rx="30" fill="#1f1f24" fill-opacity="0.72"/>
+    </g>
+    <rect x="1188" y="172" width="340" height="236" rx="30" fill="url(#cardSheen)"/>
+    <rect x="1188.75" y="172.75" width="338.5" height="234.5" rx="29.25" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <g transform="translate(1224 208)">
+      <rect width="76" height="76" rx="19.0" fill="url(#tile)"/>
+      <g transform="translate(14.44 14.44) scale(1.9633)" fill="none" stroke="#fff" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5M12 14.5v2.5"/></g>
+    </g>
+    <text x="1224" y="334" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">Users, keys</text>
+    <text x="1224" y="374" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#fff">and S3</text>
+  </g>
+  <rect x="1" y="1" width="1598" height="478" rx="43" fill="none" stroke="#fff" stroke-opacity="0.08" stroke-width="2"/>
+</svg>

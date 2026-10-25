@@ -1,0 +1,514 @@
+{
+  "data": [
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2FyY2g=",
+      "leaf": true,
+      "text": "arch",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2FzaA==",
+      "leaf": true,
+      "text": "ash",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2Jhc2U2NA==",
+      "leaf": true,
+      "text": "base64",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2JiY29uZmln",
+      "leaf": true,
+      "text": "bbconfig",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2Jic3VpZA==",
+      "leaf": true,
+      "mtime": 1768059508,
+      "size": 14224,
+      "text": "bbsuid",
+      "type": "f"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2J1c3lib3g=",
+      "leaf": true,
+      "mtime": 1768059508,
+      "size": 804616,
+      "text": "busybox",
+      "type": "f"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2NhdA==",
+      "leaf": true,
+      "text": "cat",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2NoYXR0cg==",
+      "leaf": true,
+      "text": "chattr",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2NoZ3Jw",
+      "leaf": true,
+      "text": "chgrp",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2NobW9k",
+      "leaf": true,
+      "text": "chmod",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2Nob3du",
+      "leaf": true,
+      "text": "chown",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2Nw",
+      "leaf": true,
+      "text": "cp",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2RhdGU=",
+      "leaf": true,
+      "text": "date",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2Rk",
+      "leaf": true,
+      "text": "dd",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2Rm",
+      "leaf": true,
+      "text": "df",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2RtZXNn",
+      "leaf": true,
+      "text": "dmesg",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2Ruc2RvbWFpbm5hbWU=",
+      "leaf": true,
+      "text": "dnsdomainname",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2R1bXBrbWFw",
+      "leaf": true,
+      "text": "dumpkmap",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2VjaG8=",
+      "leaf": true,
+      "text": "echo",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2VncmVw",
+      "leaf": true,
+      "text": "egrep",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2ZhbHNl",
+      "leaf": true,
+      "text": "false",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2ZhdGF0dHI=",
+      "leaf": true,
+      "text": "fatattr",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2ZkZmx1c2g=",
+      "leaf": true,
+      "text": "fdflush",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2ZncmVw",
+      "leaf": true,
+      "text": "fgrep",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2ZzeW5j",
+      "leaf": true,
+      "text": "fsync",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2dldG9wdA==",
+      "leaf": true,
+      "text": "getopt",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2dyZXA=",
+      "leaf": true,
+      "text": "grep",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2d1bnppcA==",
+      "leaf": true,
+      "text": "gunzip",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2d6aXA=",
+      "leaf": true,
+      "text": "gzip",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2hvc3RuYW1l",
+      "leaf": true,
+      "text": "hostname",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2lvbmljZQ==",
+      "leaf": true,
+      "text": "ionice",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2lvc3RhdA==",
+      "leaf": true,
+      "text": "iostat",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2lwY2FsYw==",
+      "leaf": true,
+      "text": "ipcalc",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2tiZF9tb2Rl",
+      "leaf": true,
+      "text": "kbd_mode",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2tpbGw=",
+      "leaf": true,
+      "text": "kill",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2xpbms=",
+      "leaf": true,
+      "text": "link",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2xpbnV4MzI=",
+      "leaf": true,
+      "text": "linux32",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2xpbnV4NjQ=",
+      "leaf": true,
+      "text": "linux64",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2xu",
+      "leaf": true,
+      "text": "ln",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2xvZ2lu",
+      "leaf": true,
+      "text": "login",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2xz",
+      "leaf": true,
+      "text": "ls",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2xzYXR0cg==",
+      "leaf": true,
+      "text": "lsattr",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL2x6b3A=",
+      "leaf": true,
+      "text": "lzop",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL21ha2VtaW1l",
+      "leaf": true,
+      "text": "makemime",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL21rZGly",
+      "leaf": true,
+      "text": "mkdir",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL21rbm9k",
+      "leaf": true,
+      "text": "mknod",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL21rdGVtcA==",
+      "leaf": true,
+      "text": "mktemp",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL21vcmU=",
+      "leaf": true,
+      "text": "more",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL21vdW50",
+      "leaf": true,
+      "text": "mount",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL21vdW50cG9pbnQ=",
+      "leaf": true,
+      "text": "mountpoint",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL21wc3RhdA==",
+      "leaf": true,
+      "text": "mpstat",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL212",
+      "leaf": true,
+      "text": "mv",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL25ldHN0YXQ=",
+      "leaf": true,
+      "text": "netstat",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL25pY2U=",
+      "leaf": true,
+      "text": "nice",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3BpZG9m",
+      "leaf": true,
+      "text": "pidof",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3Bpbmc=",
+      "leaf": true,
+      "text": "ping",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3Bpbmc2",
+      "leaf": true,
+      "text": "ping6",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3BpcGVfcHJvZ3Jlc3M=",
+      "leaf": true,
+      "text": "pipe_progress",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3ByaW50ZW52",
+      "leaf": true,
+      "text": "printenv",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3Bz",
+      "leaf": true,
+      "text": "ps",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3B3ZA==",
+      "leaf": true,
+      "text": "pwd",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3JjLXN0YXR1cw==",
+      "leaf": true,
+      "mtime": 1781437214,
+      "size": 26512,
+      "text": "rc-status",
+      "type": "f"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3JlZm9ybWltZQ==",
+      "leaf": true,
+      "text": "reformime",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3Jldg==",
+      "leaf": true,
+      "text": "rev",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3Jt",
+      "leaf": true,
+      "text": "rm",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3JtZGly",
+      "leaf": true,
+      "text": "rmdir",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3J1bi1wYXJ0cw==",
+      "leaf": true,
+      "text": "run-parts",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3NlZA==",
+      "leaf": true,
+      "text": "sed",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3NldHByaXY=",
+      "leaf": true,
+      "text": "setpriv",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3NldHNlcmlhbA==",
+      "leaf": true,
+      "text": "setserial",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3No",
+      "leaf": true,
+      "text": "sh",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3NsZWVw",
+      "leaf": true,
+      "text": "sleep",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3N0YXQ=",
+      "leaf": true,
+      "text": "stat",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3N0dHk=",
+      "leaf": true,
+      "text": "stty",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3N1",
+      "leaf": true,
+      "text": "su",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3N5bmM=",
+      "leaf": true,
+      "text": "sync",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3Rhcg==",
+      "leaf": true,
+      "text": "tar",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3RvdWNo",
+      "leaf": true,
+      "text": "touch",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3RydWU=",
+      "leaf": true,
+      "text": "true",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3Vtb3VudA==",
+      "leaf": true,
+      "text": "umount",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3VuYW1l",
+      "leaf": true,
+      "text": "uname",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3VzbGVlcA==",
+      "leaf": true,
+      "text": "usleep",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3dhdGNo",
+      "leaf": true,
+      "text": "watch",
+      "type": "l"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmluL3pjYXQ=",
+      "leaf": true,
+      "text": "zcat",
+      "type": "l"
+    }
+  ]
+}

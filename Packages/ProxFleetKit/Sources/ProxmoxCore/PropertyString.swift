@@ -71,7 +71,9 @@ public struct PropertyString: Sendable, Equatable {
     }
 }
 
-/// Unique task ID: `UPID:node:pid:pstart:starttime:type:id:user:`, with hex numbers.
+/// Unique task ID with hex numbers. Proxmox VE writes `UPID:node:pid:pstart:starttime:type:id:user:`; Proxmox Backup
+/// Server adds a task number before the start time, `UPID:node:pid:pstart:task:starttime:type:id:user:`, and escapes
+/// the ID like a systemd unit name (`store1\x3act-200` for `store1:ct/200`).
 public struct UPID: Sendable, Hashable, Codable, CustomStringConvertible {
     public var rawValue: String
     public var node: String
@@ -83,15 +85,39 @@ public struct UPID: Sendable, Hashable, Codable, CustomStringConvertible {
 
     public init?(_ rawValue: String) {
         let parts = rawValue.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count >= 8, parts[0] == "UPID", let start = UInt64(parts[4], radix: 16) else { return nil }
+        guard parts.count >= 8, parts[0] == "UPID" else { return nil }
+        // Neither product lets a part contain ":", so the count tells them apart: 9 parts for Proxmox VE (the last
+        // one empty after the closing ":"), 10 for Proxmox Backup Server.
+        let isBackupServer = parts.count >= 10
+        let offset = isBackupServer ? 1 : 0
+        guard let start = UInt64(parts[4 + offset], radix: 16) else { return nil }
         self.rawValue = rawValue
         node = parts[1]
-        type = parts[5]
-        objectID = parts[6]
+        type = parts[5 + offset]
+        objectID = isBackupServer ? Self.unescape(parts[6 + offset]) : parts[6]
         // User IDs of API tokens contain a "!" but no ":", so the user is always one part.
-        user = parts[7]
+        user = parts[7 + offset]
         startTime = Date(timeIntervalSince1970: TimeInterval(start))
     }
 
     public var description: String { rawValue }
+
+    /// Reverses systemd's unit name escaping, which Proxmox Backup Server uses for task IDs: `-` stands for `/`,
+    /// and `\xNN` for any other character that needs escaping, such as `:` or `-` itself.
+    static func unescape(_ text: String) -> String {
+        var bytes: [UInt8] = []
+        var characters = Array(text.utf8)[...]
+        while let byte = characters.popFirst() {
+            if byte == UInt8(ascii: "-") {
+                bytes.append(UInt8(ascii: "/"))
+            } else if byte == UInt8(ascii: "\\"), characters.first == UInt8(ascii: "x"), characters.count >= 3,
+                      let value = UInt8(String(decoding: characters.dropFirst().prefix(2), as: UTF8.self), radix: 16) {
+                bytes.append(value)
+                characters = characters.dropFirst(3)
+            } else {
+                bytes.append(byte)
+            }
+        }
+        return String(decoding: bytes, as: UTF8.self)
+    }
 }

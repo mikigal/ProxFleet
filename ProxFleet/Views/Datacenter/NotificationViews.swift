@@ -1,4 +1,5 @@
 import FleetCore
+import PBSKit
 import ProxmoxCore
 import PVEKit
 import SwiftUI
@@ -570,7 +571,8 @@ private struct UserListPicker: View {
         } label: {
             LabeledContent("Users", value: selection.isEmpty ? String(localized: "None") : selection.joined(separator: ", "))
         }
-        .task { users = await connection.load(PVE.users()) }
+        // A backup server does not know Proxmox VE's `full` parameter.
+        .task { users = await connection.load(connection.isBackupServer ? PBS.accessUsers() : PVE.users()) }
     }
 
     private var allUsers: [String] {

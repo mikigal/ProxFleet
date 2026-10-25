@@ -184,6 +184,10 @@ struct StorageDetailView: View {
     @State private var importing: StorageVolume?
     @State private var importedGuest: GuestReference?
     @State private var openedGuest: GuestReference?
+    /// Proxmox Backup Server storages: the server's address, to open it when it is saved in the app too.
+    @State private var backupServerHost: String?
+    @Environment(Fleet.self) private var fleet
+    @Environment(\.openServer) private var openServer
 
     init(node: String, storage: String, connection: ServerConnection) {
         _detail = State(initialValue: StorageDetail(node: node, storage: storage, connection: connection))
@@ -303,6 +307,9 @@ struct StorageDetailView: View {
                             .foregroundStyle(.orange)
                     }
                 }
+                if status.type == "pbs" {
+                    backupServerSection
+                }
                 if status.total > 0 {
                     Section {
                         PerformanceChart(points: detail.history, metric: .usage, timeframe: detail.timeframe)
@@ -319,6 +326,40 @@ struct StorageDetailView: View {
         }
         .overlay { loadingOverlay }
         .refreshable { await detail.load() }
+    }
+
+    /// The saved backup server this storage points to, by address. The demo cluster backs up to the demo backup server.
+    private var backupServer: ServerProfile? {
+        guard let host = backupServerHost else { return nil }
+        return fleet.profiles.first { profile in
+            profile.product == .backupServer
+                && (profile.addresses.contains { $0.host.caseInsensitiveCompare(host) == .orderedSame } || (profile.isDemo && detail.connection.profile.isDemo))
+        }
+    }
+
+    @ViewBuilder
+    private var backupServerSection: some View {
+        Section {
+            if let backupServer, let openServer {
+                Button {
+                    openServer(backupServer.id)
+                } label: {
+                    Label("Open \(backupServer.name)", systemImage: "externaldrive.badge.timemachine")
+                }
+                .accessibilityIdentifier("storage.openBackupServer")
+            } else if let backupServerHost {
+                LabeledContent("Server", value: backupServerHost)
+            }
+        } header: {
+            Text("Backup Server")
+        } footer: {
+            if backupServer == nil, backupServerHost != nil {
+                Text("Add the backup server to the app to manage its datastores and backups from here.")
+            }
+        }
+        .task {
+            backupServerHost = try? await detail.connection.send(PVE.storageConfig(detail.storage)).values["server"]
+        }
     }
 
     private var contentList: some View {

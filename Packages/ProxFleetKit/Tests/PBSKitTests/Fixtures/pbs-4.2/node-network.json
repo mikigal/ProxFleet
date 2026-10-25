@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "active": true,
+      "altnames": [
+        "enp6s18",
+        "enxbc2411feafe5"
+      ],
+      "autostart": true,
+      "cidr": "10.10.100.160/24",
+      "digest": "c873d9d5ddf20f098c67240de72b26df4940c8d08521e57a226f1b5382924f1e",
+      "gateway": "10.10.100.1",
+      "iface": "nic0",
+      "method": "static",
+      "name": "nic0",
+      "type": "eth"
+    }
+  ]
+}

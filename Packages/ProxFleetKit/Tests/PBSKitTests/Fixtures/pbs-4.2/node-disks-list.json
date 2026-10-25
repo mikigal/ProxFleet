@@ -1,0 +1,67 @@
+{
+  "data": [
+    {
+      "devpath": "/dev/sda",
+      "disk-type": "hdd",
+      "gpt": true,
+      "model": "QEMU_HARDDISK",
+      "name": "sda",
+      "partitions": [
+        {
+          "devpath": "/dev/sda3",
+          "filesystem": null,
+          "gpt": true,
+          "mounted": false,
+          "name": "sda3",
+          "size": 33821801984,
+          "used": "lvm",
+          "uuid": null
+        },
+        {
+          "devpath": "/dev/sda1",
+          "filesystem": null,
+          "gpt": true,
+          "mounted": false,
+          "name": "sda1",
+          "size": 1031168,
+          "used": "bios",
+          "uuid": null
+        },
+        {
+          "devpath": "/dev/sda2",
+          "filesystem": null,
+          "gpt": true,
+          "mounted": true,
+          "name": "sda2",
+          "size": 536870912,
+          "used": "efi",
+          "uuid": null
+        }
+      ],
+      "rpm": null,
+      "serial": "drive-scsi0",
+      "size": 34359738368,
+      "status": "unknown",
+      "used": "mounted",
+      "vendor": "QEMU",
+      "wearout": null,
+      "wwn": null
+    },
+    {
+      "devpath": "/dev/sdb",
+      "disk-type": "hdd",
+      "gpt": false,
+      "model": "QEMU_HARDDISK",
+      "name": "sdb",
+      "partitions": [],
+      "rpm": null,
+      "serial": "drive-scsi1",
+      "size": 34359738368,
+      "status": "unknown",
+      "used": "unused",
+      "vendor": "QEMU",
+      "wearout": null,
+      "wwn": null
+    }
+  ]
+}

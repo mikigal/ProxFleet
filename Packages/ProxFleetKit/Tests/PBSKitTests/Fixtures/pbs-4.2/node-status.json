@@ -1,0 +1,46 @@
+{
+  "data": {
+    "boot-info": {
+      "mode": "efi",
+      "secureboot": true
+    },
+    "cpu": 0.01551724137931032,
+    "cpuinfo": {
+      "cpus": 2,
+      "model": "Intel(R) Xeon(R) Gold 6254 CPU @ 3.10GHz",
+      "sockets": 1
+    },
+    "current-kernel": {
+      "machine": "x86_64",
+      "release": "7.0.0-3-pve",
+      "sysname": "Linux",
+      "version": "#1 SMP PREEMPT_DYNAMIC PMX 7.0.0-3 (2026-04-21T22:56Z)"
+    },
+    "info": {
+      "fingerprint": "8e:58:18:00:a8:a2:0d:e5:26:dc:69:a9:0a:ca:8d:8f:3f:22:af:f7:fe:be:3c:ee:ee:09:02:86:f1:c8:27:a5"
+    },
+    "kversion": "Linux 7.0.0-3-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.0-3 (2026-04-21T22:56Z)",
+    "loadavg": [
+      0.1,
+      0.11,
+      0.09
+    ],
+    "memory": {
+      "free": 713752576,
+      "total": 1991184384,
+      "used": 407924736
+    },
+    "root": {
+      "avail": 26209001472,
+      "total": 31145701376,
+      "used": 3328606208
+    },
+    "swap": {
+      "free": 1988087808,
+      "total": 1988096000,
+      "used": 8192
+    },
+    "uptime": 17274,
+    "wait": 0.0
+  }
+}

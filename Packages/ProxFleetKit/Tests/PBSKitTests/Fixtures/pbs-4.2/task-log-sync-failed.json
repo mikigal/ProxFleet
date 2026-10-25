@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "n": 1,
+      "t": "2026-10-24T16:12:25+02:00: Starting datastore sync job 'self:missing:store2::pf-broken'"
+    },
+    {
+      "n": 2,
+      "t": "2026-10-24T16:12:25+02:00: sync datastore 'store2' from 'self/missing'"
+    },
+    {
+      "n": 3,
+      "t": "2026-10-24T16:12:25+02:00: queued notification (id=8092e470-0120-43ab-899e-361999e9d9bb)"
+    },
+    {
+      "n": 4,
+      "t": "2026-10-24T16:12:25+02:00: TASK ERROR: Querying namespaces failed - HTTP error 400 Bad Request - no such datastore 'missing'"
+    }
+  ],
+  "success": 1,
+  "total": 4
+}

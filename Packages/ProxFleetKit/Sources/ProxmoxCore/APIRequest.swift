@@ -74,11 +74,14 @@ public struct APIRequest<Response: Decodable & Sendable>: Sendable {
     public var method: HTTPMethod
     public var path: String
     public var parameters: APIParameters
+    /// Seconds to wait for data, for calls the server answers slower than the transport's default allows.
+    public var timeout: TimeInterval?
 
-    public init(_ method: HTTPMethod, _ path: String, parameters: APIParameters = APIParameters()) {
+    public init(_ method: HTTPMethod, _ path: String, parameters: APIParameters = APIParameters(), timeout: TimeInterval? = nil) {
         self.method = method
         self.path = path
         self.parameters = parameters
+        self.timeout = timeout
     }
 }
 

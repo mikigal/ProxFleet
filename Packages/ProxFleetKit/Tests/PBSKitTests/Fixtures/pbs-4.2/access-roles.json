@@ -1,0 +1,174 @@
+{
+  "data": [
+    {
+      "comment": "Remote Auditor",
+      "privs": [
+        "Remote.Audit"
+      ],
+      "roleid": "RemoteAudit"
+    },
+    {
+      "comment": "Datastore Auditor",
+      "privs": [
+        "Datastore.Audit"
+      ],
+      "roleid": "DatastoreAudit"
+    },
+    {
+      "comment": "Auditor",
+      "privs": [
+        "Sys.Audit",
+        "Datastore.Audit"
+      ],
+      "roleid": "Audit"
+    },
+    {
+      "comment": "Datastore Backup (backup and restore owned backups)",
+      "privs": [
+        "Datastore.Backup"
+      ],
+      "roleid": "DatastoreBackup"
+    },
+    {
+      "comment": "Synchronisation Operator (push direction)",
+      "privs": [
+        "Remote.Audit",
+        "Remote.DatastoreBackup"
+      ],
+      "roleid": "RemoteSyncPushOperator"
+    },
+    {
+      "comment": "Tape Reader",
+      "privs": [
+        "Tape.Audit",
+        "Tape.Read"
+      ],
+      "roleid": "TapeReader"
+    },
+    {
+      "comment": "Datastore Reader (inspect datastore content and do restores)",
+      "privs": [
+        "Datastore.Audit",
+        "Datastore.Read",
+        "Datastore.Verify"
+      ],
+      "roleid": "DatastoreReader"
+    },
+    {
+      "comment": "Tape Administrator",
+      "privs": [
+        "Tape.Audit",
+        "Tape.Modify",
+        "Tape.Write",
+        "Tape.Read"
+      ],
+      "roleid": "TapeAdmin"
+    },
+    {
+      "comment": "Datastore PowerUser (backup, restore and prune owned backup)",
+      "privs": [
+        "Datastore.Backup",
+        "Datastore.Prune"
+      ],
+      "roleid": "DatastorePowerUser"
+    },
+    {
+      "comment": "Disable Access",
+      "privs": [],
+      "roleid": "NoAccess"
+    },
+    {
+      "comment": "Remote Administrator",
+      "privs": [
+        "Remote.Audit",
+        "Remote.Modify",
+        "Remote.Read"
+      ],
+      "roleid": "RemoteAdmin"
+    },
+    {
+      "comment": "Administrator",
+      "privs": [
+        "Sys.Audit",
+        "Sys.Modify",
+        "Sys.PowerManagement",
+        "Datastore.Audit",
+        "Datastore.Allocate",
+        "Datastore.Modify",
+        "Datastore.Read",
+        "Datastore.Verify",
+        "Datastore.Backup",
+        "Datastore.Prune",
+        "Permissions.Modify",
+        "Remote.Audit",
+        "Remote.Modify",
+        "Remote.Read",
+        "Remote.DatastoreBackup",
+        "Remote.DatastoreModify",
+        "Remote.DatastorePrune",
+        "Sys.Console",
+        "Tape.Audit",
+        "Tape.Modify",
+        "Tape.Write",
+        "Tape.Read",
+        "Realm.Allocate"
+      ],
+      "roleid": "Admin"
+    },
+    {
+      "comment": "Remote Datastore Admin",
+      "privs": [
+        "Remote.Audit",
+        "Remote.DatastoreBackup",
+        "Remote.DatastoreModify",
+        "Remote.DatastorePrune"
+      ],
+      "roleid": "RemoteDatastoreAdmin"
+    },
+    {
+      "comment": "Remote Datastore Prune",
+      "privs": [
+        "Remote.Audit",
+        "Remote.DatastoreBackup",
+        "Remote.DatastorePrune"
+      ],
+      "roleid": "RemoteDatastorePowerUser"
+    },
+    {
+      "comment": "Tape Auditor",
+      "privs": [
+        "Tape.Audit"
+      ],
+      "roleid": "TapeAudit"
+    },
+    {
+      "comment": "Synchronization Operator",
+      "privs": [
+        "Remote.Audit",
+        "Remote.Read"
+      ],
+      "roleid": "RemoteSyncOperator"
+    },
+    {
+      "comment": "Datastore Administrator",
+      "privs": [
+        "Datastore.Audit",
+        "Datastore.Modify",
+        "Datastore.Read",
+        "Datastore.Verify",
+        "Datastore.Backup",
+        "Datastore.Prune"
+      ],
+      "roleid": "DatastoreAdmin"
+    },
+    {
+      "comment": "Tape Operator",
+      "privs": [
+        "Tape.Audit",
+        "Tape.Write",
+        "Tape.Read"
+      ],
+      "roleid": "TapeOperator"
+    }
+  ]
+}

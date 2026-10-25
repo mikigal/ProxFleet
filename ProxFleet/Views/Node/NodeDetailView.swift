@@ -216,7 +216,7 @@ private struct NodeSummaryList: View {
 
 // MARK: - Updates
 
-private struct NodeUpdatesList: View {
+struct NodeUpdatesList: View {
     let detail: NodeDetail
     let onUpgrade: () -> Void
     @State private var isRefreshing = false
@@ -394,7 +394,7 @@ private struct PackageChangelogView: View {
 }
 
 /// The node's system report for support requests, which can be shared as a text file.
-private struct SystemReportView: View {
+struct SystemReportView: View {
     let detail: NodeDetail
     @State private var report: String?
     @State private var errorMessage: String?
@@ -688,7 +688,7 @@ private struct NodeMoreList: View {
 
 // MARK: - Services, log and tasks
 
-private struct NodeServicesView: View {
+struct NodeServicesView: View {
     let detail: NodeDetail
     @State private var selected: NodeService?
     @State private var working: String?
@@ -779,7 +779,7 @@ extension ServiceAction {
 }
 
 /// The latest entries of the node's system journal, newest at the bottom.
-private struct NodeLogView: View {
+struct NodeLogView: View {
     let detail: NodeDetail
     @State private var search = ""
     @State private var errorMessage: String?

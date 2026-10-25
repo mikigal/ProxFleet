@@ -1,0 +1,6 @@
+{
+  "errors": {},
+  "message": "no such datastore 'missing'",
+  "status": 400,
+  "success": false
+}

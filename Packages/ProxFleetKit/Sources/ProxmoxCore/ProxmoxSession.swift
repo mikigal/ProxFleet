@@ -36,9 +36,20 @@ public actor ProxmoxSession {
 
     /// First login step. `username` may already contain the realm (`root@pam`), in which case `realm` is ignored.
     public func login(username: String, password: String, realm: String?) async throws -> LoginOutcome {
-        var parameters: APIParameters = ["username": .string(username), "password": .string(password), "new-format": true]
-        if !username.contains("@"), let realm, !realm.isEmpty {
-            parameters["realm"] = .string(realm)
+        var parameters: APIParameters
+        switch product {
+        case .virtualEnvironment:
+            parameters = ["username": .string(username), "password": .string(password), "new-format": true]
+            if !username.contains("@"), let realm, !realm.isEmpty {
+                parameters["realm"] = .string(realm)
+            }
+        case .backupServer:
+            // Proxmox Backup Server takes neither `realm` nor `new-format`; the user ID must name the realm.
+            var userID = username
+            if !username.contains("@"), let realm, !realm.isEmpty {
+                userID += "@\(realm)"
+            }
+            parameters = ["username": .string(userID), "password": .string(password)]
         }
         let response: TicketResponse = try await perform(APIRequest(.post, "/access/ticket", parameters: parameters), authenticated: false)
 
@@ -53,12 +64,12 @@ public actor ProxmoxSession {
 
     /// Second login step, after `login` returned `.needsSecondFactor`.
     public func completeLogin(_ challenge: SecondFactorChallenge, method: SecondFactorMethod, code: String) async throws -> AuthTicket {
-        let parameters: APIParameters = [
+        var parameters: APIParameters = [
             "username": .string(challenge.username),
             "tfa-challenge": .string(challenge.partialTicket),
             "password": .string("\(method.rawValue):\(code.trimmingCharacters(in: .whitespacesAndNewlines))"),
-            "new-format": true,
         ]
+        if product == .virtualEnvironment { parameters["new-format"] = true }
         let response: TicketResponse = try await perform(APIRequest(.post, "/access/ticket", parameters: parameters), authenticated: false)
         let ticket = try makeTicket(from: response)
         self.ticket = ticket
@@ -172,8 +183,8 @@ public actor ProxmoxSession {
         return try ResponseDecoder.decode(Response.self, from: response)
     }
 
-    func buildRequest<Response>(_ request: APIRequest<Response>, authenticated: Bool) throws -> HTTPRequest {
-        let path = APIFormat.pathPrefix + (request.path.hasPrefix("/") ? request.path : "/" + request.path)
+    func buildRequest<Response>(_ request: APIRequest<Response>, authenticated: Bool, pathPrefix: String = APIFormat.pathPrefix) throws -> HTTPRequest {
+        let path = pathPrefix + (request.path.hasPrefix("/") ? request.path : "/" + request.path)
         guard var components = URLComponents(url: address.baseURL, resolvingAgainstBaseURL: false) else {
             throw ProxmoxError.invalidResponse("invalid address")
         }
@@ -200,7 +211,7 @@ public actor ProxmoxSession {
         }
 
         guard let url = components.url else { throw ProxmoxError.invalidResponse("invalid path \(request.path)") }
-        return HTTPRequest(method: request.method, url: url, headers: headers, body: body)
+        return HTTPRequest(method: request.method, url: url, headers: headers, body: body, timeout: request.timeout)
     }
 
     private func makeTicket(from response: TicketResponse) throws -> AuthTicket {

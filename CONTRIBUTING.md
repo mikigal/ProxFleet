@@ -8,7 +8,7 @@ Before starting on a larger feature, please open an issue first, so we can agree
 
 - Xcode 27 or newer
 - iOS / iPadOS 26 Simulator or device
-- For live tests only: a disposable Proxmox VE 8 or 9 installation
+- For live tests only: a disposable Proxmox VE 8 or 9 installation, and a disposable Proxmox Backup Server 3 or 4 for the backup server tests
 
 ## Building
 
@@ -19,15 +19,16 @@ To run on a device, copy `Config/Signing.example.xcconfig` to `Config/Signing.lo
 The helper script builds the app and opens it in the Simulator:
 
 ```sh
-scripts/run-simulator.sh --demo    # open the demo cluster, nothing is saved
-scripts/run-simulator.sh --test    # sign in to the server from Config/TestServer.local.env
+scripts/run-simulator.sh --demo      # open the demo cluster, nothing is saved
+scripts/run-simulator.sh --test      # sign in to the server from Config/TestServer.local.env
+scripts/run-simulator.sh --test-pbs  # sign in to the backup server from Config/TestServerPBS.local.env
 ```
 
 Set `SIMULATOR_DEVICE` to use another Simulator than the iPhone 17.
 
 ## Tests
 
-Unit tests of the Swift package and UI tests of the app, which run against the demo cluster:
+Unit tests of the Swift package and UI tests of the app, which run against the demo cluster and the demo backup server:
 
 ```sh
 cd Packages/ProxFleetKit && swift test
@@ -52,6 +53,29 @@ xcodebuild test -project ProxFleet.xcodeproj -scheme ProxFleet -destination 'pla
    PROXFLEET_TEST_SERVER_ENV=$PWD/../../Config/TestServer.local.env swift test --filter LiveServerTests
    ```
 
+### Testing against a real backup server
+
+> [!WARNING]
+> Use a disposable Proxmox Backup Server installation, for example a VM next to the Proxmox VE test server. The tools create and delete datastores, users, jobs and remotes, and the disk tests wipe a spare disk.
+
+1. Copy `Config/TestServerPBS.example.env` to `Config/TestServerPBS.local.env` (ignored by git) and fill in the address, root credentials and the certificate's fingerprint.
+2. Seed the server: datastores `store1` and `store2` on the root file system, namespaces, a TOTP user, a read-only user, an API token, a remote pointing at the server itself and a few jobs. With the Proxmox VE env file as second argument, it also adds the backup server there as storage `pbs-test` and backs up container 200 and VM 102 to it. Generated credentials are appended to the backup server's env file.
+   ```sh
+   python3 -I scripts/seed-backup-server.py Config/TestServerPBS.local.env Config/TestServer.local.env
+   ```
+   The disk tests need an unused spare disk named `sdb` on the backup server, which they wipe.
+3. Run the live tests of the backup server, and the ones that use both servers (file restore, change detection, live restore, backup server storages; they need the fingerprints in both env files):
+   ```sh
+   cd Packages/ProxFleetKit
+   PROXFLEET_PBS_TEST_SERVER_ENV=$PWD/../../Config/TestServerPBS.local.env swift test --filter LiveBackupServerTests
+   PROXFLEET_TEST_SERVER_ENV=$PWD/../../Config/TestServer.local.env PROXFLEET_PBS_TEST_SERVER_ENV=$PWD/../../Config/TestServerPBS.local.env swift test --filter LivePVEBackupServerTests
+   ```
+   The S3 datastore test needs an S3 server. `PROXFLEET_PBS_SETUP_S3=1` with `--filter setUpLocalS3` installs one on the backup server itself (moto, as the systemd service `pflive-s3` on port 9000); then add any `S3_TEST_ACCESS_KEY` and `S3_TEST_SECRET_KEY` to the env file.
+4. After changes to the seed or a new release, record the fixtures again. The script only reads:
+   ```sh
+   python3 -I scripts/record-backup-server-fixtures.py Config/TestServerPBS.local.env
+   ```
+
 ## Project layout
 
 | Path | Contents |
@@ -63,11 +87,11 @@ xcodebuild test -project ProxFleet.xcodeproj -scheme ProxFleet -destination 'pla
 | `scripts/` | Simulator and test server helpers |
 | `docs/` | Architecture notes, screenshots and the README images |
 
-The API client and the Proxmox VE models (`ProxmoxCore`, `PVEKit`, `ProxmoxConsole`) depend on Foundation only, so they could be reused on other platforms. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit together.
+The API client and the Proxmox VE and Backup Server models (`ProxmoxCore`, `PVEKit`, `PBSKit`, `ProxmoxConsole`) depend on Foundation only, so they could be reused on other platforms. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit together.
 
 ### README images
 
-All images of the README (the banner and the Why ProxFleet, Features and Coming next cards) are generated. The banner is built from the screenshots in `docs/screenshots` (dark mode, demo mode, iPhone 17). After replacing them or changing the lists in the script, run:
+All images of the README (the banner and the Why ProxFleet, Features and Proxmox Backup Server cards, and a Coming next card while the roadmap has items) are generated. The banner is built from the screenshots in `docs/screenshots` (dark mode, demo mode, iPhone 17). After replacing them or changing the lists in the script, run:
 
 ```sh
 python3 -I scripts/make-readme-art.py
@@ -75,11 +99,11 @@ python3 -I scripts/make-readme-art.py
 
 ## Guidelines
 
-- **Keep demo mode working.** Every new screen needs matching routes in the demo cluster (`Packages/ProxFleetKit/Sources/DemoServer`). Demo mode is used by the UI tests and by App Review.
-- **Follow the web interface.** Labels, defaults and validation should match the Proxmox VE web interface, so users feel at home in both.
+- **Keep demo mode working.** Every new screen needs matching routes in the demo cluster or the demo backup server (`Packages/ProxFleetKit/Sources/DemoServer`). Demo mode is used by the UI tests and by App Review.
+- **Follow the web interface.** Labels, defaults and validation should match the web interface of Proxmox VE or Proxmox Backup Server, so users feel at home in both.
 - **Respect permissions.** Hide or lock actions the signed-in user has no privilege for, with an explanation instead of an error on tap.
 - **Write in English.** Code, comments, commit messages and the user interface.
-- **Never commit secrets.** No server addresses, passwords or tokens. Local files ending in `.local.*` are ignored by git for this reason.
+- **Never commit secrets.** No server addresses, passwords, tokens or encryption keys. Local files ending in `.local.*` are ignored by git for this reason.
 
 ## License
 

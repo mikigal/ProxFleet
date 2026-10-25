@@ -1,0 +1,128 @@
+{
+ "data": [
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvYmlu",
+   "leaf": 0,
+   "text": "bin",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZGF0YQ==",
+   "leaf": 0,
+   "text": "data",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZGV2",
+   "leaf": 0,
+   "text": "dev",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZXRj",
+   "leaf": 0,
+   "text": "etc",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvZmFzdGJvb3Q=",
+   "leaf": 1,
+   "mtime": 1792591761,
+   "size": 0,
+   "text": "fastboot",
+   "type": "f"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvaG9tZQ==",
+   "leaf": 0,
+   "text": "home",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvbGli",
+   "leaf": 0,
+   "text": "lib",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvbWVkaWE=",
+   "leaf": 0,
+   "text": "media",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvbW50",
+   "leaf": 0,
+   "text": "mnt",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvb3B0",
+   "leaf": 0,
+   "text": "opt",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvcHJvYw==",
+   "leaf": 0,
+   "text": "proc",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvcm9vdA==",
+   "leaf": 0,
+   "text": "root",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvcnVu",
+   "leaf": 0,
+   "text": "run",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvc2Jpbg==",
+   "leaf": 0,
+   "text": "sbin",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvc3J2",
+   "leaf": 0,
+   "text": "srv",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvc3lz",
+   "leaf": 0,
+   "text": "sys",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvdG1w",
+   "leaf": 0,
+   "text": "tmp",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvdXNy",
+   "leaf": 0,
+   "text": "usr",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvdmFy",
+   "leaf": 0,
+   "text": "var",
+   "type": "d"
+  },
+  {
+   "filepath": "cm9vdC5weGFyLmRpZHgvLnB4YXJleGNsdWRlLWNsaQ==",
+   "leaf": 1,
+   "mtime": 0,
+   "size": 47,
+   "text": ".pxarexclude-cli",
+   "type": "f"
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "backend-type": "filesystem",
+      "comment": "Main test datastore",
+      "mount-status": "nonremovable",
+      "store": "store1"
+    },
+    {
+      "backend-type": "filesystem",
+      "comment": "Sync target",
+      "mount-status": "nonremovable",
+      "store": "store2"
+    }
+  ]
+}

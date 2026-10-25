@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "backup-count": 2,
+      "backup-id": "pbs-claude",
+      "backup-type": "host",
+      "files": [
+        "catalog.pcat1.didx",
+        "etc.pxar.didx",
+        "index.json.blob"
+      ],
+      "last-backup": 1792851056,
+      "owner": "root@pam!seed"
+    }
+  ]
+}

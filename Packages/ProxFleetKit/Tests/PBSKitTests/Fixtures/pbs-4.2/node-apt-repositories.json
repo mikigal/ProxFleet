@@ -1,0 +1,203 @@
+{
+  "data": {
+    "digest": "8acd7ec41e758875afef512ace8bd6b7745d5df3e9cd91028bd4a23b784c7a6e",
+    "errors": [],
+    "files": [
+      {
+        "digest": [
+          153,
+          188,
+          57,
+          114,
+          249,
+          140,
+          189,
+          129,
+          243,
+          186,
+          145,
+          208,
+          169,
+          140,
+          114,
+          227,
+          217,
+          218,
+          90,
+          89,
+          100,
+          15,
+          81,
+          224,
+          113,
+          137,
+          151,
+          17,
+          232,
+          81,
+          7,
+          30
+        ],
+        "file-type": "sources",
+        "path": "/etc/apt/sources.list.d/debian.sources",
+        "repositories": [
+          {
+            "Components": [
+              "main",
+              "contrib",
+              "non-free-firmware"
+            ],
+            "Enabled": true,
+            "FileType": "sources",
+            "Options": [
+              {
+                "Key": "Signed-By",
+                "Values": [
+                  "/usr/share/keyrings/debian-archive-keyring.gpg"
+                ]
+              }
+            ],
+            "Suites": [
+              "trixie",
+              "trixie-updates"
+            ],
+            "Types": [
+              "deb"
+            ],
+            "URIs": [
+              "http://deb.debian.org/debian/"
+            ]
+          },
+          {
+            "Components": [
+              "main",
+              "contrib",
+              "non-free-firmware"
+            ],
+            "Enabled": true,
+            "FileType": "sources",
+            "Options": [
+              {
+                "Key": "Signed-By",
+                "Values": [
+                  "/usr/share/keyrings/debian-archive-keyring.gpg"
+                ]
+              }
+            ],
+            "Suites": [
+              "trixie-security"
+            ],
+            "Types": [
+              "deb"
+            ],
+            "URIs": [
+              "http://security.debian.org/debian-security/"
+            ]
+          }
+        ]
+      },
+      {
+        "digest": [
+          214,
+          15,
+          166,
+          178,
+          73,
+          239,
+          255,
+          3,
+          240,
+          65,
+          27,
+          155,
+          65,
+          186,
+          207,
+          118,
+          3,
+          159,
+          33,
+          230,
+          124,
+          213,
+          216,
+          209,
+          183,
+          68,
+          215,
+          215,
+          183,
+          162,
+          181,
+          101
+        ],
+        "file-type": "sources",
+        "path": "/etc/apt/sources.list.d/pbs-enterprise.sources",
+        "repositories": [
+          {
+            "Components": [
+              "pbs-enterprise"
+            ],
+            "Enabled": true,
+            "FileType": "sources",
+            "Options": [
+              {
+                "Key": "Signed-By",
+                "Values": [
+                  "/usr/share/keyrings/proxmox-archive-keyring.gpg"
+                ]
+              }
+            ],
+            "Suites": [
+              "trixie"
+            ],
+            "Types": [
+              "deb"
+            ],
+            "URIs": [
+              "https://enterprise.proxmox.com/debian/pbs"
+            ]
+          }
+        ]
+      }
+    ],
+    "infos": [
+      {
+        "index": 0,
+        "kind": "origin",
+        "message": "Debian",
+        "path": "/etc/apt/sources.list.d/debian.sources"
+      },
+      {
+        "index": 1,
+        "kind": "origin",
+        "message": "Debian",
+        "path": "/etc/apt/sources.list.d/debian.sources"
+      },
+      {
+        "index": 0,
+        "kind": "origin",
+        "message": "Proxmox",
+        "path": "/etc/apt/sources.list.d/pbs-enterprise.sources"
+      }
+    ],
+    "standard-repos": [
+      {
+        "description": "This is the default, stable, and recommended repository, available for all Proxmox subscription users.",
+        "handle": "enterprise",
+        "name": "Enterprise",
+        "status": true
+      },
+      {
+        "description": "This is the recommended repository for testing and non-production use. Its packages are not as heavily tested and validated as the production ready enterprise repository. You don't need a subscription key to access this repository.",
+        "handle": "no-subscription",
+        "name": "No-Subscription"
+      },
+      {
+        "description": "This repository contains the latest packages and is primarily used for test labs and by developers to test new features.",
+        "handle": "test",
+        "name": "Test"
+      }
+    ]
+  }
+}

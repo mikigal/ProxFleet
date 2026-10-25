@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "name": "datastore"
+    },
+    {
+      "name": "hostname"
+    },
+    {
+      "name": "job-id"
+    },
+    {
+      "name": "media-pool"
+    },
+    {
+      "name": "type"
+    }
+  ]
+}

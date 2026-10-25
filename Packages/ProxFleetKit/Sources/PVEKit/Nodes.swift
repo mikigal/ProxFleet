@@ -28,6 +28,8 @@ public struct NodeStatus: Decodable, Sendable, Equatable {
     /// `efi` or `legacy`.
     public var bootMode: String?
     public var secureBoot: Bool
+    /// Proxmox Backup Server: the SHA-256 fingerprint of its certificate, which clients and Proxmox VE storages need.
+    public var certificateFingerprint: String?
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
@@ -61,8 +63,10 @@ public struct NodeStatus: Decodable, Sendable, Equatable {
         memoryTotal = bytes("memory", "total")
         swapUsed = bytes("swap", "used")
         swapTotal = bytes("swap", "total")
-        rootUsed = bytes("rootfs", "used")
-        rootTotal = bytes("rootfs", "total")
+        // Proxmox Backup Server calls it `root`.
+        let root = nested("rootfs") == nil ? "root" : "rootfs"
+        rootUsed = bytes(root, "used")
+        rootTotal = bytes(root, "total")
         uptime = TimeInterval(container.lossyInt(AnyCodingKey("uptime")) ?? 0)
         let manager = container.lossyString(AnyCodingKey("pveversion"))?.split(separator: "/")
         pveVersion = manager.flatMap { $0.count > 1 ? String($0[1]) : nil }
@@ -71,6 +75,7 @@ public struct NodeStatus: Decodable, Sendable, Equatable {
         let boot = nested("boot-info")
         bootMode = boot?.lossyString(AnyCodingKey("mode"))
         secureBoot = boot?.lossyBool(AnyCodingKey("secureboot")) ?? false
+        certificateFingerprint = nested("info")?.lossyString(AnyCodingKey("fingerprint"))
     }
 }
 

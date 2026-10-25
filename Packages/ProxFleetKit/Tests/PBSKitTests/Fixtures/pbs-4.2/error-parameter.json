@@ -1,0 +1,8 @@
+{
+  "errors": {
+    "disk": "value does not match the regex pattern"
+  },
+  "message": "parameter verification errors",
+  "status": 400,
+  "success": false
+}

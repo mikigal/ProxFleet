@@ -28,7 +28,11 @@ struct NodeCertificatesView: View {
                         .accessibilityIdentifier("certificate.\(certificate.fileName)")
                     }
                 } footer: {
-                    Text("The node serves the custom certificate when there is one, otherwise its default certificate, which the cluster's CA signed.")
+                    if detail.isBackupServer {
+                        Text("The certificate the server's web interface and API use. A custom one replaces it; the app then trusts the new certificate.")
+                    } else {
+                        Text("The node serves the custom certificate when there is one, otherwise its default certificate, which the cluster's CA signed.")
+                    }
                 }
                 Section {
                     Button {
@@ -37,7 +41,9 @@ struct NodeCertificatesView: View {
                         Label("Upload Custom Certificate", systemImage: "square.and.arrow.up")
                     }
                     .accessibilityIdentifier("certificates.upload")
-                    if hasCustom {
+                    // A backup server makes a new self-signed certificate instead, which the app would have to trust
+                    // anew; that is left to the web interface.
+                    if hasCustom, !detail.isBackupServer {
                         Button(role: .destructive) {
                             confirmsDelete = true
                         } label: {
@@ -83,7 +89,7 @@ struct NodeCertificatesView: View {
     }
 
     private func isServed(_ certificate: NodeCertificate) -> Bool {
-        certificate.isCustom || (certificate.fileName == "pve-ssl.pem" && !hasCustom)
+        certificate.isCustom || (certificate.fileName == "pve-ssl.pem" && !hasCustom) || certificate.fileName == "proxy.pem"
     }
 
     private func delete() async {
@@ -141,6 +147,7 @@ extension NodeCertificate {
         case "pve-root-ca.pem": String(localized: "Cluster CA")
         case "pve-ssl.pem": String(localized: "Default node certificate")
         case "pveproxy-ssl.pem": String(localized: "Custom certificate")
+        case "proxy.pem": String(localized: "Server certificate")
         default: fileName
         }
     }

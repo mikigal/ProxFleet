@@ -1,0 +1,7 @@
+{
+  "data": {
+    "/datastore/store1": {
+      "Datastore.Audit": true
+    }
+  }
+}

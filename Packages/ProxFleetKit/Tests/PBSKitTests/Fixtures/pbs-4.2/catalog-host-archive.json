@@ -1,0 +1,1148 @@
+{
+  "data": [
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC8ucHdkLmxvY2s=",
+      "leaf": true,
+      "mtime": 1777414949,
+      "size": 0,
+      "text": ".pwd.lock",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC8udXBkYXRlZA==",
+      "leaf": true,
+      "mtime": 1777414932,
+      "size": 208,
+      "text": ".updated",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9YMTE=",
+      "leaf": false,
+      "text": "X11",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9hZGR1c2VyLmNvbmY=",
+      "leaf": true,
+      "mtime": 1746555946,
+      "size": 3981,
+      "text": "adduser.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9hbGlhc2Vz",
+      "leaf": true,
+      "mtime": 1777414954,
+      "size": 73,
+      "text": "aliases",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9hbGlhc2VzLmRi",
+      "leaf": true,
+      "mtime": 1792833893,
+      "size": 12288,
+      "text": "aliases.db",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9hbHRlcm5hdGl2ZXM=",
+      "leaf": false,
+      "text": "alternatives",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9hcHBhcm1vci5k",
+      "leaf": false,
+      "text": "apparmor.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9hcHQ=",
+      "leaf": false,
+      "text": "apt",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9iYXNoLmJhc2hyYw==",
+      "leaf": true,
+      "mtime": 1772983313,
+      "size": 1997,
+      "text": "bash.bashrc",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9iYXNoX2NvbXBsZXRpb24=",
+      "leaf": true,
+      "mtime": 1736655041,
+      "size": 45,
+      "text": "bash_completion",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9iYXNoX2NvbXBsZXRpb24uZA==",
+      "leaf": false,
+      "text": "bash_completion.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9iaW5kcmVzdnBvcnQuYmxhY2tsaXN0",
+      "leaf": true,
+      "mtime": 1772395806,
+      "size": 367,
+      "text": "bindresvport.blacklist",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9iaW5mbXQuZA==",
+      "leaf": false,
+      "text": "binfmt.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jYS1jZXJ0aWZpY2F0ZXM=",
+      "leaf": false,
+      "text": "ca-certificates",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jYS1jZXJ0aWZpY2F0ZXMuY29uZg==",
+      "leaf": true,
+      "mtime": 1792833884,
+      "size": 6422,
+      "text": "ca-certificates.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jaHJvbnk=",
+      "leaf": false,
+      "text": "chrony",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jaWZzLXV0aWxz",
+      "leaf": false,
+      "text": "cifs-utils",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jb25zb2xlLXNldHVw",
+      "leaf": false,
+      "text": "console-setup",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcmVkc3RvcmU=",
+      "leaf": false,
+      "text": "credstore",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcmVkc3RvcmUuZW5jcnlwdGVk",
+      "leaf": false,
+      "text": "credstore.encrypted",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcm9uLmQ=",
+      "leaf": false,
+      "text": "cron.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcm9uLmRhaWx5",
+      "leaf": false,
+      "text": "cron.daily",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcm9uLmhvdXJseQ==",
+      "leaf": false,
+      "text": "cron.hourly",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcm9uLm1vbnRobHk=",
+      "leaf": false,
+      "text": "cron.monthly",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcm9uLndlZWtseQ==",
+      "leaf": false,
+      "text": "cron.weekly",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcm9uLnllYXJseQ==",
+      "leaf": false,
+      "text": "cron.yearly",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9jcm9udGFi",
+      "leaf": true,
+      "mtime": 1749803437,
+      "size": 1042,
+      "text": "crontab",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kYnVzLTE=",
+      "leaf": false,
+      "text": "dbus-1",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kZWJjb25mLmNvbmY=",
+      "leaf": true,
+      "mtime": 1741608435,
+      "size": 2967,
+      "text": "debconf.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kZWJpYW5fdmVyc2lvbg==",
+      "leaf": true,
+      "mtime": 1772488200,
+      "size": 5,
+      "text": "debian_version",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kZWZhdWx0",
+      "leaf": false,
+      "text": "default",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kZWx1c2VyLmNvbmY=",
+      "leaf": true,
+      "mtime": 1746555946,
+      "size": 1706,
+      "text": "deluser.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kZXBtb2QuZA==",
+      "leaf": false,
+      "text": "depmod.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kaGNw",
+      "leaf": false,
+      "text": "dhcp",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kaGNwY2QuY29uZg==",
+      "leaf": true,
+      "mtime": 1766655614,
+      "size": 1274,
+      "text": "dhcpcd.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9kcGtn",
+      "leaf": false,
+      "text": "dpkg",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9lMnNjcnViLmNvbmY=",
+      "leaf": true,
+      "mtime": 1773096786,
+      "size": 685,
+      "text": "e2scrub.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9lbnZpcm9ubWVudA==",
+      "leaf": true,
+      "mtime": 1777414933,
+      "size": 0,
+      "text": "environment",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ldGhlcnR5cGVz",
+      "leaf": true,
+      "mtime": 1742080810,
+      "size": 1936,
+      "text": "ethertypes",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9mZG1vdW50LmNvbmY=",
+      "leaf": true,
+      "mtime": 1677519904,
+      "size": 354,
+      "text": "fdmount.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9mc3RhYg==",
+      "leaf": true,
+      "mtime": 1792833855,
+      "size": 207,
+      "text": "fstab",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9nYWkuY29uZg==",
+      "leaf": true,
+      "mtime": 1738085493,
+      "size": 2584,
+      "text": "gai.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ncm9mZg==",
+      "leaf": false,
+      "text": "groff",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ncm91cA==",
+      "leaf": true,
+      "mtime": 1792833890,
+      "size": 654,
+      "text": "group",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ncm91cC0=",
+      "leaf": true,
+      "mtime": 1792833885,
+      "size": 648,
+      "text": "group-",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ncnViLmQ=",
+      "leaf": false,
+      "text": "grub.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9nc2hhZG93",
+      "leaf": true,
+      "mtime": 1792833890,
+      "size": 551,
+      "text": "gshadow",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9nc2hhZG93LQ==",
+      "leaf": true,
+      "mtime": 1792833885,
+      "size": 545,
+      "text": "gshadow-",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9nc3M=",
+      "leaf": false,
+      "text": "gss",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ob3N0LmNvbmY=",
+      "leaf": true,
+      "mtime": 1772488200,
+      "size": 9,
+      "text": "host.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ob3N0aWQ=",
+      "leaf": true,
+      "mtime": 1792833855,
+      "size": 4,
+      "text": "hostid",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ob3N0bmFtZQ==",
+      "leaf": true,
+      "mtime": 1792833855,
+      "size": 11,
+      "text": "hostname",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ob3N0cw==",
+      "leaf": true,
+      "mtime": 1792833855,
+      "size": 290,
+      "text": "hosts",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ob3N0cy5hbGxvdw==",
+      "leaf": true,
+      "mtime": 1792833879,
+      "size": 411,
+      "text": "hosts.allow",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ob3N0cy5kZW55",
+      "leaf": true,
+      "mtime": 1792833879,
+      "size": 711,
+      "text": "hosts.deny",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pZG1hcGQuY29uZg==",
+      "leaf": true,
+      "mtime": 1743444813,
+      "size": 171,
+      "text": "idmapd.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pbml0LmQ=",
+      "leaf": false,
+      "text": "init.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pbml0cmFtZnM=",
+      "leaf": false,
+      "text": "initramfs",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pbml0cmFtZnMtdG9vbHM=",
+      "leaf": false,
+      "text": "initramfs-tools",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pbnB1dHJj",
+      "leaf": true,
+      "mtime": 1734096674,
+      "size": 1875,
+      "text": "inputrc",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pbnNzZXJ2LmNvbmYuZA==",
+      "leaf": false,
+      "text": "insserv.conf.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pcHJvdXRlMg==",
+      "leaf": false,
+      "text": "iproute2",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pc3N1ZQ==",
+      "leaf": true,
+      "mtime": 1792833926,
+      "size": 297,
+      "text": "issue",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9pc3N1ZS5uZXQ=",
+      "leaf": true,
+      "mtime": 1772488200,
+      "size": 20,
+      "text": "issue.net",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9rZXJuZWw=",
+      "leaf": false,
+      "text": "kernel",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9rZXl1dGlscw==",
+      "leaf": false,
+      "text": "keyutils",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sZC5zby5jYWNoZQ==",
+      "leaf": true,
+      "mtime": 1792833926,
+      "size": 15079,
+      "text": "ld.so.cache",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sZC5zby5jb25m",
+      "leaf": true,
+      "mtime": 1772395806,
+      "size": 34,
+      "text": "ld.so.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sZC5zby5jb25mLmQ=",
+      "leaf": false,
+      "text": "ld.so.conf.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9saWJhdWRpdC5jb25m",
+      "leaf": true,
+      "mtime": 1731618609,
+      "size": 191,
+      "text": "libaudit.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sb2NhbGUuYWxpYXM=",
+      "leaf": true,
+      "mtime": 1772395806,
+      "size": 2996,
+      "text": "locale.alias",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sb2NhbGUuY29uZg==",
+      "leaf": true,
+      "mtime": 1792833879,
+      "size": 52,
+      "text": "locale.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sb2NhbGUuZ2Vu",
+      "leaf": true,
+      "mtime": 1792833877,
+      "size": 9561,
+      "text": "locale.gen",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sb2NhbHRpbWU=",
+      "leaf": true,
+      "text": "localtime",
+      "type": "l"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sb2djaGVjaw==",
+      "leaf": false,
+      "text": "logcheck",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sb2dpbi5kZWZz",
+      "leaf": true,
+      "mtime": 1745058028,
+      "size": 5939,
+      "text": "login.defs",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sb2dyb3RhdGUuY29uZg==",
+      "leaf": true,
+      "mtime": 1720974623,
+      "size": 494,
+      "text": "logrotate.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sb2dyb3RhdGUuZA==",
+      "leaf": false,
+      "text": "logrotate.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9sdm0=",
+      "leaf": false,
+      "text": "lvm",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9seW54",
+      "leaf": false,
+      "text": "lynx",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tYWNoaW5lLWlk",
+      "leaf": true,
+      "mtime": 1792833855,
+      "size": 33,
+      "text": "machine-id",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tYWdpYw==",
+      "leaf": true,
+      "mtime": 1744349113,
+      "size": 111,
+      "text": "magic",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tYWdpYy5taW1l",
+      "leaf": true,
+      "mtime": 1744349113,
+      "size": 111,
+      "text": "magic.mime",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tYWlsLnJj",
+      "leaf": true,
+      "mtime": 1752098596,
+      "size": 125,
+      "text": "mail.rc",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tYW5wYXRoLmNvbmZpZw==",
+      "leaf": true,
+      "mtime": 1746192267,
+      "size": 5230,
+      "text": "manpath.config",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tZWRpYXBybQ==",
+      "leaf": true,
+      "mtime": 1744393533,
+      "size": 11792,
+      "text": "mediaprm",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9taW1lLnR5cGVz",
+      "leaf": true,
+      "mtime": 1741396323,
+      "size": 78282,
+      "text": "mime.types",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ta2UyZnMuY29uZg==",
+      "leaf": true,
+      "mtime": 1773096786,
+      "size": 813,
+      "text": "mke2fs.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tb2Rwcm9iZS5k",
+      "leaf": false,
+      "text": "modprobe.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tb2R1bGVz",
+      "leaf": true,
+      "mtime": 1777414949,
+      "size": 212,
+      "text": "modules",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tb2R1bGVzLWxvYWQuZA==",
+      "leaf": false,
+      "text": "modules-load.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tb3Rk",
+      "leaf": true,
+      "mtime": 1772488200,
+      "size": 286,
+      "text": "motd",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9tdGFi",
+      "leaf": true,
+      "text": "mtab",
+      "type": "l"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9uYW5vcmM=",
+      "leaf": true,
+      "mtime": 1743948690,
+      "size": 11763,
+      "text": "nanorc",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9uZXRjb25maWc=",
+      "leaf": true,
+      "mtime": 1742256272,
+      "size": 767,
+      "text": "netconfig",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9uZXR3b3Jr",
+      "leaf": false,
+      "text": "network",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9uZXR3b3Jrcw==",
+      "leaf": true,
+      "mtime": 1777414948,
+      "size": 60,
+      "text": "networks",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9uZnMuY29uZg==",
+      "leaf": true,
+      "mtime": 1743444813,
+      "size": 1543,
+      "text": "nfs.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9uZnMuY29uZi5k",
+      "leaf": false,
+      "text": "nfs.conf.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9uZnRhYmxlcy5jb25m",
+      "leaf": true,
+      "mtime": 1749579155,
+      "size": 243,
+      "text": "nftables.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9uc3N3aXRjaC5jb25m",
+      "leaf": true,
+      "mtime": 1792833876,
+      "size": 526,
+      "text": "nsswitch.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9vcHQ=",
+      "leaf": false,
+      "text": "opt",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9vcy1yZWxlYXNl",
+      "leaf": true,
+      "text": "os-release",
+      "type": "l"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wYW0uY29uZg==",
+      "leaf": true,
+      "mtime": 1751218846,
+      "size": 552,
+      "text": "pam.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wYW0uZA==",
+      "leaf": false,
+      "text": "pam.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wYXNzd2Q=",
+      "leaf": true,
+      "mtime": 1792833885,
+      "size": 1385,
+      "text": "passwd",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wYXNzd2Qt",
+      "leaf": true,
+      "mtime": 1792833885,
+      "size": 1374,
+      "text": "passwd-",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wZXJs",
+      "leaf": false,
+      "text": "perl",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wb3N0Zml4",
+      "leaf": false,
+      "text": "postfix",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wcHA=",
+      "leaf": false,
+      "text": "ppp",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wcm9maWxl",
+      "leaf": true,
+      "mtime": 1772488200,
+      "size": 828,
+      "text": "profile",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wcm9maWxlLmQ=",
+      "leaf": false,
+      "text": "profile.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wcm90b2NvbHM=",
+      "leaf": true,
+      "mtime": 1666045145,
+      "size": 3144,
+      "text": "protocols",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9wcm94bW94LWJhY2t1cA==",
+      "leaf": false,
+      "text": "proxmox-backup",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9weXRob24z",
+      "leaf": false,
+      "text": "python3",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9weXRob24zLjEz",
+      "leaf": false,
+      "text": "python3.13",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yYzAuZA==",
+      "leaf": false,
+      "text": "rc0.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yYzEuZA==",
+      "leaf": false,
+      "text": "rc1.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yYzIuZA==",
+      "leaf": false,
+      "text": "rc2.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yYzMuZA==",
+      "leaf": false,
+      "text": "rc3.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yYzQuZA==",
+      "leaf": false,
+      "text": "rc4.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yYzUuZA==",
+      "leaf": false,
+      "text": "rc5.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yYzYuZA==",
+      "leaf": false,
+      "text": "rc6.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yY1MuZA==",
+      "leaf": false,
+      "text": "rcS.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yZXBvcnRidWcuY29uZg==",
+      "leaf": true,
+      "mtime": 1739989882,
+      "size": 3229,
+      "text": "reportbug.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yZXF1ZXN0LWtleS5jb25m",
+      "leaf": true,
+      "mtime": 1744539788,
+      "size": 1787,
+      "text": "request-key.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yZXF1ZXN0LWtleS5k",
+      "leaf": false,
+      "text": "request-key.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yZXNvbHYuY29uZg==",
+      "leaf": true,
+      "mtime": 1792833855,
+      "size": 38,
+      "text": "resolv.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yZXNvbHZjb25m",
+      "leaf": false,
+      "text": "resolvconf",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ybXQ=",
+      "leaf": true,
+      "text": "rmt",
+      "type": "l"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ycGM=",
+      "leaf": true,
+      "mtime": 1666045462,
+      "size": 911,
+      "text": "rpc",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9yc3lzbG9nLmQ=",
+      "leaf": false,
+      "text": "rsyslog.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9ydW5pdA==",
+      "leaf": false,
+      "text": "runit",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zYW1iYQ==",
+      "leaf": false,
+      "text": "samba",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zZWN1cml0eQ==",
+      "leaf": false,
+      "text": "security",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zZWxpbnV4",
+      "leaf": false,
+      "text": "selinux",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zZXJ2aWNlcw==",
+      "leaf": true,
+      "mtime": 1742079322,
+      "size": 12990,
+      "text": "services",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zaGFkb3c=",
+      "leaf": true,
+      "mtime": 1792833905,
+      "size": 750,
+      "text": "shadow",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zaGFkb3ct",
+      "leaf": true,
+      "mtime": 1792833883,
+      "size": 655,
+      "text": "shadow-",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zaGVsbHM=",
+      "leaf": true,
+      "mtime": 1777414932,
+      "size": 118,
+      "text": "shells",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9za2Vs",
+      "leaf": false,
+      "text": "skel",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zbWFydGQuY29uZg==",
+      "leaf": true,
+      "mtime": 1750104607,
+      "size": 6136,
+      "text": "smartd.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zbWFydG1vbnRvb2xz",
+      "leaf": false,
+      "text": "smartmontools",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zc2g=",
+      "leaf": false,
+      "text": "ssh",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zc2w=",
+      "leaf": false,
+      "text": "ssl",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zdWJnaWQ=",
+      "leaf": true,
+      "mtime": 1777414933,
+      "size": 0,
+      "text": "subgid",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zdWJ1aWQ=",
+      "leaf": true,
+      "mtime": 1777414933,
+      "size": 0,
+      "text": "subuid",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zdWRvZXJzLmQ=",
+      "leaf": false,
+      "text": "sudoers.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zdXBlcmNhdA==",
+      "leaf": false,
+      "text": "supercat",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zdg==",
+      "leaf": false,
+      "text": "sv",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zeXNjdGwuZA==",
+      "leaf": false,
+      "text": "sysctl.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9zeXN0ZW1k",
+      "leaf": false,
+      "text": "systemd",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC90ZXJtaW5mbw==",
+      "leaf": false,
+      "text": "terminfo",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC90bXBmaWxlcy5k",
+      "leaf": false,
+      "text": "tmpfiles.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC91Y2YuY29uZg==",
+      "leaf": true,
+      "mtime": 1747644732,
+      "size": 1259,
+      "text": "ucf.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC91ZGV2",
+      "leaf": false,
+      "text": "udev",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC91Znc=",
+      "leaf": false,
+      "text": "ufw",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC91cGRhdGUtbW90ZC5k",
+      "leaf": false,
+      "text": "update-motd.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC92Y29uc29sZS5jb25m",
+      "leaf": true,
+      "text": "vconsole.conf",
+      "type": "l"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC92aW0=",
+      "leaf": false,
+      "text": "vim",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC93Z2V0cmM=",
+      "leaf": true,
+      "mtime": 1741415006,
+      "size": 4942,
+      "text": "wgetrc",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC94YXR0ci5jb25m",
+      "leaf": true,
+      "mtime": 1740133751,
+      "size": 681,
+      "text": "xattr.conf",
+      "type": "f"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC94ZGc=",
+      "leaf": false,
+      "text": "xdg",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC96ZnM=",
+      "leaf": false,
+      "text": "zfs",
+      "type": "d"
+    }
+  ]
+}

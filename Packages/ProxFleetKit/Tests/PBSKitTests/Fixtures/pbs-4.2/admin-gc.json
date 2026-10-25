@@ -1,0 +1,41 @@
+{
+  "data": [
+    {
+      "disk-bytes": 0,
+      "disk-chunks": 0,
+      "index-data-bytes": 0,
+      "index-file-count": 0,
+      "pending-bytes": 0,
+      "pending-chunks": 0,
+      "removed-bad": 0,
+      "removed-bytes": 0,
+      "removed-chunks": 0,
+      "still-bad": 0,
+      "store": "store2",
+      "upid": null
+    },
+    {
+      "cache-stats": {
+        "hits": 2057,
+        "misses": 9
+      },
+      "disk-bytes": 5205142,
+      "disk-chunks": 9,
+      "duration": 2,
+      "index-data-bytes": 8617204369,
+      "index-file-count": 12,
+      "last-run-endtime": 1792851087,
+      "last-run-state": "OK",
+      "next-run": 1792879200,
+      "pending-bytes": 0,
+      "pending-chunks": 0,
+      "removed-bad": 0,
+      "removed-bytes": 0,
+      "removed-chunks": 0,
+      "schedule": "daily",
+      "still-bad": 0,
+      "store": "store1",
+      "upid": "UPID:pbs-claude:000002CB:00000218:00000008:6ADCBC8D:garbage_collection:store1:root@pam:"
+    }
+  ]
+}

@@ -45,7 +45,9 @@ public struct NetworkInterface: Decodable, Sendable, Equatable, Identifiable {
             }
         }
         func list(_ key: String) -> [String] {
-            (string(key) ?? "").split(separator: " ").map(String.init)
+            // Proxmox Backup Server sends lists as arrays.
+            if let items = try? container.decodeIfPresent([String].self, forKey: AnyCodingKey(key)) { return items }
+            return (string(key) ?? "").split(separator: " ").map(String.init)
         }
         name = string("iface") ?? ""
         type = string("type") ?? "unknown"
@@ -323,7 +325,7 @@ public struct NetworkInterfaceDraft: Equatable, Sendable {
     }
 
     /// Parameters of `POST /nodes/{node}/network`.
-    var creationParameters: APIParameters {
+    public var creationParameters: APIParameters {
         var parameters: APIParameters = ["iface": .string(name.trimmingCharacters(in: .whitespaces)), "type": .string(type)]
         for (key, value) in serialized().sorted(by: { $0.key < $1.key }) {
             if let value { parameters[key] = .string(value) }

@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "comment": "Main test datastore",
+      "gc-schedule": "daily",
+      "name": "store1",
+      "path": "/datastore/store1"
+    },
+    {
+      "comment": "Sync target",
+      "name": "store2",
+      "path": "/datastore/store2"
+    }
+  ],
+  "digest": "d7108fe020c9551bd84042e15962965ca5fce60e367bebf73d621e147a6ad321"
+}

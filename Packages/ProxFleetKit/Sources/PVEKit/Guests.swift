@@ -220,8 +220,22 @@ extension PVE {
     }
 
     /// Privileges the current user has on a path, e.g. `/vms/100`.
-    public static func permissions(path: String) -> APIRequest<[String: [String: Int]]> {
+    public static func permissions(path: String) -> APIRequest<[String: [String: PrivilegeGrant]]> {
         APIRequest(.get, "/access/permissions", parameters: ["path": .string(path)])
+    }
+}
+
+/// One privilege in `GET /access/permissions`: `1` or `0` on Proxmox VE, `true` or `false` on Proxmox Backup Server.
+public struct PrivilegeGrant: Decodable, Sendable, Equatable {
+    public var isGranted: Bool
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let flag = try? container.decode(Bool.self) {
+            isGranted = flag
+        } else {
+            isGranted = (try? container.decode(Int.self)).map { $0 != 0 } ?? false
+        }
     }
 }
 
@@ -242,6 +256,6 @@ extension ProxmoxSession {
     /// Privileges the current user has on a path.
     public func privileges(on path: String) async throws -> Set<String> {
         let result = try await send(PVE.permissions(path: path))
-        return Set((result[path] ?? [:]).filter { $0.value != 0 }.keys)
+        return Set((result[path] ?? [:]).filter(\.value.isGranted).keys)
     }
 }

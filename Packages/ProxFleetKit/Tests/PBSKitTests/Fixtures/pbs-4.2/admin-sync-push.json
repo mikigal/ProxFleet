@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "comment": "Push host backups",
+      "group-filter": [
+        "type:host"
+      ],
+      "id": "pf-sync-push",
+      "last-run-endtime": 1792851109,
+      "last-run-state": "WARNINGS: 2",
+      "last-run-upid": "UPID:pbs-claude:000002CB:00000218:00000011:6ADCBCA5:syncjob:self\\x3astore2\\x3astore1\\x3a\\x3apf\\x2dsync\\x2dpush:root@pam:",
+      "next-run": 1793412000,
+      "remote": "self",
+      "remote-store": "store2",
+      "schedule": "sat 03:00",
+      "store": "store1",
+      "sync-direction": "push"
+    }
+  ],
+  "digest": "dfec5c676fd7d1264f05ae30138b01857214daf521dfc940bcd4913b5496e3a2"
+}

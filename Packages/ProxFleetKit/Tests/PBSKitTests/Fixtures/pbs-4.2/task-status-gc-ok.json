@@ -1,0 +1,14 @@
+{
+  "data": {
+    "exitstatus": "OK",
+    "id": "store1",
+    "node": "pbs-claude",
+    "pid": 715,
+    "pstart": 536,
+    "starttime": 1792851085,
+    "status": "stopped",
+    "type": "garbage_collection",
+    "upid": "UPID:pbs-claude:000002CB:00000218:00000008:6ADCBC8D:garbage_collection:store1:root@pam:",
+    "user": "root@pam"
+  }
+}

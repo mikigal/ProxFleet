@@ -1,9 +1,13 @@
 import Foundation
 import Observation
+import PBSKit
 import ProxmoxCore
 import PVEKit
 
 /// Users, groups, roles and permissions of the datacenter.
+///
+/// On a backup server only the users and their second factors are loaded, for the two-factor screens it shares
+/// with Proxmox VE; its own access screens use `BackupServerAccess`.
 @MainActor
 @Observable
 public final class AccessControl {
@@ -31,9 +35,16 @@ public final class AccessControl {
     /// Only root@pam may change other users' passwords without confirming its own.
     public var needsPasswordConfirmation: Bool { currentUser != "root@pam" }
 
-    public func can(_ privilege: String) -> Bool { privileges?.contains(privilege) ?? true }
+    /// The backup server calls `User.Modify` `Permissions.Modify`, on `/access/users`.
+    public func can(_ privilege: String) -> Bool {
+        privileges?.contains(connection.isBackupServer && privilege == "User.Modify" ? "Permissions.Modify" : privilege) ?? true
+    }
 
     public func load() async {
+        if connection.isBackupServer {
+            await loadBackupServer()
+            return
+        }
         async let privileges = try? connection.session.privileges(on: "/access")
         do {
             users = try await connection.session.send(PVE.users()).sorted { $0.userid.localizedStandardCompare($1.userid) == .orderedAscending }
@@ -42,6 +53,23 @@ public final class AccessControl {
             acl = try await connection.session.send(PVE.acl()).sorted { ($0.path, $0.subjectID, $0.role) < ($1.path, $1.subjectID, $1.role) }
             realms = try? await connection.session.send(ProxmoxAccess.realms())
             twoFactors = try? await connection.session.send(PVE.twoFactors()).sorted { $0.userid.localizedStandardCompare($1.userid) == .orderedAscending }
+            loadError = nil
+        } catch is CancellationError {
+        } catch {
+            loadError = error.localizedDescription
+        }
+        if let privileges = await privileges { self.privileges = privileges }
+    }
+
+    private func loadBackupServer() async {
+        async let privileges = try? connection.session.privileges(on: "/access/users")
+        do {
+            users = try await connection.session.send(PBS.accessUsers()).sorted { $0.userid.localizedStandardCompare($1.userid) == .orderedAscending }
+            twoFactors = try await connection.session.send(PVE.twoFactors()).sorted { $0.userid.localizedStandardCompare($1.userid) == .orderedAscending }
+            realms = try? await connection.session.send(ProxmoxAccess.realms())
+            groups = []
+            roles = []
+            acl = []
             loadError = nil
         } catch is CancellationError {
         } catch {

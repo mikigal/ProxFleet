@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9YMTEvWHNlc3Npb24uZA==",
+      "leaf": false,
+      "text": "Xsession.d",
+      "type": "d"
+    },
+    {
+      "filepath": "ZXRjLnB4YXIuZGlkeC9YMTEveGti",
+      "leaf": false,
+      "text": "xkb",
+      "type": "d"
+    }
+  ]
+}

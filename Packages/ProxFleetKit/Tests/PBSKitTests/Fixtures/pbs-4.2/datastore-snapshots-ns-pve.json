@@ -1,0 +1,146 @@
+{
+  "data": [
+    {
+      "backup-id": "102",
+      "backup-time": 1792851001,
+      "backup-type": "vm",
+      "comment": "db-server seed",
+      "files": [
+        {
+          "crypt-mode": "none",
+          "filename": "qemu-server.conf.blob",
+          "size": 327
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "drive-scsi0.img.fidx",
+          "size": 4294967296
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "index.json.blob",
+          "size": 501
+        },
+        {
+          "filename": "client.log.blob"
+        }
+      ],
+      "owner": "pvebackup@pbs",
+      "protected": false,
+      "size": 4294968124,
+      "verification": {
+        "state": "ok",
+        "upid": "UPID:pbs-claude:000002CB:00000218:00000009:6ADCBCA1:verificationjob:store1\\x3apf\\x2dverify:root@pam:"
+      }
+    },
+    {
+      "backup-id": "102",
+      "backup-time": 1792850992,
+      "backup-type": "vm",
+      "comment": "db-server seed",
+      "files": [
+        {
+          "crypt-mode": "none",
+          "filename": "qemu-server.conf.blob",
+          "size": 327
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "drive-scsi0.img.fidx",
+          "size": 4294967296
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "index.json.blob",
+          "size": 498
+        },
+        {
+          "filename": "client.log.blob"
+        }
+      ],
+      "owner": "pvebackup@pbs",
+      "protected": false,
+      "size": 4294968121,
+      "verification": {
+        "state": "ok",
+        "upid": "UPID:pbs-claude:000002CB:00000218:00000009:6ADCBCA1:verificationjob:store1\\x3apf\\x2dverify:root@pam:"
+      }
+    },
+    {
+      "backup-id": "200",
+      "backup-time": 1792850989,
+      "backup-type": "ct",
+      "comment": "alpine-dns seed",
+      "files": [
+        {
+          "crypt-mode": "none",
+          "filename": "pct.conf.blob",
+          "size": 194
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "root.pxar.didx",
+          "size": 10569449
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "catalog.pcat1.didx",
+          "size": 11927
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "index.json.blob",
+          "size": 554
+        },
+        {
+          "filename": "client.log.blob"
+        }
+      ],
+      "owner": "pvebackup@pbs",
+      "protected": true,
+      "size": 10582124,
+      "verification": {
+        "state": "ok",
+        "upid": "UPID:pbs-claude:000002CB:00000218:00000009:6ADCBCA1:verificationjob:store1\\x3apf\\x2dverify:root@pam:"
+      }
+    },
+    {
+      "backup-id": "200",
+      "backup-time": 1792850991,
+      "backup-type": "ct",
+      "comment": "alpine-dns seed",
+      "files": [
+        {
+          "crypt-mode": "none",
+          "filename": "pct.conf.blob",
+          "size": 194
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "root.pxar.didx",
+          "size": 10569449
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "catalog.pcat1.didx",
+          "size": 11927
+        },
+        {
+          "crypt-mode": "none",
+          "filename": "index.json.blob",
+          "size": 553
+        },
+        {
+          "filename": "client.log.blob"
+        }
+      ],
+      "owner": "pvebackup@pbs",
+      "protected": false,
+      "size": 10582123,
+      "verification": {
+        "state": "ok",
+        "upid": "UPID:pbs-claude:000002CB:00000218:00000009:6ADCBCA1:verificationjob:store1\\x3apf\\x2dverify:root@pam:"
+      }
+    }
+  ]
+}

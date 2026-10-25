@@ -90,7 +90,7 @@ private struct ServerRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: profile.clusterName == nil ? "server.rack" : "square.stack.3d.up.fill")
+            Image(systemName: profile.product == .backupServer ? "externaldrive.badge.timemachine" : profile.clusterName == nil ? "server.rack" : "square.stack.3d.up.fill")
                 .font(.title3)
                 .foregroundStyle(.tint)
                 .frame(width: 32)
@@ -155,7 +155,7 @@ private struct WelcomeView: View {
         ContentUnavailableView {
             Label("Welcome to ProxFleet", systemImage: "square.stack.3d.up.fill")
         } description: {
-            Text("Manage your Proxmox VE servers and clusters. Sign in with the same user name and password you use in the web interface.")
+            Text("Manage your Proxmox VE servers and clusters and your Proxmox Backup Servers. Sign in with the same user name and password you use in the web interface.")
         } actions: {
             Button("Add Server", action: onAddServer)
                 .buttonStyle(.borderedProminent)

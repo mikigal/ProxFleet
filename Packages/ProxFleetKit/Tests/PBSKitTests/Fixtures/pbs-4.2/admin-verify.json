@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "comment": "Daily verification",
+      "id": "pf-verify",
+      "ignore-verified": true,
+      "last-run-endtime": 1792851105,
+      "last-run-state": "OK",
+      "last-run-upid": "UPID:pbs-claude:000002CB:00000218:00000009:6ADCBCA1:verificationjob:store1\\x3apf\\x2dverify:root@pam:",
+      "next-run": 1792879200,
+      "outdated-after": 30,
+      "schedule": "daily",
+      "store": "store1"
+    }
+  ],
+  "digest": "29b0638851c242efcc6968ba4c34c6fd25ccafde83c70efc9daa655ba350819f"
+}

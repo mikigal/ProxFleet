@@ -1,0 +1,128 @@
+{
+  "data": [
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvYmlu",
+      "leaf": false,
+      "text": "bin",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvZGF0YQ==",
+      "leaf": false,
+      "text": "data",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvZGV2",
+      "leaf": false,
+      "text": "dev",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvZXRj",
+      "leaf": false,
+      "text": "etc",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvZmFzdGJvb3Q=",
+      "leaf": true,
+      "mtime": 1792591761,
+      "size": 0,
+      "text": "fastboot",
+      "type": "f"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvaG9tZQ==",
+      "leaf": false,
+      "text": "home",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvbGli",
+      "leaf": false,
+      "text": "lib",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvbWVkaWE=",
+      "leaf": false,
+      "text": "media",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvbW50",
+      "leaf": false,
+      "text": "mnt",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvb3B0",
+      "leaf": false,
+      "text": "opt",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvcHJvYw==",
+      "leaf": false,
+      "text": "proc",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvcm9vdA==",
+      "leaf": false,
+      "text": "root",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvcnVu",
+      "leaf": false,
+      "text": "run",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvc2Jpbg==",
+      "leaf": false,
+      "text": "sbin",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvc3J2",
+      "leaf": false,
+      "text": "srv",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvc3lz",
+      "leaf": false,
+      "text": "sys",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvdG1w",
+      "leaf": false,
+      "text": "tmp",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvdXNy",
+      "leaf": false,
+      "text": "usr",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvdmFy",
+      "leaf": false,
+      "text": "var",
+      "type": "d"
+    },
+    {
+      "filepath": "cm9vdC5weGFyLmRpZHgvLnB4YXJleGNsdWRlLWNsaQ==",
+      "leaf": true,
+      "mtime": 0,
+      "size": 47,
+      "text": ".pxarexclude-cli",
+      "type": "f"
+    }
+  ]
+}

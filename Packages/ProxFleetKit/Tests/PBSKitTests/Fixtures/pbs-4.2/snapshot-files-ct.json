@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "crypt-mode": "none",
+      "filename": "pct.conf.blob",
+      "size": 194
+    },
+    {
+      "crypt-mode": "none",
+      "filename": "root.pxar.didx",
+      "size": 10569449
+    },
+    {
+      "crypt-mode": "none",
+      "filename": "catalog.pcat1.didx",
+      "size": 11927
+    },
+    {
+      "crypt-mode": "none",
+      "filename": "index.json.blob",
+      "size": 554
+    },
+    {
+      "filename": "client.log.blob"
+    }
+  ]
+}

@@ -42,7 +42,11 @@ struct ServerDetailView: View {
                 Task { await connection.trust(certificate) }
             }
         case .connected:
-            ServerOverviewView(connection: connection)
+            if connection.isBackupServer {
+                BackupServerView(connection: connection)
+            } else {
+                ServerOverviewView(connection: connection)
+            }
         case .failed(let message):
             ContentUnavailableView {
                 Label("Cannot Connect", systemImage: "network.slash")

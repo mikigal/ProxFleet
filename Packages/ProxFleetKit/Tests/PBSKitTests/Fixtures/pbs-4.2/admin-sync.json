@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "comment": "Pull from remote",
+      "id": "pf-sync-pull",
+      "last-run-endtime": 1792851108,
+      "last-run-state": "OK",
+      "last-run-upid": "UPID:pbs-claude:000002CB:00000218:0000000B:6ADCBCA4:syncjob:self\\x3astore1\\x3astore2\\x3a\\x3apf\\x2dsync\\x2dpull:root@pam:",
+      "next-run": 1792969200,
+      "remote": "self",
+      "remote-ns": "pve",
+      "remote-store": "store1",
+      "remove-vanished": false,
+      "schedule": "weekly",
+      "store": "store2"
+    },
+    {
+      "comment": "Local pull",
+      "id": "pf-sync-local",
+      "last-run-endtime": 1792851107,
+      "last-run-state": "OK",
+      "last-run-upid": "UPID:pbs-claude:000002CB:00000218:0000000A:6ADCBCA2:syncjob:\\x2d\\x3astore1\\x3astore2\\x3a\\x3apf\\x2dsync\\x2dlocal:root@pam:",
+      "next-run": 1792854000,
+      "remote-store": "store1",
+      "schedule": "hourly",
+      "store": "store2"
+    }
+  ],
+  "digest": "dfec5c676fd7d1264f05ae30138b01857214daf521dfc940bcd4913b5496e3a2"
+}
