@@ -613,6 +613,8 @@ extension PBS {
 public struct S3EndpointDraft: BackupServerDraft, Sendable {
     /// Skips the `If-None-Match` header, which some providers do not support.
     public static let skipIfNoneMatchQuirk = "skip-if-none-match-header"
+    /// Deletes objects one at a time, for providers without batch deletes (`DeleteObjects`).
+    public static let deleteObjectsOneByOneQuirk = "delete-objects-via-delete-object"
 
     public var id = ""
     public var endpoint = ""
@@ -624,6 +626,8 @@ public struct S3EndpointDraft: BackupServerDraft, Sendable {
     public var usesPathStyle = false
     public var fingerprint = ""
     public var skipsIfNoneMatch = false
+    /// 4.2 and newer.
+    public var deletesObjectsOneByOne = false
     /// Requests per second; 4.1 and newer.
     public var putRateLimit: Int?
     public var rateIn = ByteRate()
@@ -642,13 +646,16 @@ public struct S3EndpointDraft: BackupServerDraft, Sendable {
         usesPathStyle = endpoint.usesPathStyle
         fingerprint = endpoint.fingerprint ?? ""
         skipsIfNoneMatch = endpoint.providerQuirks.contains(Self.skipIfNoneMatchQuirk)
-        otherQuirks = endpoint.providerQuirks.filter { $0 != Self.skipIfNoneMatchQuirk }
+        deletesObjectsOneByOne = endpoint.providerQuirks.contains(Self.deleteObjectsOneByOneQuirk)
+        otherQuirks = endpoint.providerQuirks.filter { $0 != Self.skipIfNoneMatchQuirk && $0 != Self.deleteObjectsOneByOneQuirk }
         putRateLimit = endpoint.values["put-rate-limit"].flatMap(Int.init)
         rateIn = ByteRate(parsing: endpoint.values["rate-in"])
         rateOut = ByteRate(parsing: endpoint.values["rate-out"])
     }
 
-    var quirks: [String] { otherQuirks + (skipsIfNoneMatch ? [Self.skipIfNoneMatchQuirk] : []) }
+    var quirks: [String] {
+        otherQuirks + (skipsIfNoneMatch ? [Self.skipIfNoneMatchQuirk] : []) + (deletesObjectsOneByOne ? [Self.deleteObjectsOneByOneQuirk] : [])
+    }
 
     public func serialized() -> [String: String?] {
         [
@@ -738,5 +745,100 @@ extension PBS {
         }
         let path = request.path.replacingOccurrences(of: "/cluster/notifications", with: notifications)
         return APIRequest(request.method, path, parameters: parameters)
+    }
+}
+
+// MARK: - WebAuthn
+
+/// Where security keys and passkeys are valid, from `GET /config/access/tfa/webauthn`; nil until it is set up.
+public struct BackupServerWebAuthnConfig: Decodable, Sendable, Equatable {
+    public var relyingParty: String?
+    public var origin: String?
+    public var id: String?
+    public var allowsSubdomains: Bool
+
+    public init(relyingParty: String? = nil, origin: String? = nil, id: String? = nil, allowsSubdomains: Bool = true) {
+        self.relyingParty = relyingParty
+        self.origin = origin
+        self.id = id
+        self.allowsSubdomains = allowsSubdomains
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        relyingParty = container.lossyString(AnyCodingKey("rp"))
+        origin = container.lossyString(AnyCodingKey("origin"))
+        id = container.lossyString(AnyCodingKey("id"))
+        allowsSubdomains = container.lossyBool(AnyCodingKey("allow-subdomains")) ?? true
+    }
+}
+
+/// The WebAuthn settings of the web interface's Two Factor Authentication panel. Only root@pam may change them.
+public struct BackupServerWebAuthnDraft: BackupServerDraft, Sendable {
+    /// Any name, shown by the authenticator. Changing it may break registered keys.
+    public var relyingParty = ""
+    /// The address users type into the browser, e.g. `https://pbs.example.com:8007`; empty to allow any.
+    public var origin = ""
+    /// The domain name without protocol or port. Changing it breaks every registered key.
+    public var id = ""
+    public var allowsSubdomains = true
+
+    public init() {}
+
+    public init(_ config: BackupServerWebAuthnConfig?) {
+        relyingParty = config?.relyingParty ?? ""
+        origin = config?.origin ?? ""
+        id = config?.id ?? ""
+        allowsSubdomains = config?.allowsSubdomains ?? true
+    }
+
+    /// The values the web interface's Auto-fill takes from the address in the browser.
+    public mutating func fill(host: String, port: Int) {
+        let name = host.contains(":") ? "[\(host)]" : host
+        relyingParty = host
+        id = host
+        origin = port == 443 ? "https://\(name)" : "https://\(name):\(port)"
+    }
+
+    private static func text(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    public func serialized() -> [String: String?] {
+        // The server only lets origin and allow-subdomains be removed; true is the default of the latter.
+        ["rp": Self.text(relyingParty), "id": Self.text(id), "origin": Self.text(origin), "allow-subdomains": allowsSubdomains ? nil : "0"]
+    }
+
+    public var problems: [String: String] {
+        var problems: [String: String] = [:]
+        if Self.text(relyingParty) == nil { problems["rp"] = String(localized: "Enter a name, for example the server's host name.") }
+        if let id = Self.text(id) {
+            if id.contains("/") || id.contains(" ") || (id.contains(":") && !id.contains("::")) {
+                problems["id"] = String(localized: "Enter the domain name only, without protocol or port.")
+            }
+        } else {
+            problems["id"] = String(localized: "Enter the domain name users reach the server at.")
+        }
+        if let origin = Self.text(origin), !origin.hasPrefix("https://"), !origin.hasPrefix("http://localhost") {
+            problems["origin"] = String(localized: "Use an https:// address.")
+        }
+        return problems
+    }
+}
+
+extension PBS {
+    public static func webAuthnConfig() -> APIRequest<Digested<BackupServerWebAuthnConfig?>> {
+        APIRequest(.get, "/config/access/tfa/webauthn")
+    }
+
+    public static func updateWebAuthnConfig(_ update: BackupServerConfigUpdate) -> APIRequest<Nothing> {
+        APIRequest(.put, "/config/access/tfa/webauthn", parameters: update.parameters)
+    }
+
+    /// What a user or API token may do, by path, with the roles of every matching ACL entry combined, like the web
+    /// interface's Show Permissions. Others than the signed-in user need `Sys.Audit` on `/access`.
+    public static func effectivePermissions(of authID: String) -> APIRequest<[String: [String: Bool]]> {
+        APIRequest(.get, "/access/permissions", parameters: ["auth-id": .string(authID)])
     }
 }

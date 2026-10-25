@@ -18,6 +18,8 @@ struct DemoBackupServerConfigState: Sendable {
         Entry(name: "backup@pbs!pve", type: "token", values: ["comment": "Storage pbs"], lists: [:]),
         Entry(name: "monitoring@pbs!zabbix", type: "token", values: [:], lists: [:]),
     ]
+    /// The WebAuthn settings, empty until set like on a new server.
+    var webAuthn: [String: String] = [:]
     var twoFactors: [String: [DemoTwoFactor]] = ["root@pam": [DemoTwoFactor(id: "totp-1750000000", type: "totp", description: "Phone", created: 1_750_000_000)]]
     var realms: [Entry] = [
         Entry(name: "pam", type: "pam", values: ["comment": "Linux PAM standard authentication", "default": "1"], lists: [:]),
@@ -354,7 +356,41 @@ extension DemoBackupServerState {
         }
     }
 
+    /// `/config/access/tfa/webauthn`: null until set; the ID and name cannot be removed again.
+    private func webAuthn(_ method: HTTPMethod, parameters: [String: String]) -> HTTPResponse {
+        switch method {
+        case .get:
+            guard !config.webAuthn.isEmpty else { return digested(nil) }
+            var object = config.webAuthn.mapValues { JSONValue.string($0) }
+            object["allow-subdomains"] = config.webAuthn["allow-subdomains"].map { .bool($0 != "0") }
+            return digested(.object(object))
+        case .put:
+            if let digest = parameters["digest"], digest != configDigest {
+                return failure(400, "detected modified configuration - file changed by other user? Try again.")
+            }
+            let deletions = (parameters["delete"] ?? "").components(separatedBy: DemoState.listSeparator).filter { !$0.isEmpty }
+            if let refused = deletions.first(where: { !["origin", "allow-subdomains"].contains($0) }) {
+                return fieldFailure(["delete": "value '\(refused)' is not defined in the enumeration."])
+            }
+            var updated = config.webAuthn
+            for key in deletions { updated[key] = nil }
+            for key in ["rp", "origin", "id", "allow-subdomains"] {
+                if let value = parameters[key] { updated[key] = key == "allow-subdomains" ? (value == "1" || value == "true" ? "1" : "0") : value }
+            }
+            guard updated["rp"] != nil, updated["id"] != nil else { return failure(400, "missing 'rp' and 'id' for a new webauthn configuration") }
+            if let origin = updated["origin"], !origin.hasPrefix("https://"), !origin.hasPrefix("http://localhost") {
+                return fieldFailure(["origin": "origin must be an https:// URL"])
+            }
+            config.webAuthn = updated
+            configRevision += 1
+            return success(nil)
+        default:
+            return failure(501, "Method not allowed")
+        }
+    }
+
     private func handleRealms(_ method: HTTPMethod, rest: [String], parameters: [String: String]) -> HTTPResponse? {
+        if rest == ["tfa", "webauthn"] { return webAuthn(method, parameters: parameters) }
         guard let type = rest.first, ["pam", "pbs", "ldap", "ad", "openid"].contains(type) else { return nil }
         if type == "pam" || type == "pbs" {
             guard rest.count == 1, let index = config.realms.firstIndex(where: { $0.name == type }) else { return nil }

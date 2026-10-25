@@ -62,6 +62,8 @@ public enum PBSFeature: CaseIterable, Sendable {
     case garbageCollectionOnUnmount
     /// S3 request counters, their notification thresholds and the counter reset schedule.
     case s3Counters
+    /// The provider quirk that deletes objects one at a time instead of in batches.
+    case s3DeleteObjectsOneByOne
 
     // MARK: Sync jobs
     /// Group filters that exclude groups (`exclude:` prefix).
@@ -104,8 +106,8 @@ public enum PBSFeature: CaseIterable, Sendable {
         case .garbageCollectionTuning, .encryptedAndVerifiedOnlySync, .regenerateTokenSecret: PVEVersionNumber(3, 4)
         case .s3Datastores, .syncOnMount: PVEVersionNumber(4, 0)
         case .verificationThreads, .s3RateLimits, .unmountAfterSync, .userTrafficControl: PVEVersionNumber(4, 1)
-        case .moveGroupsAndNamespaces, .garbageCollectionOnUnmount, .s3Counters, .syncEncryption, .syncWorkerThreads,
-             .remoteProxy:
+        case .moveGroupsAndNamespaces, .garbageCollectionOnUnmount, .s3Counters, .s3DeleteObjectsOneByOne, .syncEncryption,
+             .syncWorkerThreads, .remoteProxy:
             PVEVersionNumber(4, 2)
         }
     }

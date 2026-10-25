@@ -90,8 +90,9 @@ public final class DatastoreContent {
     }
 
     @discardableResult
-    public func moveNamespace(_ child: BackupNamespace, to target: BackupNamespace) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
-        try await runTask(PBS.moveNamespace(store, child, to: target, mergeGroups: true))
+    public func moveNamespace(_ child: BackupNamespace, to target: BackupNamespace, mergeGroups: Bool = true, deletesSource: Bool = true,
+                              maxDepth: Int? = nil) async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        try await runTask(PBS.moveNamespace(store, child, to: target, mergeGroups: mergeGroups, deletesSource: deletesSource, maxDepth: maxDepth))
     }
 
     /// Verifies every snapshot in the namespace and below.

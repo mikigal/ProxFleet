@@ -59,7 +59,8 @@ struct DemoBackupServerNodeState: Sendable {
     var services: [String: Bool] = [:]
     var dns = ["search": "home.arpa", "dns1": "10.0.10.1", "dns2": "1.1.1.1"]
     var timeZone = "Europe/Berlin"
-    var options = ["email-from": "pbs@home.arpa", "task-log-max-days": "90"]
+    var options = ["email-from": "pbs@home.arpa", "task-log-max-days": "90",
+                   "description": "**Home lab backups.** Nightly from the Proxmox VE cluster, copied to the USB disk on Sundays and to the cloud every morning.\n"]
     var repositories = ["enterprise": false, "no-subscription": true]
     var hasCustomCertificate = false
     var activeNetwork: [Interface] = [

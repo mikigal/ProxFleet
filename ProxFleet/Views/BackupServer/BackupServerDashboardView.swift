@@ -7,7 +7,11 @@ import SwiftUI
 /// summary, running and longest tasks, and the subscription.
 struct BackupServerDashboardView: View {
     let dashboard: BackupServerDashboard
+    /// The server as a node, for its notes.
+    let node: NodeDetail
     @State private var metric: PerformanceMetric = .cpu
+
+    private var notes: String { (node.backupServerOptions?.values["description"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var connection: ServerConnection { dashboard.connection }
     private var snapshot: BackupServerSnapshot? { connection.backupServer }
@@ -16,6 +20,18 @@ struct BackupServerDashboardView: View {
         List {
             Section {
                 header
+            }
+            if !notes.isEmpty, let options = node.backupServerOptions {
+                Section("Notes") {
+                    NavigationLink {
+                        BackupServerNotesEditor(node: node, options: options)
+                    } label: {
+                        NotesText(notes: notes)
+                            .font(.subheadline)
+                            .lineLimit(8)
+                    }
+                    .accessibilityIdentifier("dashboard.notes")
+                }
             }
             if let status = snapshot?.status {
                 Section("Usage") {
@@ -85,11 +101,14 @@ struct BackupServerDashboardView: View {
         .refreshable {
             await connection.refresh()
             await dashboard.load()
+            await node.loadOptions()
         }
         .task {
             if !dashboard.hasLoaded { await dashboard.load() }
             await dashboard.keepRefreshing()
         }
+        // Notes need Sys.Audit; without it the section stays hidden.
+        .task { await node.loadOptions() }
     }
 
     private var header: some View {

@@ -529,6 +529,10 @@ private struct S3EndpointEditor: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             Toggle("Skip If-None-Match Header", isOn: $draft.skipsIfNoneMatch)
+            if settings.connection.supports(backupServer: .s3DeleteObjectsOneByOne) {
+                Toggle("Delete Objects One by One", isOn: $draft.deletesObjectsOneByOne)
+                    .accessibilityIdentifier("s3.deleteOneByOne")
+            }
             if settings.connection.supports(backupServer: .s3RateLimits) {
                 OptionalNumberField(title: "PUT Requests/s", placeholder: "Unlimited", value: $draft.putRateLimit)
                 ByteRateField(title: "Rate In", rate: $draft.rateIn)
@@ -537,7 +541,9 @@ private struct S3EndpointEditor: View {
         } header: {
             Text("Advanced")
         } footer: {
-            Text("Some providers do not support the If-None-Match header. The fingerprint is needed for self-signed certificates.")
+            Text(settings.connection.supports(backupServer: .s3DeleteObjectsOneByOne)
+                ? "Some providers do not support the If-None-Match header, or deleting many objects at once (DeleteObjects). The fingerprint is needed for self-signed certificates."
+                : "Some providers do not support the If-None-Match header. The fingerprint is needed for self-signed certificates.")
         }
         if let endpoint {
             Section {

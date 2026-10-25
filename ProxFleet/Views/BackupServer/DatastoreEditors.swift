@@ -127,6 +127,117 @@ struct DatastoreNotificationEditor: View {
     }
 }
 
+/// S3 datastores: when to notify about the bucket's request counters and traffic, and when the counters restart.
+struct DatastoreS3ThresholdsEditor: View {
+    let detail: DatastoreDetail
+    let original: DatastoreDraft
+    let lockMessage: String?
+    @State private var draft: DatastoreDraft
+
+    init(detail: DatastoreDetail, original: DatastoreDraft, lockMessage: String?) {
+        self.detail = detail
+        self.original = original
+        self.lockMessage = lockMessage
+        _draft = State(initialValue: original)
+    }
+
+    private static let requestTitles: [String: LocalizedStringKey] = ["s3-get": "GET", "s3-put": "PUT", "s3-post": "POST", "s3-head": "HEAD", "s3-delete": "DELETE"]
+
+    private func value(_ key: String) -> Binding<String> {
+        Binding(get: { draft.notificationThresholds[key] ?? "" }, set: { draft.notificationThresholds[key] = $0 })
+    }
+
+    var body: some View {
+        BackupServerSettingsForm(title: "S3 Thresholds", lockMessage: lockMessage, makeUpdate: makeUpdate, save: save) { errors in
+            Section {
+                ForEach(DatastoreDraft.thresholdRequestKeys, id: \.self) { key in
+                    LabeledContent(Self.requestTitles[key] ?? "") {
+                        TextField(key, text: value(key), prompt: Text("None"))
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("thresholds.\(key)")
+                    }
+                }
+            } header: {
+                Text("Requests")
+            }
+            Section {
+                ThresholdSizeField(title: "Upload", value: value("s3-upload"), identifier: "thresholds.s3-upload")
+                ThresholdSizeField(title: "Download", value: value("s3-download"), identifier: "thresholds.s3-download")
+                FieldError(message: errors["notification-thresholds"])
+            } header: {
+                Text("Traffic")
+            } footer: {
+                Text("The server notifies once a counter passes its threshold, for example to keep the costs of a paid bucket in view. Empty fields have no threshold.")
+            }
+            Section {
+                CalendarEventField(title: "Reset Schedule", schedule: $draft.counterResetSchedule, prompt: "Never", identifier: "thresholds.reset",
+                                   error: errors["counter-reset-schedule"])
+            } footer: {
+                Text("When the counters start again from zero, e.g. monthly with the provider's billing period.")
+            }
+        }
+    }
+
+    private func makeUpdate() -> BackupServerConfigUpdate? {
+        let update = draft.changes(from: original)
+        return update.isEmpty ? nil : update
+    }
+
+    private func save(_ update: BackupServerConfigUpdate) async throws(ConfigUpdateError) {
+        if let problem = draft.problems(isNew: false)["notification-thresholds"] {
+            throw ConfigUpdateError.invalid(message: nil, fields: ["notification-thresholds": problem])
+        }
+        try await detail.save(update)
+    }
+}
+
+/// A size such as `500GiB`: the number and a unit.
+private struct ThresholdSizeField: View {
+    let title: LocalizedStringKey
+    @Binding var value: String
+    let identifier: String
+    private static let units = ["MiB", "GiB", "TiB"]
+
+    init(title: LocalizedStringKey, value: Binding<String>, identifier: String) {
+        self.title = title
+        _value = value
+        self.identifier = identifier
+    }
+
+    private var amount: Binding<String> {
+        Binding(get: { String(value.prefix { $0.isNumber || $0 == "." }) }, set: { amount in
+            value = amount.trimmingCharacters(in: .whitespaces).isEmpty ? "" : amount + unit.wrappedValue
+        })
+    }
+
+    private var unit: Binding<String> {
+        Binding(get: {
+            let suffix = value.drop { $0.isNumber || $0 == "." }.trimmingCharacters(in: .whitespaces)
+            return suffix.isEmpty ? "GiB" : suffix
+        }, set: { unit in
+            let number = String(value.prefix { $0.isNumber || $0 == "." })
+            value = number.isEmpty ? "" : number + unit
+        })
+    }
+
+    var body: some View {
+        LabeledContent(title) {
+            HStack {
+                TextField(title, text: amount, prompt: Text("None"))
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier(identifier)
+                Picker(title, selection: unit) {
+                    ForEach(Self.units + (Self.units.contains(unit.wrappedValue) ? [] : [unit.wrappedValue]), id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+    }
+}
+
 struct DatastoreVerifyNewEditor: View {
     let detail: DatastoreDetail
     let original: DatastoreDraft

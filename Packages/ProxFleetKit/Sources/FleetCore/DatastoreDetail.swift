@@ -133,6 +133,11 @@ public final class DatastoreDetail {
         try await runTask(PBS.unmountDatastore(store))
     }
 
+    @discardableResult
+    public func refreshFromS3() async throws(ConfigUpdateError) -> TaskCenter.TrackedTask {
+        try await runTask(PBS.refreshFromS3(store))
+    }
+
     /// Saves changed settings, refused when the configuration changed since it was loaded.
     public func save(_ update: BackupServerConfigUpdate) async throws(ConfigUpdateError) {
         guard !update.isEmpty else { return }

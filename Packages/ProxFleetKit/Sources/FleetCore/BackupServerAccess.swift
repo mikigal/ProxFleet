@@ -4,6 +4,13 @@ import PBSKit
 import ProxmoxCore
 import PVEKit
 
+/// The privileges a user or token has on one path, from every ACL entry that applies there.
+public struct EffectivePermission: Sendable, Equatable, Identifiable {
+    public var path: String
+    public var privileges: [String]
+    public var id: String { path }
+}
+
 /// Users and their API tokens, permissions, roles and realms of a backup server.
 @MainActor
 @Observable
@@ -180,6 +187,36 @@ public final class BackupServerAccess {
             throw failure
         }
         if reload { await load() }
+    }
+
+    // MARK: - Effective permissions and WebAuthn
+
+    /// What a user or token may do, by path, sorted by path, with the privileges sorted too.
+    public func effectivePermissions(of authID: String) async throws(ConfigUpdateError) -> [EffectivePermission] {
+        let permissions: [String: [String: Bool]]
+        do {
+            permissions = try await connection.send(PBS.effectivePermissions(of: authID))
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+        return permissions.map { path, privileges in EffectivePermission(path: path, privileges: privileges.filter(\.value).map(\.key).sorted()) }
+            .filter { !$0.privileges.isEmpty }
+            .sorted { $0.path < $1.path }
+    }
+
+    /// Only root@pam may change the WebAuthn settings; everyone can read them.
+    public var canChangeWebAuthn: Bool { currentUser == "root@pam" }
+
+    public func webAuthn() async throws(ConfigUpdateError) -> Digested<BackupServerWebAuthnConfig?> {
+        do {
+            return try await connection.send(PBS.webAuthnConfig())
+        } catch {
+            throw ConfigUpdateError(error)
+        }
+    }
+
+    public func updateWebAuthn(_ update: BackupServerConfigUpdate) async throws(ConfigUpdateError) {
+        try await perform(PBS.updateWebAuthnConfig(update), reload: false)
     }
 }
 

@@ -26,6 +26,8 @@ struct RootView: View {
                 ContentUnavailableView("No Server Selected", systemImage: "server.rack", description: Text("Choose a server from the list."))
             }
         }
+        // On iPhone the split view collapses into one stack, which pushed screens take their environment from.
+        .environment(\.openServer, OpenServerAction { selection = $0 })
         .onChange(of: selection) {
             // On iPad the server list gets out of the way once a server is open; the toolbar button brings it back.
             withAnimation {

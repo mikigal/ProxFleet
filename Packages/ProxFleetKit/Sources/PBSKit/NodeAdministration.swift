@@ -227,7 +227,8 @@ public struct BackupServerNodeOptionsDraft: BackupServerDraft, Sendable {
         httpProxy = values["http-proxy"] ?? ""
         emailFrom = values["email-from"] ?? ""
         defaultLanguage = values["default-lang"] ?? ""
-        description = values["description"] ?? ""
+        // The server adds a trailing newline.
+        description = (values["description"] ?? "").trimmingCharacters(in: .newlines)
         taskLogMaxDays = values["task-log-max-days"].flatMap(Int.init)
         consentText = values["consent-text"] ?? ""
         ciphersTLS12 = values["ciphers-tls-1.2"] ?? ""

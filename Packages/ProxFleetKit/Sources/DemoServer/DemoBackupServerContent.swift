@@ -99,13 +99,23 @@ extension DemoBackupServerState {
             return deleteNamespace(index, namespace, deleteGroups: parameters["delete-groups"] == "1")
         case (.post, ["move-namespace"]):
             let target = parameters["target-ns"] ?? ""
-            for (offset, path) in server.datastores[index].namespaces.enumerated() where path == namespace || path.hasPrefix(namespace + "/") {
+            // Levels below the namespace that move along; the rest stays where it is.
+            let maxDepth = parameters["max-depth"].flatMap(Int.init) ?? .max
+            func moves(_ path: String) -> Bool {
+                guard path == namespace || path.hasPrefix(namespace + "/") else { return false }
+                return path.dropFirst(namespace.count).split(separator: "/").count <= maxDepth
+            }
+            for (offset, path) in server.datastores[index].namespaces.enumerated() where moves(path) {
                 server.datastores[index].namespaces[offset] = target + path.dropFirst(namespace.count)
             }
-            for (offset, group) in server.datastores[index].groups.enumerated() where group.namespace == namespace || group.namespace.hasPrefix(namespace + "/") {
+            for (offset, group) in server.datastores[index].groups.enumerated() where moves(group.namespace) {
                 server.datastores[index].groups[offset].namespace = target + group.namespace.dropFirst(namespace.count)
             }
             if !server.datastores[index].namespaces.contains(target) { server.datastores[index].namespaces.append(target) }
+            if parameters["delete-source"] == "0" || parameters["delete-source"] == "false" || maxDepth != .max,
+               !server.datastores[index].namespaces.contains(namespace) {
+                server.datastores[index].namespaces.append(namespace)
+            }
             return startTask("move-namespace", "\(store):\(namespace):\(target)", duration: 1.5)
         case (.post, ["prune-datastore"]):
             if parameters["dry-run"] != "1" {

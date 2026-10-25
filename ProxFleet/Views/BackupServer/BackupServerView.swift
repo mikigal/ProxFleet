@@ -73,7 +73,7 @@ struct BackupServerView: View {
     private var tabContent: some View {
         switch tab {
         case .dashboard:
-            BackupServerDashboardView(dashboard: dashboard)
+            BackupServerDashboardView(dashboard: dashboard, node: node)
         case .datastores:
             DatastoreListView(connection: connection)
         case .jobs:

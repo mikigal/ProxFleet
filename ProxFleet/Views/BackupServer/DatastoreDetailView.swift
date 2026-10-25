@@ -1,5 +1,7 @@
+import Charts
 import FleetCore
 import PBSKit
+import ProxmoxCore
 import PVEKit
 import SwiftUI
 
@@ -34,7 +36,11 @@ struct DatastoreDetailView: View {
     @State private var tab: DatastoreTab = .summary
     @State private var actionError: String?
     @State private var verifying = false
+    @State private var showsConnection = false
+    @State private var confirmsS3Refresh = false
     @Environment(\.dismiss) private var dismiss
+
+    private var isS3: Bool { detail.config?.isS3 == true || detail.status?.backendType == "s3" }
 
     init(store: String, connection: ServerConnection) {
         _detail = State(initialValue: DatastoreDetail(store: store, connection: connection))
@@ -70,7 +76,15 @@ struct DatastoreDetailView: View {
                                 Button("Unmount", systemImage: "eject") { run { try await detail.unmount() } }
                                     .disabled(!detail.can("Datastore.Modify"))
                             }
+                            if isS3 {
+                                Button("Refresh from S3 Bucket…", systemImage: "arrow.triangle.2.circlepath.icloud") { confirmsS3Refresh = true }
+                                    .disabled(!detail.can("Datastore.Modify"))
+                                    .accessibilityIdentifier("datastore.s3Refresh")
+                            }
                         }
+                        Divider()
+                        Button("Connection Information", systemImage: "info.circle") { showsConnection = true }
+                            .accessibilityIdentifier("datastore.connection")
                     }
                     .accessibilityIdentifier("datastore.actions")
                 }
@@ -79,6 +93,17 @@ struct DatastoreDetailView: View {
                 NavigationStack {
                     VerifyAllView(detail: detail)
                 }
+            }
+            .sheet(isPresented: $showsConnection) {
+                NavigationStack {
+                    DatastoreConnectionView(detail: detail)
+                }
+            }
+            .alert("Refresh from the S3 Bucket?", isPresented: $confirmsS3Refresh) {
+                Button("Cancel", role: .cancel) {}
+                Button("Refresh") { run { try await detail.refreshFromS3() } }
+            } message: {
+                Text("The server reads the bucket's contents again, for example after objects changed outside of it. The datastore is in maintenance until the task finishes.")
             }
             .alert("Action Failed", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
                 Button("OK") {}
@@ -122,7 +147,7 @@ struct DatastoreDetailView: View {
 
 private struct DatastoreSummaryList: View {
     let detail: DatastoreDetail
-    @State private var metric: PerformanceMetric = .usage
+    @State private var metric: DatastoreHistoryMetric = .usage
 
     var body: some View {
         List {
@@ -182,17 +207,37 @@ private struct DatastoreSummaryList: View {
                     }
                 }
             }
+            if let s3 = detail.status?.s3Statistics {
+                Section {
+                    LabeledContent("Uploaded", value: Format.bytes(s3.uploaded))
+                    LabeledContent("Downloaded", value: Format.bytes(s3.downloaded))
+                    LabeledContent("Requests") {
+                        Text(verbatim: "GET \(s3.get) · PUT \(s3.put) · POST \(s3.post) · HEAD \(s3.head) · DELETE \(s3.delete)")
+                            .font(.footnote.monospacedDigit())
+                    }
+                } header: {
+                    Text("S3 Statistics")
+                } footer: {
+                    Text("Since the counters were last reset by the datastore's threshold reset schedule.")
+                }
+            }
             if let gc = detail.garbageCollection ?? detail.status?.garbageCollection {
                 GarbageCollectionSection(status: gc)
             }
             if detail.isMounted {
                 Section("History") {
                     Picker("Metric", selection: $metric) {
-                        Text("Usage").tag(PerformanceMetric.usage)
-                        Text("Transfer Rate").tag(PerformanceMetric.disk)
+                        ForEach(metrics) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    PerformanceChart(points: detail.history.map(\.chartPoint), metric: metric, timeframe: detail.timeframe)
+                    switch metric {
+                    case .usage:
+                        PerformanceChart(points: detail.history.map(\.chartPoint), metric: .usage, timeframe: detail.timeframe)
+                    case .transfer:
+                        PerformanceChart(points: detail.history.map(\.chartPoint), metric: .disk, timeframe: detail.timeframe)
+                    case .operations, .ioDelay, .s3:
+                        DatastoreSeriesChart(points: detail.history, metric: metric, timeframe: detail.timeframe)
+                    }
                     Picker("Timeframe", selection: Bindable(detail).timeframe) {
                         ForEach(RRDTimeframe.allCases) { Text($0.title).tag($0) }
                     }
@@ -204,6 +249,14 @@ private struct DatastoreSummaryList: View {
         .overlay {
             if !detail.hasLoaded { ProgressView() }
         }
+    }
+
+    /// S3 traffic only for S3 datastores, IO delay only where the server records the busy time.
+    private var metrics: [DatastoreHistoryMetric] {
+        var metrics: [DatastoreHistoryMetric] = [.usage, .transfer, .operations]
+        if detail.history.contains(where: { $0.ioTicks != nil }) { metrics.append(.ioDelay) }
+        if detail.config?.isS3 == true || detail.status?.backendType == "s3" { metrics.append(.s3) }
+        return metrics
     }
 
     private var header: some View {
@@ -246,6 +299,148 @@ extension BackupType {
         case .vm: "desktopcomputer"
         case .ct: "shippingbox"
         case .host: "laptopcomputer"
+        }
+    }
+}
+
+enum DatastoreHistoryMetric: String, CaseIterable, Identifiable {
+    case usage, transfer, operations, ioDelay, s3
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .usage: "Usage"
+        case .transfer: "Transfer"
+        case .operations: "IOPS"
+        case .ioDelay: "IO Delay"
+        case .s3: "S3"
+        }
+    }
+}
+
+/// Datastore history the shared performance chart does not draw: operations per second, IO delay and S3 traffic,
+/// as the web interface's datastore summary shows them.
+private struct DatastoreSeriesChart: View {
+    let points: [DatastoreRRDPoint]
+    let metric: DatastoreHistoryMetric
+    let timeframe: RRDTimeframe
+
+    private struct Sample: Identifiable {
+        var time: Date
+        var series: String
+        var value: Double
+        var id: String { "\(series)-\(time.timeIntervalSince1970)" }
+    }
+
+    private var samples: [Sample] {
+        points.flatMap { point -> [Sample] in
+            func sample(_ value: Double?, _ series: String) -> Sample? { value.map { Sample(time: point.time, series: series, value: $0) } }
+            switch metric {
+            case .operations:
+                return [sample(point.readOperations, String(localized: "Read")), sample(point.writeOperations, String(localized: "Write"))].compactMap { $0 }
+            case .ioDelay:
+                return [sample(point.ioDelay, String(localized: "IO Delay"))].compactMap { $0 }
+            case .s3:
+                return [sample(point.s3Downloaded, String(localized: "Download")), sample(point.s3Uploaded, String(localized: "Upload"))].compactMap { $0 }
+            case .usage, .transfer:
+                return []
+            }
+        }
+    }
+
+    var body: some View {
+        if samples.isEmpty {
+            ContentUnavailableView("No Data Yet", systemImage: "chart.xyaxis.line", description: Text("The server records history while the datastore is in use."))
+                .frame(height: 180)
+        } else {
+            Chart(samples) { sample in
+                AreaMark(x: .value("Time", sample.time), y: .value("Value", sample.value))
+                    .foregroundStyle(by: .value("Series", sample.series))
+                    .opacity(0.15)
+                    .interpolationMethod(.monotone)
+                LineMark(x: .value("Time", sample.time), y: .value("Value", sample.value))
+                    .foregroundStyle(by: .value("Series", sample.series))
+                    .interpolationMethod(.monotone)
+            }
+            .chartYScale(domain: 0...max(samples.map(\.value).max() ?? 1, metric == .ioDelay ? 0.1 : 1) * 1.1)
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let number = value.as(Double.self) { Text(format(number)) }
+                    }
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                    AxisGridLine()
+                    AxisValueLabel(format: xAxisFormat)
+                }
+            }
+            .chartLegend(Set(samples.map(\.series)).count > 1 ? .visible : .hidden)
+            .chartForegroundStyleScale(range: [Color.accentColor, Color.teal])
+            .frame(height: 180)
+            .accessibilityLabel(Text(metric.title))
+        }
+    }
+
+    private func format(_ value: Double) -> String {
+        switch metric {
+        case .operations: value.formatted(.number.precision(.fractionLength(0...1))) + "/s"
+        case .ioDelay: value.formatted(.number.precision(.fractionLength(0...2))) + " ms"
+        case .s3, .usage, .transfer: Int64(value).formatted(.byteCount(style: .binary)) + "/s"
+        }
+    }
+
+    private var xAxisFormat: Date.FormatStyle {
+        switch timeframe {
+        case .hour, .day: .dateTime.hour().minute()
+        case .week: .dateTime.weekday(.abbreviated)
+        case .month: .dateTime.day().month(.abbreviated)
+        case .year: .dateTime.month(.abbreviated)
+        }
+    }
+}
+
+/// Where clients reach the datastore, like the web interface's Show Connection Information: the repository for
+/// proxmox-backup-client and the settings a Proxmox VE storage needs.
+private struct DatastoreConnectionView: View {
+    let detail: DatastoreDetail
+    @Environment(\.dismiss) private var dismiss
+
+    private var address: ServerAddress { detail.connection.currentAddress }
+    /// IPv6 addresses go in brackets, and a port other than 8007 after the host.
+    private var server: String {
+        let host = address.host.contains(":") ? "[\(address.host)]" : address.host
+        return address.port == 8007 ? host : "\(host):\(address.port)"
+    }
+    private var repository: String { "\(server):\(detail.store)" }
+
+    var body: some View {
+        Form {
+            Section {
+                CopyableValueRow(title: "Datastore", value: detail.store, identifier: "connection.datastore")
+                CopyableValueRow(title: "Hostname/IP", value: address.host, identifier: "connection.host")
+                if let fingerprint = detail.connection.backupServer?.status?.certificateFingerprint {
+                    CopyableValueRow(title: "Fingerprint", value: fingerprint, identifier: "connection.fingerprint")
+                }
+            }
+            Section {
+                CopyableValueRow(title: "Repository", value: repository, identifier: "connection.repository")
+                CopyableValueRow(title: "With Current User", value: "\(detail.connection.profile.userID)@\(repository)", identifier: "connection.repositoryWithUser")
+            } header: {
+                Text("Repository for CLI and API")
+            } footer: {
+                Text("For proxmox-backup-client --repository or PBS_REPOSITORY. A Proxmox VE storage takes the host, datastore and fingerprint.")
+            }
+        }
+        .navigationTitle("Connection Information")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+            }
         }
     }
 }
@@ -393,6 +588,15 @@ private struct DatastoreOptionsList: View {
                         LabeledContent("Notifications", value: draft.usesSendmail ? String(localized: "Sendmail") : String(localized: "Notification System"))
                     }
                     .accessibilityIdentifier("options.notifications")
+                    if config.isS3, detail.connection.supports(backupServer: .s3Counters) {
+                        NavigationLink {
+                            DatastoreS3ThresholdsEditor(detail: detail, original: draft, lockMessage: lockMessage)
+                        } label: {
+                            LabeledContent("S3 Thresholds", value: draft.notificationThresholds.items.isEmpty
+                                ? String(localized: "None") : String(localized: "\(draft.notificationThresholds.items.count) set"))
+                        }
+                        .accessibilityIdentifier("options.s3Thresholds")
+                    }
                 }
                 Section("Verification") {
                     NavigationLink {

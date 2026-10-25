@@ -257,8 +257,7 @@ final class BackupServerUITests: XCTestCase {
         proxy.tap()
         proxy.typeText("http://proxy.home.arpa:3128")
         snapshot("pbs-options")
-        app.buttons["save"].tap()
-        XCTAssertTrue(app.buttons["more.options"].waitForExistence(timeout: 10))
+        save(closing: proxy)
         openMoreRow("more.options")
         XCTAssertTrue(proxy.waitForExistence(timeout: 10))
         XCTAssertEqual(proxy.value as? String, "http://proxy.home.arpa:3128")
@@ -287,9 +286,9 @@ final class BackupServerUITests: XCTestCase {
         check("dashboard")
 
         app.buttons["tab.more"].tap()
-        let rows = ["more.updates", "more.services", "more.log", "more.report", "more.network", "more.disks", "more.dns", "more.time",
-                    "more.certificates", "more.options", "more.users", "more.permissions", "more.tfa", "more.realms", "more.remotes",
-                    "more.traffic", "more.notifications", "more.metrics", "more.s3", "more.keys"]
+        let rows = ["more.notes", "more.updates", "more.services", "more.log", "more.report", "more.network", "more.disks", "more.dns", "more.time",
+                    "more.certificates", "more.options", "more.users", "more.permissions", "more.tfa", "more.webauthn", "more.realms",
+                    "more.remotes", "more.traffic", "more.notifications", "more.metrics", "more.s3", "more.keys"]
         for identifier in rows {
             openMoreRow(identifier)
             check(identifier)
@@ -307,7 +306,7 @@ final class BackupServerUITests: XCTestCase {
         }
 
         app.buttons["tab.datastores"].tap()
-        for store in ["main", "offsite"] {
+        for store in ["main", "offsite", "s3-archive"] {
             let row = app.buttons["datastore.\(store)"]
             XCTAssertTrue(row.waitForExistence(timeout: 5))
             row.tap()
@@ -319,6 +318,79 @@ final class BackupServerUITests: XCTestCase {
             }
             back(to: app.buttons["datastore.offsite"])
         }
+    }
+
+    /// What the comparison with the web interface added: notes, the fingerprint, WebAuthn, effective permissions and
+    /// the S3 datastore's statistics, thresholds, refresh and connection information.
+    @MainActor
+    func testWebInterfaceExtras() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        // The demo server's notes show on the dashboard.
+        XCTAssertTrue(app.buttons["dashboard.notes"].waitForExistence(timeout: 10))
+        app.buttons["tab.more"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["server.fingerprint"].waitForExistence(timeout: 5))
+        snapshot("pbs-more-server")
+
+        openMoreRow("more.notes")
+        let notes = app.textViews["node.notes"]
+        XCTAssertTrue(notes.waitForExistence(timeout: 10))
+        notes.tap()
+        notes.typeText(" Rack 2.")
+        save(closing: notes)
+
+        // Only root@pam may change the WebAuthn settings; the demo signs in as another user.
+        openMoreRow("more.webauthn")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Only root@pam can change'")).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["webauthn.fill"].isEnabled)
+        snapshot("pbs-webauthn")
+        app.navigationBars.buttons.firstMatch.tap()
+
+        openMoreRow("more.users")
+        let anna = app.buttons["user.anna@pbs"]
+        XCTAssertTrue(anna.waitForExistence(timeout: 10))
+        anna.tap()
+        let effective = app.buttons["user.effectivePermissions"]
+        for _ in 0..<6 where !effective.isHittable { app.swipeUp() }
+        effective.tap()
+        XCTAssertTrue(app.staticTexts["Datastore.Prune"].waitForExistence(timeout: 10))
+        snapshot("pbs-effective-permissions")
+
+        let datastores = app.buttons["tab.datastores"]
+        for _ in 0..<4 where !datastores.waitForExistence(timeout: 2) { app.navigationBars.buttons.firstMatch.tap() }
+        datastores.tap()
+        let s3 = app.buttons["datastore.s3-archive"]
+        XCTAssertTrue(s3.waitForExistence(timeout: 10))
+        s3.tap()
+        let statistics = app.staticTexts["S3 Statistics"]
+        for _ in 0..<6 where !statistics.exists { app.swipeUp() }
+        XCTAssertTrue(statistics.exists)
+        let s3Metric = app.buttons["S3"]
+        for _ in 0..<6 where !s3Metric.isHittable { app.swipeUp() }
+        s3Metric.tap()
+        snapshot("pbs-s3-summary")
+
+        app.buttons["datastore.actions"].tap()
+        app.buttons["datastore.connection"].tap()
+        // The demo server is reached at demo.proxfleet on the default port, so the repository needs no port.
+        XCTAssertTrue(app.staticTexts["demo.proxfleet:s3-archive"].waitForExistence(timeout: 5))
+        snapshot("pbs-connection-information")
+        app.buttons["Done"].tap()
+        app.buttons["datastore.actions"].tap()
+        app.buttons["datastore.s3Refresh"].tap()
+        let refresh = app.alerts.buttons["Refresh"]
+        XCTAssertTrue(refresh.waitForExistence(timeout: 5))
+        refresh.tap()
+        XCTAssertEqual(app.alerts.count, 0)
+
+        app.buttons["tab.options"].tap()
+        let thresholds = app.buttons["options.s3Thresholds"]
+        XCTAssertTrue(thresholds.waitForExistence(timeout: 10))
+        thresholds.tap()
+        let put = app.textFields["thresholds.s3-put"]
+        XCTAssertTrue(put.waitForExistence(timeout: 5))
+        XCTAssertEqual(put.value as? String, "200000")
+        snapshot("pbs-s3-thresholds")
     }
 
     @MainActor
@@ -443,12 +515,25 @@ final class BackupServerUITests: XCTestCase {
         XCTAssertTrue(more.exists, "the More list before \(identifier)")
         let row = app.buttons[identifier]
         func belowTabBar() -> Bool { row.frame.maxY > more.frame.minY }
-        for _ in 0..<8 where !row.exists || !row.isHittable || belowTabBar() { app.swipeUp() }
-        for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeDown() }
-        for _ in 0..<3 where belowTabBar() { app.swipeUp() }
-        row.tap()
-        sleep(1)
-        if more.exists, more.isHittable, row.exists, row.isHittable { row.tap() }
+        // The tab bar is gone once the row's screen is pushed.
+        for _ in 0..<3 {
+            for _ in 0..<8 where !row.exists || !row.isHittable || belowTabBar() { app.swipeUp() }
+            for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeDown() }
+            for _ in 0..<3 where belowTabBar() { app.swipeUp() }
+            row.tap()
+            if more.waitForNonExistence(timeout: 3) { return }
+        }
+        XCTFail("\(identifier) did not open")
+    }
+
+    /// Taps Save until the form closes; a tap right after typing is sometimes lost.
+    private func save(closing element: XCUIElement) {
+        let save = app.buttons["save"]
+        for _ in 0..<3 where element.exists {
+            save.tap()
+            if element.waitForNonExistence(timeout: 3) { break }
+        }
+        XCTAssertFalse(element.exists, "the form did not close")
     }
 
     private func openHomelabContent() {
@@ -561,6 +646,20 @@ final class BackupServerUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["server.Demo Cluster"].exists)
         snapshot("pbs-server-list")
         backupServer.tap()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+
+        // The cluster's backup server storage leads to the saved backup server.
+        app.navigationBars.buttons.firstMatch.tap()
+        app.descendants(matching: .any)["server.Demo Cluster"].tap()
+        XCTAssertTrue(app.staticTexts["Cluster homelab"].waitForExistence(timeout: 10))
+        app.buttons["tab.storage"].tap()
+        let storage = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'storage.' AND identifier ENDSWITH '.pbs'")).firstMatch
+        for _ in 0..<6 where !storage.exists || !storage.isHittable { app.swipeUp() }
+        storage.tap()
+        let open = app.buttons["storage.openBackupServer"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        snapshot("pve-storage-open-backup-server")
+        open.tap()
         XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
     }
 

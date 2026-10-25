@@ -91,6 +91,8 @@ public struct SnapshotReference: Sendable, Hashable, Identifiable {
 
     public var id: String { "\(group.id)/\(time)" }
     public var date: Date { Date(timeIntervalSince1970: TimeInterval(time)) }
+    /// The name clients use, e.g. `vm/100/2026-10-24T14:09:52Z`, as the web interface's Copy Name gives it.
+    public var name: String { "\(group.path)/\(date.formatted(.iso8601))" }
 
     public var parameters: APIParameters {
         var parameters = group.parameters
@@ -455,11 +457,15 @@ extension PBS {
         return APIRequest(.post, content(store, "move-group"), parameters: parameters)
     }
 
-    /// Moves a namespace with everything below it; returns the task. The source is removed afterwards.
-    public static func moveNamespace(_ store: String, _ namespace: BackupNamespace, to target: BackupNamespace, mergeGroups: Bool) -> APIRequest<String> {
-        APIRequest(.post, content(store, "move-namespace"), parameters: [
-            "ns": .string(namespace.path), "target-ns": .string(target.path), "merge-groups": .bool(mergeGroups),
-        ])
+    /// Moves a namespace with everything below it (up to `maxDepth` levels); returns the task. Without
+    /// `deletesSource`, the emptied source namespace stays.
+    public static func moveNamespace(_ store: String, _ namespace: BackupNamespace, to target: BackupNamespace, mergeGroups: Bool,
+                                     deletesSource: Bool = true, maxDepth: Int? = nil) -> APIRequest<String> {
+        var parameters: APIParameters = ["ns": .string(namespace.path), "target-ns": .string(target.path), "merge-groups": .bool(mergeGroups)]
+        // True is the server's default, so it is only sent to keep the source.
+        if !deletesSource { parameters["delete-source"] = false }
+        if let maxDepth { parameters["max-depth"] = .int(maxDepth) }
+        return APIRequest(.post, content(store, "move-namespace"), parameters: parameters)
     }
 
     /// Prunes every group of a namespace (and the ones below, up to `maxDepth`) by the rules; returns the task, whose

@@ -70,6 +70,9 @@ struct DatastoreContentView: View {
                                 BackupGroupRow(group: group)
                             }
                             .accessibilityIdentifier("group.\(group.reference.path)")
+                            .contextMenu {
+                                Button("Copy Name", systemImage: "doc.on.doc") { UIPasteboard.general.string = group.reference.path }
+                            }
                         }
                     }
                 }
@@ -303,6 +306,10 @@ private struct MoveNamespaceView: View {
     let namespace: BackupNamespace
     @State private var target = ""
     @State private var targets: [BackupNamespace] = []
+    @State private var mergesGroups = true
+    @State private var deletesSource = true
+    /// Levels below the namespace that move along; nil for all.
+    @State private var maxDepth: Int?
     @State private var isWorking = false
     @State private var errorMessage: String?
     @Environment(\.dismiss) private var dismiss
@@ -321,7 +328,21 @@ private struct MoveNamespaceView: View {
                     }
                 }
             } footer: {
-                Text("The new path of the namespace, with everything below it. Groups that exist there already get the snapshots added.")
+                Text("The new path of the namespace, with everything below it.")
+            }
+            Section {
+                Picker("Max Depth", selection: $maxDepth) {
+                    Text("Full").tag(Int?.none)
+                    ForEach(0..<8) { depth in
+                        Text(depth == 0 ? String(localized: "This Namespace Only") : String(localized: "\(depth) Levels")).tag(Int?.some(depth))
+                    }
+                }
+                Toggle("Merge Groups", isOn: $mergesGroups)
+                    .accessibilityIdentifier("namespace.move.merge")
+                Toggle("Delete Source", isOn: $deletesSource)
+                    .accessibilityIdentifier("namespace.move.deleteSource")
+            } footer: {
+                Text("Merge Groups adds the snapshots to groups that exist at the target already; they need the same owner and different backup times. Delete Source removes the emptied namespace.")
             }
             ErrorSection(message: errorMessage)
         }
@@ -335,7 +356,8 @@ private struct MoveNamespaceView: View {
                         isWorking = true
                         defer { isWorking = false }
                         do {
-                            let task = try await content.moveNamespace(namespace, to: BackupNamespace(target.trimmingCharacters(in: .whitespaces)))
+                            let task = try await content.moveNamespace(namespace, to: BackupNamespace(target.trimmingCharacters(in: .whitespaces)),
+                                                                       mergeGroups: mergesGroups, deletesSource: deletesSource, maxDepth: maxDepth)
                             if case .failed(let message) = await content.connection.tasks.result(of: task.id) {
                                 errorMessage = message
                                 return
@@ -428,6 +450,9 @@ struct BackupGroupView: View {
                             SnapshotRow(snapshot: snapshot)
                         }
                         .accessibilityIdentifier("snapshot.\(snapshot.reference.time)")
+                        .contextMenu {
+                            Button("Copy Name", systemImage: "doc.on.doc") { UIPasteboard.general.string = snapshot.reference.name }
+                        }
                         .swipeActions(edge: .trailing) {
                             if detail.canChangeBackups {
                                 Button("Delete", systemImage: "trash") { run { try await detail.deleteSnapshot(snapshot.reference) } }

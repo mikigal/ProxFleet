@@ -7,8 +7,18 @@ extension DemoBackupServerState {
         var settings = ["name": datastore.name, "path": datastore.path, "comment": datastore.comment, "notification-mode": "notification-system"]
         if let schedule = datastore.gcSchedule { settings["gc-schedule"] = schedule }
         if let device = datastore.backingDevice { settings["backing-device"] = device }
+        if let bucket = datastore.s3Bucket {
+            settings["backend"] = "type=s3,client=minio,bucket=\(bucket)"
+            settings["notification-thresholds"] = "s3-put=200000,s3-upload=500GiB"
+            settings["counter-reset-schedule"] = "monthly"
+        }
         if datastore.name == "main" { settings["verify-new"] = "1" }
         return settings
+    }
+
+    /// Datastores on an S3 bucket, also the ones created in demo mode.
+    func isS3(_ name: String) -> Bool {
+        datastoreSettings[name]?["backend"]?.contains("type=s3") == true
     }
 
     var configDigest: String {
@@ -83,6 +93,9 @@ extension DemoBackupServerState {
             return startTask("garbage_collection", name, duration: 4)
         case (.get, ["active-operations"]):
             return success(["read": 0, "write": 0])
+        case (.put, ["s3-refresh"]):
+            guard isS3(name) else { return failure(400, "datastore '\(name)' is not backed by an S3 object store") }
+            return startTask("s3-refresh", name, duration: 3)
         case (.get, ["rrd"]):
             return success(historyJSON(datastore, timeframe: parameters["timeframe"] ?? "day"))
         case (.get, ["namespace"]):
@@ -126,6 +139,7 @@ extension DemoBackupServerState {
     private static let deletableSettings: Set<String> = [
         "comment", "gc-schedule", "gc-on-unmount", "prune-schedule", "keep-last", "keep-hourly", "keep-daily", "keep-weekly", "keep-monthly",
         "keep-yearly", "verify-new", "notify-user", "notify", "notification-mode", "tuning", "maintenance-mode",
+        "notification-thresholds", "counter-reset-schedule",
     ]
 
     private func updateDatastore(_ name: String, _ parameters: [String: String]) -> HTTPResponse {
@@ -143,6 +157,12 @@ extension DemoBackupServerState {
         if let mode = parameters["maintenance-mode"], !["read-only", "offline"].contains(where: { mode.contains($0) }) {
             return fieldFailure(["maintenance-mode": "value does not match the regex pattern"])
         }
+        if let thresholds = parameters["notification-thresholds"] {
+            let known = Set(["s3-get", "s3-put", "s3-post", "s3-head", "s3-delete", "s3-upload", "s3-download"])
+            for item in PropertyString(parsing: thresholds).items where !known.contains(item.key ?? "") {
+                return fieldFailure(["notification-thresholds": "property '\(item.key ?? item.value)': schema does not allow additional properties"])
+            }
+        }
         for (key, value) in parameters where !["delete", "digest", "name"].contains(key) {
             settings[key] = value
         }
@@ -158,11 +178,20 @@ extension DemoBackupServerState {
             let groups = datastore.groups.filter { $0.type == type }
             counts[type] = ["groups": .int(groups.count), "snapshots": .int(groups.reduce(0) { $0 + $1.snapshots.count })]
         }
-        return [
+        var status: [String: JSONValue] = [
             "total": .double(datastore.totalGiB * gib), "used": .double(datastore.usedGiB * gib),
-            "avail": .double((datastore.totalGiB - datastore.usedGiB) * gib), "backend-type": "filesystem",
+            "avail": .double((datastore.totalGiB - datastore.usedGiB) * gib), "backend-type": isS3(datastore.name) ? "s3" : "filesystem",
             "counts": .object(counts), "gc-status": garbageCollectionJSON(datastore),
         ]
+        if isS3(datastore.name) {
+            // Since the monthly reset, at roughly a day's traffic per day.
+            let days = Double(Calendar(identifier: .gregorian).component(.day, from: Date()))
+            status["s3-statistics"] = [
+                "uploaded": .double(days * 4.2 * gib), "downloaded": .double(days * 0.3 * gib), "get": .int(Int(days * 1_850)),
+                "put": .int(Int(days * 6_400)), "post": .int(Int(days * 12)), "head": .int(Int(days * 9_100)), "delete": .int(Int(days * 40)),
+            ]
+        }
+        return .object(status)
     }
 
     func garbageCollectionJSON(_ datastore: DemoBackupServer.Datastore) -> JSONValue {
@@ -195,17 +224,23 @@ extension DemoBackupServerState {
         let end = (Date().timeIntervalSince1970 / step).rounded(.down) * step
         let gib = 1_073_741_824.0
         let total = datastore.totalGiB * gib
+        let s3 = isS3(datastore.name)
         return .array((0..<70).map { index in
             let time = end - Double(69 - index) * step
             let wave = sin(time / (step * 7)) * 0.5 + 0.5
             // Nightly backups write a lot for a short while; the rest of the day is quiet.
             let busy = wave > 0.8 ? 1.0 : 0.05
             let used = datastore.usedGiB * gib - Double(69 - index) * step / 86_400 * 4 * gib
-            return [
+            var point: [String: JSONValue] = [
                 "time": .int(Int(time)), "total": .double(total), "used": .double(used), "available": .double(total - used),
                 "read_bytes": .double(2_000_000 * busy * wave), "write_bytes": .double(60_000_000 * busy * wave),
                 "read_ios": .double(20 * busy), "write_ios": .double(300 * busy), "io_ticks": .double(0.4 * busy),
             ]
+            if s3 {
+                point["s3/uploaded"] = .double(48_000_000 * busy * wave)
+                point["s3/downloaded"] = .double(1_500_000 * busy * wave)
+            }
+            return .object(point)
         })
     }
 
@@ -223,6 +258,28 @@ extension DemoBackupServerState {
         ("RemoteAudit", ["Remote.Audit"], "Remote Auditor"),
         ("RemoteSyncOperator", ["Remote.Audit", "Remote.Read"], "Synchronization Operator"),
     ]
+
+    /// The privileges of another user or a token by path, from its own ACL entries; a token is also limited to what
+    /// its user may do.
+    func effectivePermissions(of authID: String) -> JSONValue {
+        func granted(_ id: String) -> [String: Set<String>] {
+            var paths: [String: Set<String>] = [:]
+            for entry in acl where entry.authID == id {
+                paths[entry.path, default: []].formUnion(Self.roles.first { $0.id == entry.role }?.privileges ?? [])
+            }
+            return paths
+        }
+        var paths = granted(authID)
+        if let user = authID.split(separator: "!").first, authID.contains("!") {
+            let userPaths = granted(String(user))
+            for (path, privileges) in paths {
+                // The user's entries on the path or one above it, which propagate down.
+                let allowed = userPaths.filter { path == $0.key || path.hasPrefix($0.key == "/" ? "/" : $0.key + "/") }.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+                paths[path] = privileges.intersection(allowed)
+            }
+        }
+        return .object(paths.mapValues { privileges in .object(Dictionary(uniqueKeysWithValues: privileges.map { ($0, JSONValue.bool(true)) })) })
+    }
 
     func handleAccess(_ method: HTTPMethod, parts: [String], parameters: [String: String]) -> HTTPResponse? {
         switch (method, parts) {

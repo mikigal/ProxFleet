@@ -31,6 +31,8 @@ public struct DemoBackupServer: Sendable {
         public var backingDevice: String?
         public var isMounted = true
         public var gcSchedule: String?
+        /// S3 datastores: the bucket on the endpoint `minio`.
+        public var s3Bucket: String?
         public var namespaces: [String]
         public var groups: [Group]
     }
@@ -85,6 +87,16 @@ public struct DemoBackupServer: Sendable {
             Datastore(
                 name: "offsite", path: "offsite", comment: "USB disk, swapped every Sunday", totalGiB: 1_863, usedGiB: 902,
                 backingDevice: "8f1e2a64-3c5b-4b7e-9d0a-6e2f9b1c7a55", isMounted: false, gcSchedule: nil, namespaces: [""], groups: []
+            ),
+            Datastore(
+                name: "s3-archive", path: "/mnt/s3-cache/s3-archive", comment: "Monthly archive in the MinIO bucket", totalGiB: 18_000, usedGiB: 214,
+                gcSchedule: "sat 03:00", s3Bucket: "pbs-offsite", namespaces: [""],
+                groups: [
+                    Group(namespace: "", type: "vm", id: "100", owner: "root@pam", notes: "home-assistant",
+                          snapshots: history(days: 0, weeks: 6, notes: "home-assistant monthly", sizeGiB: 32)),
+                    Group(namespace: "", type: "ct", id: "200", owner: "root@pam", notes: "pihole",
+                          snapshots: history(days: 0, weeks: 6, notes: "pihole monthly", sizeGiB: 1.4)),
+                ]
             ),
         ]
     )

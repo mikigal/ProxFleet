@@ -110,13 +110,15 @@ actor DemoBackupServerState {
         case (.get, ["nodes"]):
             return success([["node": .string(server.name)]])
         case (.get, ["access", "permissions"]):
+            if let authID = parameters["auth-id"], authID != "root@pam" { return success(effectivePermissions(of: authID)) }
             return success(permissions(path: parameters["path"] ?? "/"))
         case (.get, ["status", "datastore-usage"]):
             return success(.array(server.datastores.map(usageJSON)))
         case (.get, ["admin", "datastore"]):
             return success(.array(server.datastores.map { datastore in
                 var entry: [String: JSONValue] = [
-                    "store": .string(datastore.name), "comment": .string(datastoreSettings[datastore.name]?["comment"] ?? ""), "backend-type": "filesystem",
+                    "store": .string(datastore.name), "comment": .string(datastoreSettings[datastore.name]?["comment"] ?? ""),
+                    "backend-type": isS3(datastore.name) ? "s3" : "filesystem",
                     "mount-status": .string(datastore.backingDevice == nil ? "nonremovable" : datastore.isMounted ? "mounted" : "notmounted"),
                 ]
                 if let maintenance = datastoreSettings[datastore.name]?["maintenance-mode"] { entry["maintenance"] = .string(maintenance) }
@@ -247,7 +249,7 @@ actor DemoBackupServerState {
     private func usageJSON(_ datastore: DemoBackupServer.Datastore) -> JSONValue {
         let gib = 1_073_741_824.0
         var entry: [String: JSONValue] = [
-            "store": .string(datastore.name), "backend-type": "filesystem",
+            "store": .string(datastore.name), "backend-type": isS3(datastore.name) ? "s3" : "filesystem",
             "mount-status": .string(datastore.backingDevice == nil ? "nonremovable" : datastore.isMounted ? "mounted" : "notmounted"),
         ]
         guard datastore.backingDevice == nil || datastore.isMounted else {

@@ -151,8 +151,14 @@ private struct BackupServerUserView: View {
                     }
                     .disabled(!access.canModifyPermissions)
                     .accessibilityIdentifier("user.permission.add")
+                    NavigationLink("Effective Permissions") {
+                        EffectivePermissionsView(access: access, authID: userID)
+                    }
+                    .accessibilityIdentifier("user.effectivePermissions")
                 } header: {
                     Text("Permissions")
+                } footer: {
+                    Text("Effective permissions combine every entry that applies, also the ones inherited from parent paths.")
                 }
                 Section {
                     if user.id.hasSuffix("@pbs") {
@@ -501,6 +507,10 @@ private struct BackupServerTokenEditor: View {
                 if access.permissions(of: token.id).isEmpty {
                     Text("No permissions.").foregroundStyle(.secondary)
                 }
+                NavigationLink("Effective Permissions") {
+                    EffectivePermissionsView(access: access, authID: token.id)
+                }
+                .accessibilityIdentifier("token.effectivePermissions")
             } header: {
                 Text("Permissions")
             }
@@ -543,6 +553,128 @@ private struct BackupServerTokenEditor: View {
 }
 
 // MARK: - Permissions
+
+/// What a user or token may do on each path, like the web interface's Show Permissions.
+private struct EffectivePermissionsView: View {
+    let access: BackupServerAccess
+    let authID: String
+    @State private var permissions: [EffectivePermission]?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            if let permissions {
+                ForEach(permissions) { entry in
+                    Section {
+                        ForEach(entry.privileges, id: \.self) { privilege in
+                            Text(privilege)
+                                .font(.subheadline.monospaced())
+                        }
+                    } header: {
+                        Text(verbatim: entry.path)
+                            .font(.footnote.monospaced())
+                            .textCase(nil)
+                    }
+                    .accessibilityIdentifier("effective.\(entry.path)")
+                }
+            }
+        }
+        .navigationTitle(authID)
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if let errorMessage {
+                ContentUnavailableView("Cannot Load Permissions", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
+            } else if permissions == nil {
+                ProgressView()
+            } else if permissions?.isEmpty == true {
+                ContentUnavailableView("No Permissions", systemImage: "person.badge.key", description: Text("\(authID) cannot do anything on this server yet."))
+            }
+        }
+        .task {
+            do {
+                permissions = try await access.effectivePermissions(of: authID)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// The WebAuthn settings, which security keys and passkeys depend on, from the web interface's Two Factor panel.
+struct BackupServerWebAuthnView: View {
+    let access: BackupServerAccess
+    @State private var loaded: Digested<BackupServerWebAuthnConfig?>?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Group {
+            if let loaded {
+                BackupServerWebAuthnEditor(access: access, config: loaded.value, digest: loaded.digest)
+            } else if let errorMessage {
+                ContentUnavailableView("Cannot Load WebAuthn Settings", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
+            } else {
+                ProgressView()
+            }
+        }
+        .navigationTitle("WebAuthn")
+        .task {
+            do {
+                loaded = try await access.webAuthn()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct BackupServerWebAuthnEditor: View {
+    let access: BackupServerAccess
+    let digest: String?
+    private let original: BackupServerWebAuthnDraft
+    @State private var draft: BackupServerWebAuthnDraft
+
+    init(access: BackupServerAccess, config: BackupServerWebAuthnConfig?, digest: String?) {
+        self.access = access
+        self.digest = digest
+        original = BackupServerWebAuthnDraft(config)
+        _draft = State(initialValue: original)
+    }
+
+    private var address: ServerAddress { access.connection.currentAddress }
+
+    var body: some View {
+        BackupServerSettingsForm(title: "WebAuthn",
+                                 lockMessage: access.canChangeWebAuthn ? nil : String(localized: "Only root@pam can change the WebAuthn settings.")) {
+            let update = draft.changes(from: original, digest: digest)
+            return update.isEmpty ? nil : update
+        } save: { update throws(ConfigUpdateError) in
+            if !draft.problems.isEmpty {
+                throw ConfigUpdateError.invalid(message: nil, fields: draft.problems)
+            }
+            try await access.updateWebAuthn(update)
+        } content: { errors in
+            Section {
+                LabeledTextField(title: "Name", prompt: "pbs.example.com", text: $draft.relyingParty, identifier: "webauthn.rp")
+                    .textInputAutocapitalization(.never)
+                FieldError(message: errors["rp"])
+                LabeledTextField(title: "ID", prompt: "pbs.example.com", text: $draft.id, keyboard: .URL, identifier: "webauthn.id")
+                    .textInputAutocapitalization(.never)
+                FieldError(message: errors["id"])
+                LabeledTextField(title: "Origin", prompt: "https://pbs.example.com:8007", text: $draft.origin, keyboard: .URL, identifier: "webauthn.origin")
+                    .textInputAutocapitalization(.never)
+                FieldError(message: errors["origin"])
+                Toggle("Allow Subdomains", isOn: $draft.allowsSubdomains)
+                    .disabled(draft.origin.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Fill In for \(address.host)", systemImage: "wand.and.stars") {
+                    draft.fill(host: address.host, port: address.port)
+                }
+                .accessibilityIdentifier("webauthn.fill")
+            } footer: {
+                Text("Security keys and passkeys are tied to the address users type into the browser. Changing the ID makes every registered key stop working; changing the name or origin may. Subdomains count only with an origin.")
+            }
+        }
+    }
+}
 
 struct BackupServerPermissionRow: View {
     let entry: BackupServerACLEntry

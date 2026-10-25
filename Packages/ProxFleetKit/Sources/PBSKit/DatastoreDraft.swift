@@ -60,6 +60,14 @@ public struct DatastoreDraft: BackupServerDraft, Sendable {
     public var maintenance: DatastoreMaintenance?
     public var tuning = PropertyMap(parsing: nil)
     public var gcOnUnmount = false
+    /// S3 datastores, 4.2 and newer: request counts (`s3-get`…) and traffic (`s3-upload`, `s3-download`, sizes such
+    /// as `10GiB`) that trigger a notification once the counters pass them.
+    public var notificationThresholds = PropertyMap(parsing: nil)
+    /// When the counters start again from zero, a calendar event.
+    public var counterResetSchedule = ""
+
+    public static let thresholdRequestKeys = ["s3-get", "s3-put", "s3-post", "s3-head", "s3-delete"]
+    public static let thresholdTrafficKeys = ["s3-upload", "s3-download"]
 
     /// A new datastore with the web interface's defaults: garbage collection and pruning every day.
     public init() {
@@ -93,6 +101,8 @@ public struct DatastoreDraft: BackupServerDraft, Sendable {
         maintenance = config.maintenance
         tuning = PropertyMap(parsing: values["tuning"])
         gcOnUnmount = values["gc-on-unmount"] == "1"
+        notificationThresholds = PropertyMap(parsing: values["notification-thresholds"])
+        counterResetSchedule = values["counter-reset-schedule"] ?? ""
     }
 
     /// Sendmail notifications go to `notify-user` with the levels of `notify`; the notification system uses matchers.
@@ -117,6 +127,10 @@ public struct DatastoreDraft: BackupServerDraft, Sendable {
         // `updateValue`, as assigning nil would drop the key instead of marking the setting as cleared.
         values.updateValue(levels.isEmpty ? nil : levels.joined(separator: ","), forKey: "notify")
         if kind == .removable { values.updateValue(gcOnUnmount ? "1" : nil, forKey: "gc-on-unmount") }
+        if kind == .s3 {
+            values.updateValue(notificationThresholds.stringValue, forKey: "notification-thresholds")
+            values.updateValue(text(counterResetSchedule), forKey: "counter-reset-schedule")
+        }
         for (key, value) in retention.serialized { values.updateValue(value, forKey: key) }
         return values
     }
@@ -147,6 +161,16 @@ public struct DatastoreDraft: BackupServerDraft, Sendable {
     /// Problems the form can find itself, by parameter name as the server reports them.
     public func problems(isNew: Bool) -> [String: String] {
         var problems: [String: String] = [:]
+        for key in Self.thresholdRequestKeys {
+            if let value = notificationThresholds[key], Int(value).map({ $0 < 0 }) ?? true {
+                problems["notification-thresholds"] = String(localized: "Enter whole numbers of requests.")
+            }
+        }
+        for key in Self.thresholdTrafficKeys {
+            if let value = notificationThresholds[key], value.wholeMatch(of: /\d+(\.\d+)?\s*([KMGTP]i?B|B)?/) == nil {
+                problems["notification-thresholds"] = String(localized: "Enter sizes such as 500 GiB.")
+            }
+        }
         if isNew {
             let name = name.trimmingCharacters(in: .whitespaces)
             if name.count < 3 || name.count > 32 || name.wholeMatch(of: /[A-Za-z0-9_][A-Za-z0-9._\-]*/) == nil {

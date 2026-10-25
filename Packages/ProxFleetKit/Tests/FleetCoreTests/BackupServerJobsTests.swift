@@ -36,7 +36,7 @@ struct BackupServerJobsTests {
         #expect(push.state.lastRunUPID == nil)
         #expect(jobs.verifyJobs?.map(\.id) == ["weekly-verify"])
         #expect(jobs.pruneJobs?.first?.retention == RetentionPolicy(last: 3, daily: 7, weekly: 4, monthly: 6))
-        #expect(jobs.garbageCollection?.map(\.store) == ["main", "offsite"])
+        #expect(jobs.garbageCollection?.map(\.store) == ["main", "offsite", "s3-archive"])
         #expect(jobs.canChange(.sync, store: "main", direction: .push))
         #expect(jobs.lockReason(.prune, store: "main") == nil)
 
@@ -154,7 +154,7 @@ struct BackupServerJobsTests {
         #expect(try await jobs.datastores(remote: "cloud") == ["customers", "homelab-copy"])
         #expect(try await jobs.namespaces(remote: "cloud", store: "homelab-copy") == [.root, BackupNamespace("homelab")])
         #expect(try await jobs.groups(remote: "cloud", store: "homelab-copy", namespace: BackupNamespace("homelab")).first?.reference.path == "vm/100")
-        #expect(try await jobs.datastores(remote: nil) == ["main", "offsite"])
+        #expect(try await jobs.datastores(remote: nil) == ["main", "offsite", "s3-archive"])
         #expect(try await jobs.namespaces(remote: nil, store: "main").map(\.path) == ["", "homelab", "laptops"])
         #expect(await jobs.remotes().map(\.name) == ["cloud"])
         #expect(await jobs.owners().contains("backup@pbs!pve"))

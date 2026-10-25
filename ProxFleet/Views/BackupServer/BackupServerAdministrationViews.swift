@@ -27,9 +27,25 @@ struct BackupServerMoreList: View {
 
     var body: some View {
         List {
-            if let version = connection.backupServer?.version {
-                Section {
+            Section {
+                if let version = connection.backupServer?.version {
                     LabeledContent("Proxmox Backup Server", value: version.displayVersion)
+                }
+                if let fingerprint = connection.backupServer?.status?.certificateFingerprint {
+                    CopyableValueRow(title: "Fingerprint", value: fingerprint, identifier: "server.fingerprint")
+                }
+                NavigationLink {
+                    NodeSettingLoader(detail: node, value: node.backupServerOptions, load: { await node.loadOptions() }) {
+                        BackupServerNotesEditor(node: node, options: $0)
+                    }
+                } label: {
+                    MoreRow(title: "Notes", systemImage: "note.text", color: .yellow,
+                            hint: node.backupServerOptions.map { ($0.values["description"] ?? "").isEmpty ? String(localized: "None") : nil } ?? nil)
+                }
+                .accessibilityIdentifier("more.notes")
+            } footer: {
+                if connection.backupServer?.status?.certificateFingerprint != nil {
+                    Text("Proxmox VE storages and backup clients need the fingerprint when the server's certificate is self-signed.")
                 }
             }
             Section("Administration") {
@@ -127,6 +143,12 @@ struct BackupServerMoreList: View {
                     MoreRow(title: "Two-Factor Authentication", systemImage: "lock.shield", color: .green)
                 }
                 .accessibilityIdentifier("more.tfa")
+                NavigationLink {
+                    BackupServerWebAuthnView(access: access)
+                } label: {
+                    MoreRow(title: "WebAuthn", systemImage: "person.badge.shield.checkmark", color: .teal)
+                }
+                .accessibilityIdentifier("more.webauthn")
                 NavigationLink {
                     BackupServerRealmsView(access: access)
                 } label: {
@@ -281,6 +303,61 @@ struct BackupServerShellView: View {
 }
 
 /// The server's options: HTTP proxy, mail sender, language, task log retention, consent banner and TLS ciphers.
+/// Notes of the server, shown on the dashboard like the web interface's Notes panel.
+struct BackupServerNotesEditor: View {
+    let node: NodeDetail
+    private let original: BackupServerNodeOptionsDraft
+    @State private var draft: BackupServerNodeOptionsDraft
+
+    init(node: NodeDetail, options: BackupServerNodeOptions) {
+        self.node = node
+        original = BackupServerNodeOptionsDraft(options)
+        _draft = State(initialValue: original)
+    }
+
+    var body: some View {
+        BackupServerSettingsForm(title: "Notes", lockMessage: node.can("Sys.Modify") ? nil : missingPrivilegeMessage("Sys.Modify", on: node.privilegePath)) {
+            let update = draft.changes(from: original)
+            return update.isEmpty ? nil : update
+        } save: { update throws(ConfigUpdateError) in
+            try await node.saveBackupServerOptions(update)
+        } content: { _ in
+            Section {
+                TextEditor(text: $draft.description)
+                    .frame(minHeight: 260)
+                    .accessibilityIdentifier("node.notes")
+            } footer: {
+                Text("Shown on the dashboard. The web interface formats them as Markdown.")
+            }
+        }
+    }
+}
+
+/// A value to copy, such as a fingerprint, with its title above it.
+struct CopyableValueRow: View {
+    let title: LocalizedStringKey
+    let value: String
+    let identifier: String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                Text(verbatim: value)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+            Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = value }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("\(identifier).copy")
+        }
+        .accessibilityIdentifier(identifier)
+    }
+}
+
 struct BackupServerOptionsEditor: View {
     let node: NodeDetail
     private let original: BackupServerNodeOptionsDraft
@@ -337,11 +414,6 @@ struct BackupServerOptionsEditor: View {
                 Text("Consent Banner")
             } footer: {
                 Text("Shown before the web interface's login, e.g. a usage policy.")
-            }
-            Section("Description") {
-                TextField("Description", text: $draft.description, prompt: Text("None"), axis: .vertical)
-                    .lineLimit(2...6)
-                    .accessibilityIdentifier("options.description")
             }
             Section {
                 LabeledTextField(title: "TLS 1.2", prompt: "Default", text: $draft.ciphersTLS12, identifier: "options.ciphers12")

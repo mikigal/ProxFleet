@@ -94,7 +94,7 @@ struct DatastoreDetailTests {
         let task = try await connection.createDatastore(draft)
         #expect(await connection.tasks.result(of: task.id) == .succeeded)
         await connection.refresh()
-        #expect(connection.backupServer?.datastores.map(\.store) == ["archive", "main", "offsite"])
+        #expect(connection.backupServer?.datastores.map(\.store) == ["archive", "main", "offsite", "s3-archive"])
 
         var invalid = DatastoreDraft()
         invalid.name = "main"
@@ -105,7 +105,7 @@ struct DatastoreDetailTests {
         let removal = try await detail.delete(destroyData: true, keepJobs: false)
         #expect(await connection.tasks.result(of: removal.id) == .succeeded)
         await connection.refresh()
-        #expect(connection.backupServer?.datastores.map(\.store) == ["main", "offsite"])
+        #expect(connection.backupServer?.datastores.map(\.store) == ["main", "offsite", "s3-archive"])
     }
 
     @Test func removableDatastoresMountAndUnmount() async throws {

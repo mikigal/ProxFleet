@@ -265,6 +265,8 @@ public struct DatastoreStatus: Decodable, Sendable, Equatable {
     public var otherCounts: Counts?
     public var garbageCollection: GarbageCollectionStatus?
     public var backendType: String
+    /// S3 datastores: traffic and requests since the counters were last reset.
+    public var s3Statistics: S3Statistics?
 
     public var usedFraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
 
@@ -286,6 +288,39 @@ public struct DatastoreStatus: Decodable, Sendable, Equatable {
         otherCounts = counts(all, "other")
         garbageCollection = try? container.decodeIfPresent(GarbageCollectionStatus.self, forKey: AnyCodingKey("gc-status"))
         backendType = container.lossyString(AnyCodingKey("backend-type")) ?? "filesystem"
+        s3Statistics = try? container.decodeIfPresent(S3Statistics.self, forKey: AnyCodingKey("s3-statistics"))
+    }
+}
+
+/// What an S3 datastore sent to and fetched from its bucket, as the web interface's S3 statistics panel shows it.
+public struct S3Statistics: Decodable, Sendable, Equatable {
+    public var uploaded: Int64
+    public var downloaded: Int64
+    public var get: Int
+    public var put: Int
+    public var post: Int
+    public var head: Int
+    public var delete: Int
+
+    public init(uploaded: Int64 = 0, downloaded: Int64 = 0, get: Int = 0, put: Int = 0, post: Int = 0, head: Int = 0, delete: Int = 0) {
+        self.uploaded = uploaded
+        self.downloaded = downloaded
+        self.get = get
+        self.put = put
+        self.post = post
+        self.head = head
+        self.delete = delete
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        uploaded = container.int64("uploaded") ?? 0
+        downloaded = container.int64("downloaded") ?? 0
+        get = container.lossyInt(AnyCodingKey("get")) ?? 0
+        put = container.lossyInt(AnyCodingKey("put")) ?? 0
+        post = container.lossyInt(AnyCodingKey("post")) ?? 0
+        head = container.lossyInt(AnyCodingKey("head")) ?? 0
+        delete = container.lossyInt(AnyCodingKey("delete")) ?? 0
     }
 }
 
@@ -315,6 +350,9 @@ public struct DatastoreRRDPoint: Decodable, Sendable, Equatable, Identifiable {
     public var writeOperations: Double?
     /// Share of time the device was busy.
     public var ioTicks: Double?
+    /// S3 datastores: bytes per second sent to and fetched from the bucket.
+    public var s3Uploaded: Double?
+    public var s3Downloaded: Double?
 
     public var id: Date { time }
     public var hasData: Bool { used != nil || readBytes != nil }
@@ -331,6 +369,15 @@ public struct DatastoreRRDPoint: Decodable, Sendable, Equatable, Identifiable {
         readOperations = value("read_ios")
         writeOperations = value("write_ios")
         ioTicks = value("io_ticks")
+        s3Uploaded = value("s3/uploaded")
+        s3Downloaded = value("s3/downloaded")
+    }
+
+    /// Milliseconds an operation waited, as the web interface works it out from the busy time and the operations.
+    public var ioDelay: Double? {
+        guard let ioTicks else { return nil }
+        let operations = (readOperations ?? 0) + (writeOperations ?? 0)
+        return operations == 0 ? 0 : ioTicks * 1000 / operations
     }
 }
 
@@ -431,6 +478,12 @@ extension PBS {
 
     public static func unmountDatastore(_ store: String) -> APIRequest<String> {
         APIRequest(.post, "/admin/datastore/\(escapePath(store))/unmount")
+    }
+
+    /// Reads the contents of an S3 datastore's bucket again, e.g. after objects changed outside the server. The
+    /// datastore is in maintenance meanwhile. Returns the task.
+    public static func refreshFromS3(_ store: String) -> APIRequest<String> {
+        APIRequest(.put, "/admin/datastore/\(escapePath(store))/s3-refresh")
     }
 
     /// Removes a datastore; returns the task. With `destroyData` its backups are deleted too, and with `keepJobs`

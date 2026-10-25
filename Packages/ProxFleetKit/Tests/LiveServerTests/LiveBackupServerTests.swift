@@ -490,6 +490,11 @@ extension LiveBackupServerTests {
             _ = try await session.send(PBS.createNamespace(store, name: "target", parent: .root))
             #expect(try await waitForTask(try await session.send(PBS.moveNamespace(store, BackupNamespace("moved"), to: BackupNamespace("target/moved"), mergeGroups: true)), in: session).succeeded)
             #expect(try await session.send(PBS.namespaces(store)).map(\.path).sorted() == ["", "target", "target/moved"])
+            // Without Delete Source the moved namespace stays where it was too.
+            _ = try await session.send(PBS.createNamespace(store, name: "kept", parent: .root))
+            #expect(try await waitForTask(try await session.send(PBS.moveNamespace(store, BackupNamespace("kept"), to: BackupNamespace("target/kept"),
+                                                                                       mergeGroups: true, deletesSource: false)), in: session).succeeded)
+            #expect(try await session.send(PBS.namespaces(store)).map(\.path).sorted() == ["", "kept", "target", "target/kept", "target/moved"])
         }
 
         // Prune of everything as a dry run, then deletion: the protected snapshot keeps its group.
@@ -739,16 +744,19 @@ extension LiveBackupServerTests {
         var draft = original
         draft.emailFrom = "pflive@example.com"
         draft.taskLogMaxDays = 120
+        // The notes of the web interface's Notes panel are the description.
+        draft.description = "pflive notes\nsecond line"
         _ = try await session.send(PBS.updateNodeOptions(draft.changes(from: original, digest: options.digest)))
         let changed = try await session.send(PBS.nodeOptions())
         #expect(BackupServerNodeOptionsDraft(changed.value) == draft)
         _ = try await session.send(PBS.updateNodeOptions(original.changes(from: draft, digest: changed.digest)))
         #expect(try await BackupServerNodeOptionsDraft(session.send(PBS.nodeOptions()).value) == original)
 
-        // The certificate is the one the connection trusts.
+        // The certificate is the one the connection trusts, and the status names its fingerprint too.
         let certificate = try #require(try await session.send(PVE.certificates(node: node)).first { $0.fileName == "proxy.pem" })
         if let expected = server["FINGERPRINT"] {
             #expect(certificate.fingerprint?.uppercased() == expected.uppercased())
+            #expect(try await session.send(PBS.nodeStatus()).certificateFingerprint?.uppercased() == expected.uppercased())
         }
 
         // The shell.
@@ -896,6 +904,37 @@ extension LiveBackupServerTests {
 
 extension LiveBackupServerTests {
     /// A user with a password, a token with a permission and second factors, each changed and removed again.
+    /// What users and tokens may do, and the WebAuthn settings. These can only be changed, not removed again: the test
+    /// sets them up for the server's address when they are missing and leaves them so.
+    @Test func effectivePermissionsAndWebAuthn() async throws {
+        let session = try await signedIn()
+        let limited = "\(try #require(server["LIMITED_USER"]))@\(server["LIMITED_REALM"] ?? "pbs")"
+        let permissions = try await session.send(PBS.effectivePermissions(of: limited))
+        #expect(permissions["/datastore/store1"]?["Datastore.Audit"] == true, "\(permissions)")
+        #expect(permissions["/system"]?["Sys.Modify"] != true)
+
+        let loaded = try await session.send(PBS.webAuthnConfig())
+        if loaded.value == nil {
+            var draft = BackupServerWebAuthnDraft()
+            draft.fill(host: server.address.host, port: server.address.port)
+            _ = try await session.send(PBS.updateWebAuthnConfig(draft.changes(from: BackupServerWebAuthnDraft(), digest: loaded.digest)))
+        }
+        let configured = try await session.send(PBS.webAuthnConfig())
+        let original = BackupServerWebAuthnDraft(configured.value)
+        #expect(original.id == server.address.host || configured.value?.id != nil)
+        var edited = original
+        edited.allowsSubdomains.toggle()
+        _ = try await session.send(PBS.updateWebAuthnConfig(edited.changes(from: original, digest: configured.digest)))
+        let changed = try await session.send(PBS.webAuthnConfig())
+        #expect(changed.value?.allowsSubdomains == edited.allowsSubdomains)
+        // A stale digest is refused.
+        await #expect(throws: ProxmoxError.self) {
+            _ = try await session.send(PBS.updateWebAuthnConfig(original.changes(from: edited, digest: configured.digest)))
+        }
+        _ = try await session.send(PBS.updateWebAuthnConfig(original.changes(from: edited, digest: changed.digest)))
+        #expect(try await BackupServerWebAuthnDraft(session.send(PBS.webAuthnConfig()).value) == original)
+    }
+
     @Test func usersTokensAndSecondFactors() async throws {
         let session = try await signedIn()
         let user = "pflive@pbs"
@@ -1111,6 +1150,7 @@ extension LiveBackupServerTests {
                 s3.secretKey = "pflive-secret"
                 s3.usesPathStyle = true
                 s3.skipsIfNoneMatch = true
+                s3.deletesObjectsOneByOne = version.supports(.s3DeleteObjectsOneByOne)
                 _ = try await session.send(PBS.createS3Endpoint(s3))
                 let endpoint = try #require(try await session.send(PBS.s3Endpoints()).value.first { $0.id == "pflive-s3" })
                 var expected = s3
@@ -1208,7 +1248,28 @@ extension LiveBackupServerTests {
             #expect(task.succeeded, "\(task.exitStatus ?? "")")
             let config = try #require(try await session.send(PBS.datastoreConfigs()).value.first { $0.name == store })
             #expect(config.isS3)
-            #expect(try await session.send(PBS.datastoreStatus(store)).total > 0)
+            let datastoreStatus = try await session.send(PBS.datastoreStatus(store))
+            #expect(datastoreStatus.total > 0)
+
+            if try await session.send(PBS.version()).supports(.s3Counters) {
+                // Request statistics, their notification thresholds and the counters' reset schedule.
+                #expect(datastoreStatus.s3Statistics != nil)
+                let loaded = try await session.send(PBS.datastoreConfig(store))
+                let stored = DatastoreDraft(loaded.value)
+                var thresholds = stored
+                thresholds.notificationThresholds["s3-put"] = "100000"
+                thresholds.notificationThresholds["s3-upload"] = "10GiB"
+                thresholds.counterResetSchedule = "monthly"
+                #expect(thresholds.problems(isNew: false).isEmpty)
+                _ = try await session.send(PBS.updateDatastore(store, thresholds.changes(from: stored, digest: loaded.digest)))
+                let changed = DatastoreDraft(try await session.send(PBS.datastoreConfig(store)).value)
+                #expect(changed.notificationThresholds["s3-put"] == "100000")
+                #expect(changed.notificationThresholds["s3-upload"].map { $0.replacingOccurrences(of: " ", with: "") } == "10GiB")
+                #expect(changed.counterResetSchedule == "monthly")
+            }
+            // The server reads the bucket again, in maintenance meanwhile.
+            let refresh = try await waitForTask(try await session.send(PBS.refreshFromS3(store)), in: session)
+            #expect(refresh.succeeded, "\(refresh.exitStatus ?? "")")
             outcome = .success(())
         } catch {
             outcome = .failure(error)
