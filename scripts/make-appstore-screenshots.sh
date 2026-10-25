@@ -11,8 +11,9 @@
 #
 # Needs Google Chrome (set CHROME to use another path). The captures come from the iPhone 17 and iPad Pro 13-inch (M5)
 # Simulators in demo mode and dark appearance, relaunched in US English so numbers and times read like the headlines.
-# The iPad's status bar also shows the date, so the iPad Simulator itself must be in English (AppleLanguages and
-# AppleLocale, then a reboot) while capturing:
+# The backup server screen comes from the demo backup server (-demoBackupServer instead of -demo). The iPad's status
+# bar also shows the date, so the iPad Simulator itself must be in English (AppleLanguages and AppleLocale, then a
+# reboot) while capturing:
 #
 #   SIMULATOR_DEVICE=<device> scripts/run-simulator.sh --demo
 #   xcrun simctl launch --terminate-running-process <device> <bundle id> -inMemory -demo -AppleLocale en_US -AppleLanguages "(en)"
@@ -29,26 +30,26 @@ ONLY="${1:-}"
 # separated by "|", and the orange last line. The first one is the eye-catcher in search results; the rest show the
 # app up close. The iPad shows the same screens; an iPad does not fit in a pocket, though.
 SCREENSHOTS=(
-  iphone "1-cluster"  "3d"   "Your entire|Proxmox fleet."  "In your pocket."
-  iphone "2-guest"    "flat" "Every VM.|Every container."  "One tap away."
-  iphone "3-hardware" "flat" "Edit hardware|on the fly."   "No laptop needed."
-  iphone "4-console"  "flat" "Server down|at 3 AM?"        "Fix it from bed."
-  iphone "5-create"   "flat" "Spin up VMs|and containers." "From the couch."
-  iphone "6-backups"  "flat" "Backups on|autopilot."       "Set it. Forget it."
-  iphone "7-more"     "flat" "Not just|start and stop."    "Fine-tune anything."
-  iphone "8-migrate"  "flat" "Live-migrate|between nodes." "Right from your phone."
-  iphone "9-ha"       "flat" "A node went down?"           "HA has your back."
-  iphone "10-ceph"    "flat" "Ceph health|at a glance."    "Spot trouble fast."
-  ipad   "1-cluster"  "3d"   "Your entire|Proxmox fleet."  "In your hands."
-  ipad   "2-guest"    "flat" "Every VM.|Every container."  "One tap away."
-  ipad   "3-hardware" "flat" "Edit hardware|on the fly."   "No laptop needed."
-  ipad   "4-console"  "flat" "Server down|at 3 AM?"        "Fix it from bed."
-  ipad   "5-create"   "flat" "Spin up VMs|and containers." "From the couch."
-  ipad   "6-backups"  "flat" "Backups on|autopilot."       "Set it. Forget it."
-  ipad   "7-more"     "flat" "Not just|start and stop."    "Fine-tune anything."
-  ipad   "8-migrate"  "flat" "Live-migrate|between nodes." "Right from your iPad."
-  ipad   "9-ha"       "flat" "A node went down?"           "HA has your back."
-  ipad   "10-ceph"    "flat" "Ceph health|at a glance."    "Spot trouble fast."
+  iphone "1-cluster"        "3d"   "Your entire|Proxmox fleet."  "In your pocket."
+  iphone "2-guest"          "flat" "Every VM.|Every container."  "One tap away."
+  iphone "3-hardware"       "flat" "Edit hardware|on the fly."   "No laptop needed."
+  iphone "4-console"        "flat" "Server down|at 3 AM?"        "Fix it from bed."
+  iphone "5-create"         "flat" "Spin up VMs|and containers." "From the couch."
+  iphone "6-backups"        "flat" "Backups on|autopilot."       "Set it. Forget it."
+  iphone "7-more"           "flat" "Not just|start and stop."    "Fine-tune anything."
+  iphone "8-migrate"        "flat" "Live-migrate|between nodes." "Right from your phone."
+  iphone "9-ha"             "flat" "A node went down?"           "HA has your back."
+  iphone "10-backup-server" "flat" "Proxmox Backup|Server, too." "Datastores at a glance."
+  ipad   "1-cluster"        "3d"   "Your entire|Proxmox fleet."  "In your hands."
+  ipad   "2-guest"          "flat" "Every VM.|Every container."  "One tap away."
+  ipad   "3-hardware"       "flat" "Edit hardware|on the fly."   "No laptop needed."
+  ipad   "4-console"        "flat" "Server down|at 3 AM?"        "Fix it from bed."
+  ipad   "5-create"         "flat" "Spin up VMs|and containers." "From the couch."
+  ipad   "6-backups"        "flat" "Backups on|autopilot."       "Set it. Forget it."
+  ipad   "7-more"           "flat" "Not just|start and stop."    "Fine-tune anything."
+  ipad   "8-migrate"        "flat" "Live-migrate|between nodes." "Right from your iPad."
+  ipad   "9-ha"             "flat" "A node went down?"           "HA has your back."
+  ipad   "10-backup-server" "flat" "Proxmox Backup|Server, too." "Datastores at a glance."
 )
 
 encode() { python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1"; }

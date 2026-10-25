@@ -75,14 +75,14 @@ HERO_PHONES = [
     ("4-hardware", 262, 772, 0.8, -14, 0.42),
     ("1-resources", 518, 690, 0.9, -7, 0.22),
     ("2-vm", 800, 633, 1.0, 0, 0.0),
-    ("5-node", 1082, 690, 0.9, 7, 0.22),
+    ("5-backup-server", 1082, 690, 0.9, 7, 0.22),
     ("3-console", 1338, 772, 0.8, 14, 0.42),
 ]
 
 # Floating cards in front of the phones: x, y, accent color, glyph, title, subtitle.
 HERO_CARDS = [
     (96, 318, "#30d158", "servers", "Cluster homelab", "3 nodes · Quorate"),
-    (1160, 400, "#ff9f0a", "check", "Backup finished", "VM 102 · just now"),
+    (1160, 400, "#ff9f0a", "check", "Backup verified", "VM 100 · datastore main"),
     (150, 690, "#4da3ff", "power", "home-assistant", "Started on pve1"),
 ]
 
