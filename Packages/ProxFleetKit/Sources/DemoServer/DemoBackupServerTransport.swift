@@ -204,6 +204,14 @@ actor DemoBackupServerState {
         case (.get, let path) where path.count == 3 && path[0] == "tasks" && path[2] == "log":
             guard let task = tasks.first(where: { $0.upid == path[1] }) else { return failure(400, "no such task") }
             return success(taskLog(task))
+        case (.delete, let path) where path.count == 2 && path[0] == "tasks":
+            guard let index = tasks.firstIndex(where: { $0.upid == path[1] }) else { return failure(400, "no such task") }
+            // A stopped task ends now and fails, as the real server's workers do.
+            if !tasks[index].isFinished(at: Date()) {
+                tasks[index].duration = Date().timeIntervalSince(tasks[index].startedAt)
+                tasks[index].result = "abort requested - aborting task"
+            }
+            return success(nil)
         default:
             return nil
         }

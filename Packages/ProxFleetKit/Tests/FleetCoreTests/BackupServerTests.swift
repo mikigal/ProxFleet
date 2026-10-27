@@ -3,6 +3,7 @@ import DemoServer
 import Foundation
 import PBSKit
 import ProxmoxCore
+import PVEKit
 import Testing
 
 /// Port 8007 reaches a demo backup server, any other port the demo cluster; listed addresses are unreachable.
@@ -255,6 +256,19 @@ struct BackupServerConnectionTests {
         dashboard.days = 7
         try await Task.sleep(for: .seconds(1))
         #expect(dashboard.summary.first { $0.kind == .backup }?.failed == 0)
+    }
+
+    @Test func stopsTheRunningVerification() async throws {
+        let connection = try await connectedDemo()
+        let dashboard = BackupServerDashboard(connection: connection)
+        await dashboard.load()
+        let running = try #require(dashboard.runningTasks.first)
+        try await connection.stopTask(node: running.node, upid: running.upid)
+        let status = try await connection.send(PVE.taskStatus(node: running.node, upid: running.upid))
+        #expect(!status.isRunning)
+        #expect(status.exitStatus == "abort requested - aborting task")
+        await dashboard.load()
+        #expect(dashboard.runningTasks.isEmpty)
     }
 
     @Test func summaryCategoriesFollowTheWebInterface() {

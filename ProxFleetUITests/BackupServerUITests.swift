@@ -37,6 +37,27 @@ final class BackupServerUITests: XCTestCase {
         snapshot("pbs-dashboard-bottom")
     }
 
+    /// The verification that runs when the demo starts can be stopped from its log.
+    @MainActor
+    func testStopTheRunningVerification() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Proxmox Backup Server 4.2.1"].waitForExistence(timeout: 10))
+        let header = app.staticTexts["Running Tasks"]
+        for _ in 0..<8 where !header.exists { app.swipeUp() }
+        XCTAssertTrue(header.exists)
+        let running = app.buttons.containing(NSPredicate(format: "label CONTAINS 'weekly-verify'")).firstMatch
+        for _ in 0..<3 where !running.isHittable { app.swipeUp() }
+        running.tap()
+
+        let stop = app.buttons["task.stop"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 10))
+        stop.tap()
+        // Alert buttons show up twice in the hierarchy.
+        app.buttons["task.stop.confirm"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'abort requested'")).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(stop.exists)
+    }
+
     @MainActor
     func testDatastoresAndTasks() {
         app.launch()
