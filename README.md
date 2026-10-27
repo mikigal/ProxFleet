@@ -14,9 +14,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-2f6fde?style=for-the-badge" alt="License: GPL-3.0"></a>
 </p>
 
-<!-- Replace the link with the App Store URL once the app is published. -->
 <p align="center">
-  <a href="https://apps.apple.com/app/idXXXXXXXXXX"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="54" alt="Download on the App Store"></a>
+  <a href="https://apps.apple.com/app/id6825985713"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="54" alt="Download on the App Store"></a>
 </p>
 
 <br>
