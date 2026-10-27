@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://apps.apple.com/app/id6825985713"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="54" alt="Download on the App Store"></a>
+  <a href="https://apps.apple.com/app/id6825985713"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="72" alt="Download on the App Store"></a>
 </p>
 
 <br>
