@@ -36,6 +36,8 @@ public final class ServerConnection: Identifiable {
     public nonisolated let id: UUID
     private let environment: FleetEnvironment
     private let onProfileChange: @MainActor (ServerProfile) -> Void
+    /// Nil for the demo, which does not count towards asking for a rating.
+    private let reviewPrompt: ReviewPrompt?
     private var transport: any HTTPTransport
     private(set) var session: ProxmoxSession
     /// Tasks started from the app on this server.
@@ -43,11 +45,12 @@ public final class ServerConnection: Identifiable {
     private var addressIndex = 0
     @ObservationIgnored private var connectAttempt: Task<Void, Never>?
 
-    init(profile: ServerProfile, environment: FleetEnvironment, session: ProxmoxSession? = nil, transport: (any HTTPTransport)? = nil, onProfileChange: @escaping @MainActor (ServerProfile) -> Void) {
+    init(profile: ServerProfile, environment: FleetEnvironment, session: ProxmoxSession? = nil, transport: (any HTTPTransport)? = nil, reviewPrompt: ReviewPrompt?, onProfileChange: @escaping @MainActor (ServerProfile) -> Void) {
         self.id = profile.id
         self.profile = profile
         self.environment = environment
         self.onProfileChange = onProfileChange
+        self.reviewPrompt = reviewPrompt
         let transport = transport ?? environment.makeTransport(profile)
         self.transport = transport
         let address = profile.primaryAddress ?? ServerAddress(host: "invalid", port: profile.product.defaultPort)
@@ -60,9 +63,14 @@ public final class ServerConnection: Identifiable {
                 guard let connection = owner.value else { throw CancellationError() }
                 return try await connection.session.send(PVE.taskStatus(node: upid.node, upid: upid.rawValue))
             },
-            onFinish: { _ in await owner.value?.refresh() }
+            onFinish: { task in
+                if task.state == .succeeded { owner.value?.reviewPrompt?.recordSucceededTask() }
+                await owner.value?.refresh()
+            }
         )
         owner.value = self
+        // A server added right after signing in starts connected.
+        if state == .connected { reviewPrompt?.recordUse() }
     }
 
     public var currentAddress: ServerAddress { session.address }
@@ -154,7 +162,7 @@ public final class ServerConnection: Identifiable {
         if await session.ticket != nil {
             do {
                 try await loadSnapshot()
-                state = .connected
+                didConnect()
                 return
             } catch ProxmoxError.unauthorized {
                 // Saved ticket expired; fall through to a password login.
@@ -198,10 +206,15 @@ public final class ServerConnection: Identifiable {
         }
         do {
             try await loadSnapshot()
-            state = .connected
+            didConnect()
         } catch {
             handle(error)
         }
+    }
+
+    private func didConnect() {
+        state = .connected
+        reviewPrompt?.recordUse()
     }
 
     /// Moves to the next known address after a network failure. Tickets are valid on every node of a cluster.

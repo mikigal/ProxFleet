@@ -9,6 +9,8 @@ public struct FleetEnvironment: Sendable {
     public var profiles: any ServerProfileStore
     public var credentials: any CredentialStore
     public var makeTransport: @Sendable (ServerProfile) -> any HTTPTransport
+    /// The counts behind asking for an App Store rating.
+    public var reviewPrompts: any ReviewPromptStore = InMemoryReviewPromptStore()
 
     public init(profiles: any ServerProfileStore, credentials: any CredentialStore, makeTransport: @escaping @Sendable (ServerProfile) -> any HTTPTransport) {
         self.profiles = profiles
@@ -18,7 +20,9 @@ public struct FleetEnvironment: Sendable {
 
     /// Real network, Keychain and files.
     public static func live() -> FleetEnvironment {
-        FleetEnvironment(profiles: FileServerProfileStore.standard(), credentials: KeychainCredentialStore(), makeTransport: defaultTransport)
+        var environment = FleetEnvironment(profiles: FileServerProfileStore.standard(), credentials: KeychainCredentialStore(), makeTransport: defaultTransport)
+        environment.reviewPrompts = UserDefaultsReviewPromptStore()
+        return environment
     }
 
     /// Nothing persisted. Real servers still use the network.
@@ -52,10 +56,12 @@ public final class Fleet {
     public private(set) var profiles: [ServerProfile]
     @ObservationIgnored private var connections: [UUID: ServerConnection] = [:]
     let environment: FleetEnvironment
+    public let reviewPrompt: ReviewPrompt
 
     public init(environment: FleetEnvironment) {
         self.environment = environment
         profiles = environment.profiles.load()
+        reviewPrompt = ReviewPrompt(store: environment.reviewPrompts)
     }
 
     public func connection(for id: UUID) -> ServerConnection? {
@@ -173,7 +179,7 @@ public final class Fleet {
     }
 
     private func makeConnection(_ profile: ServerProfile, session: ProxmoxSession? = nil, transport: (any HTTPTransport)? = nil) -> ServerConnection {
-        ServerConnection(profile: profile, environment: environment, session: session, transport: transport) { [weak self] updated in
+        ServerConnection(profile: profile, environment: environment, session: session, transport: transport, reviewPrompt: profile.isDemo ? nil : reviewPrompt) { [weak self] updated in
             self?.update(updated)
         }
     }

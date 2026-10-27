@@ -67,6 +67,10 @@ struct SettingsView: View {
         Section("About") {
             LabeledContent("Version", value: Self.version)
             LabeledContent("License", value: "GPL-3.0")
+            Link(destination: AppStore.writeReviewURL) {
+                Label("Rate on the App Store", systemImage: "star")
+            }
+            .accessibilityIdentifier("settings.rate")
         }
     }
 

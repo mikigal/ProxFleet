@@ -11,7 +11,7 @@
 	<array/>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!-- App settings such as console options and the app lock marker (AppLock, @AppStorage). -->
+		<!-- App settings such as console options, the app lock marker and the rating request counts (AppLock, ReviewPrompt, @AppStorage). -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>

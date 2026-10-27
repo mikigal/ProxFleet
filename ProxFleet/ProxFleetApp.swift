@@ -21,6 +21,7 @@ struct ProxFleetApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(initialSelection: initialSelection)
+                .reviewPrompt()
                 .appLockCover()
                 .environment(fleet)
                 .environment(appLock)

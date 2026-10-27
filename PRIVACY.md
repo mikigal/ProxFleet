@@ -11,7 +11,7 @@ ProxFleet keeps only what it needs to connect to your servers, and only on your 
 - **Your server list:** the name, address, port, user name and realm of each server you add, and the fingerprints of certificates you chose to trust. It is stored in the app's private storage and protected by iOS data protection.
 - **Passwords and sessions:** a server's password, only if you ask the app to remember it, and the session ticket of the last sign-in. Both are stored in the iOS Keychain, on this device only. They are not synced to iCloud Keychain and are not moved to another device.
 - **App lock PIN:** if you turn on the app lock, the PIN is kept in the Keychain as a salted hash, never as the PIN itself.
-- **App settings:** preferences such as console options.
+- **App settings:** preferences such as console options, and how many days you used the app and how many tasks succeeded, which decide when the app asks for an App Store rating. These counts never leave your device.
 
 When you remove a server in the app, its saved password and session are deleted too. When you delete the app, iOS deletes the server list and settings. If iOS keeps Keychain items after the app is deleted, ProxFleet does not use them after a reinstall.
 
