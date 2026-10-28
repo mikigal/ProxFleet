@@ -11,7 +11,11 @@ public actor ProxmoxSession {
     nonisolated let transportForWebSockets: (any WebSocketTransport)?
     private let now: @Sendable () -> Date
 
-    public private(set) var ticket: AuthTicket?
+    public private(set) var ticket: AuthTicket? {
+        didSet { if ticket != nil { ticketWasDropped = false } }
+    }
+    /// Whether the last ticket expired or was rejected, as opposed to nobody having signed in.
+    private var ticketWasDropped = false
     private var renewal: Task<AuthTicket, any Error>?
 
     /// Renew once the ticket is older than this. The web UI uses the same interval.
@@ -85,13 +89,14 @@ public actor ProxmoxSession {
         renewal?.cancel()
         renewal = nil
         ticket = nil
+        ticketWasDropped = false
     }
 
     /// Renews the ticket now. Concurrent callers share one renewal request.
     @discardableResult
     public func renewTicket() async throws -> AuthTicket {
         if let renewal { return try await renewal.value }
-        guard let current = ticket else { throw ProxmoxError.notAuthenticated }
+        let current = try requireTicket()
 
         let task = Task<AuthTicket, any Error> {
             let parameters: APIParameters = ["username": .string(current.username), "password": .string(current.ticket)]
@@ -105,9 +110,22 @@ public actor ProxmoxSession {
             ticket = renewed
             return renewed
         } catch ProxmoxError.unauthorized(let message) {
-            ticket = nil
+            dropTicket()
             throw ProxmoxError.unauthorized(message)
         }
+    }
+
+    /// Forgets a ticket that expired or that the server rejected.
+    private func dropTicket() {
+        ticket = nil
+        ticketWasDropped = true
+    }
+
+    /// The ticket for an authenticated request. Requests sent together with the one that found the ticket expired
+    /// fail the same way, so callers sign in again instead of reporting that nobody signed in.
+    private func requireTicket() throws -> AuthTicket {
+        guard let ticket else { throw ticketWasDropped ? ProxmoxError.unauthorized("Session expired.") : ProxmoxError.notAuthenticated }
+        return ticket
     }
 
     // MARK: - Requests
@@ -118,16 +136,16 @@ public actor ProxmoxSession {
         do {
             return try await perform(request, authenticated: true)
         } catch ProxmoxError.unauthorized(let message) {
-            ticket = nil
+            dropTicket()
             throw ProxmoxError.unauthorized(message)
         }
     }
 
     /// Checks the ticket before an authenticated request and renews it when it is due.
     func prepareAuthenticatedRequest() async throws {
-        guard let current = ticket else { throw ProxmoxError.notAuthenticated }
+        let current = try requireTicket()
         if current.isExpired(at: now()) {
-            ticket = nil
+            dropTicket()
             throw ProxmoxError.unauthorized("Session expired.")
         }
         if now().timeIntervalSince(current.issuedAt) > Self.renewalInterval {
@@ -203,7 +221,7 @@ public actor ProxmoxSession {
         }
 
         if authenticated {
-            guard let ticket else { throw ProxmoxError.notAuthenticated }
+            let ticket = try requireTicket()
             headers["Cookie"] = "\(product.authCookieName)=\(APIParameters.escape(ticket.ticket))"
             if request.method != .get {
                 headers["CSRFPreventionToken"] = ticket.csrfToken

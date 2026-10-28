@@ -200,6 +200,20 @@ struct ConnectionTests {
         #expect(connection.currentAddress.host == "up.lan")
     }
 
+    @Test func expiredSavedTicketSignsInWithSavedPassword() async throws {
+        let environment = demoEnvironment()
+        let profile = profile()
+        environment.profiles.save([profile])
+        environment.credentials.setPassword("pw", for: profile.id)
+        let issuedAt = Date().addingTimeInterval(-3 * 60 * 60)
+        environment.credentials.setTicket(AuthTicket(username: "root@pam", ticket: "PVE:root@pam:OLD::sig", csrfToken: "c", issuedAt: issuedAt), for: profile.id)
+        let connection = try #require(Fleet(environment: environment).connection(for: profile.id))
+
+        await connection.connect()
+        #expect(connection.state == .connected)
+        #expect(environment.credentials.ticket(for: profile.id)?.issuedAt != issuedAt)
+    }
+
     @Test func rejectedSavedPasswordIsForgotten() async throws {
         let environment = demoEnvironment()
         let profile = profile()

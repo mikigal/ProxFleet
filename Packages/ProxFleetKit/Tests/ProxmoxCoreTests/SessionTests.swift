@@ -125,6 +125,26 @@ struct SessionTests {
         #expect(await session.ticket == nil)
     }
 
+    @Test func requestsSentWithOneThatFindsTheTicketExpiredFailTheSameWay() async throws {
+        let transport = MockTransport { _ in .json(#"{"data":null,"success":1}"#) }
+        let clock = TestClock()
+        let session = ProxmoxSession(address: address, transport: transport, now: { clock.now })
+        await session.restore(AuthTicket(username: "root@pam", ticket: "T", csrfToken: "c", issuedAt: clock.now))
+        clock.advance(by: 2 * 60 * 60)
+
+        func failure(of path: String) async -> ProxmoxError? {
+            do {
+                _ = try await session.send(APIRequest<Nothing>(.get, path))
+                return nil
+            } catch {
+                return error as? ProxmoxError
+            }
+        }
+        async let first = failure(of: "/version")
+        async let second = failure(of: "/cluster/status")
+        #expect(await [first, second] == [.unauthorized("Session expired."), .unauthorized("Session expired.")])
+    }
+
     @Test func unauthorizedResponseClearsTicket() async throws {
         let transport = MockTransport { _ in HTTPResponse(statusCode: 401, body: Data()) }
         let session = ProxmoxSession(address: address, transport: transport)
