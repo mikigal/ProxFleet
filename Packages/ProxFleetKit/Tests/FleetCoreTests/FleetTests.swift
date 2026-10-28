@@ -262,6 +262,26 @@ struct ConnectionTests {
         #expect(fleet.profiles.count == 2)
     }
 
+    @Test func connectAllLeavesServersWaitingForTheUserAlone() async throws {
+        let environment = demoEnvironment()
+        let saved = profile()
+        let withoutPassword = profile()
+        environment.profiles.save([saved, withoutPassword])
+        environment.credentials.setPassword("pw", for: saved.id)
+        let fleet = Fleet(environment: environment)
+        let waiting = try #require(fleet.connection(for: withoutPassword.id))
+        await waiting.connect()
+        #expect(waiting.state == .needsPassword(message: nil))
+
+        fleet.connectAll()
+        let connection = try #require(fleet.connection(for: saved.id))
+        for _ in 0..<200 where connection.state != .connected {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(connection.state == .connected)
+        #expect(waiting.state == .needsPassword(message: nil))
+    }
+
     @Test func removingServerDeletesSecrets() async throws {
         let environment = demoEnvironment()
         let profile = profile()

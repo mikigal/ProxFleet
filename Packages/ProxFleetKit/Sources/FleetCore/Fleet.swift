@@ -72,6 +72,15 @@ public final class Fleet {
         return connection
     }
 
+    /// Connects every saved server that is not connected yet, in the background, so the server list shows which
+    /// ones are reachable without opening each of them. Servers waiting for the user, e.g. for a password, are left alone.
+    public func connectAll() {
+        for profile in profiles {
+            guard let connection = connection(for: profile.id), connection.state == .disconnected else { continue }
+            Task { await connection.connect() }
+        }
+    }
+
     public func profile(id: UUID) -> ServerProfile? {
         profiles.first { $0.id == id }
     }

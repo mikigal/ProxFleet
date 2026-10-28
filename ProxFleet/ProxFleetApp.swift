@@ -16,6 +16,7 @@ struct ProxFleetApp: App {
         _fleet = State(initialValue: fleet)
         _appLock = State(initialValue: AppLock(store: launch.inMemory ? InMemoryAppLockStore() : KeychainAppLockStore()))
         initialSelection = launch.apply(to: fleet)
+        fleet.connectAll()
     }
 
     var body: some Scene {
